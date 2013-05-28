@@ -6,7 +6,7 @@
 #
 
 """
-Test suite for all preprocessing kernels.
+Automatic selection of OpenCL devices 
 """
 
 from __future__ import division
