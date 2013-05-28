@@ -128,10 +128,10 @@ s32_to_float(	__global int  *array_int,
  *
 **/
 __kernel void
-corrections( 		__global float 	*image,
-			const			 float	min,
-			const 			 float 	max,
-			const			 float	max_out,
+normalizes(  		__global float 	*image,
+			const			 float	min_in,
+			const 			 float 	max_in,
+			const			 float	max_out
 			)
 {
 	float data;
@@ -139,7 +139,7 @@ corrections( 		__global float 	*image,
 	if(i < NIMAGE)
 	{
 		data = image[i];
-		image[i] = max_out*(data-min)/(max-min);
+		image[i] = max_out*(data-min_in)/(max_in-min_in);
 	};//end if NIMAGE
 };//end kernel
 
