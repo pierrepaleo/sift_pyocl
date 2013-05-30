@@ -18,7 +18,7 @@ class SiftPlan(object):
     kp is a nx132 array. the second dimension is composed of x,y, scale and angle as well as 128 floats describing the keypoint  
      
     """
-    def __init__(self, shape=None, dtype=None, devicetype="GPU", template=None, profile = False):
+    def __init__(self, shape=None, dtype=None, devicetype="GPU", template=None, profile=False):
         """
         Contructor of the class
         """
@@ -41,7 +41,7 @@ class SiftPlan(object):
         else:
             self.queue = pyopencl.CommandQueue(self.ctx)
         self._allocate_buffers()
-    
+
     def __del__(self):
         """
         Destructor: release all buffers
@@ -51,7 +51,7 @@ class SiftPlan(object):
         self.queue = None
         self.ctx = None
         gc.collect()
-    
+
     def _calc_scales(self):
         self.scales = [self.shape]
         shape = self.shape
@@ -75,15 +75,15 @@ class SiftPlan(object):
             size = scale[0] * scale[1]
             self.memory += size * (nr_blur + nr_dogs) * size_of_float
 
-    def _allocate_buffers(self): 
+    def _allocate_buffers(self):
         self.buffers["raw"] = pyopencl.array.empty(self.queue, self.shape, dtype=self.dtype, order="C")
         self.buffers["input"] = pyopencl.array.empty(self.queue, self.shape, dtype=numpy.float32, order="C")
-        for octave,scale in enumerate(self.scales):
-            
+        for octave, scale in enumerate(self.scales):
+
             for i in range(par.Scales + 3):
-                self.buffers[(octave,i,"G") ] = pyopencl.array.empty(self.queue, scale, dtype=numpy.float32, order="C")
+                self.buffers[(octave, i, "G") ] = pyopencl.array.empty(self.queue, scale, dtype=numpy.float32, order="C")
             for i in range(par.Scales + 2):
-                self.buffers[(octave,i,"DoG") ] = pyopencl.array.empty(self.queue, scale, dtype=numpy.float32, order="C")
+                self.buffers[(octave, i, "DoG") ] = pyopencl.array.empty(self.queue, scale, dtype=numpy.float32, order="C")
     def _free_buffers(self):
         """
         free all memory allocated on the device
@@ -124,6 +124,6 @@ class SiftPlan(object):
         """
         free all kernels
         """
-        for kernel in self._cl_kernel_args:
-            self._cl_kernel_args[kernel] = []
+#        for kernel in self._cl_kernel_args:
+#            self._cl_kernel_args[kernel] = []
         self._program = None
