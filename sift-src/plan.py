@@ -7,16 +7,17 @@ import numpy
 import pyopencl, pyopencl.array
 from .param import par
 from .opencl import ocl
+from .utils import calc_size
 
 class SiftPlan(object):
     """
     How to calculate a set of SIFT keypoint on an image:
-    
+
     siftp = sift.SiftPlan(img.shape,img.dtype,devicetype="GPU")
     kp = siftp.keypoints(img)
-    
-    kp is a nx132 array. the second dimension is composed of x,y, scale and angle as well as 128 floats describing the keypoint  
-     
+
+    kp is a nx132 array. the second dimension is composed of x,y, scale and angle as well as 128 floats describing the keypoint
+
     """
     def __init__(self, shape=None, dtype=None, devicetype="GPU", template=None, profile=False):
         """
@@ -31,6 +32,7 @@ class SiftPlan(object):
         self.profile = bool(profile)
         self.scales = []
         self.buffers = {}
+        self.programs = {}
         self.memory = None
         self._calc_scales()
         self._calc_memory()
@@ -41,6 +43,7 @@ class SiftPlan(object):
         else:
             self.queue = pyopencl.CommandQueue(self.ctx)
         self._allocate_buffers()
+        self._compile_kernels()
 
     def __del__(self):
         """
@@ -73,13 +76,13 @@ class SiftPlan(object):
             nr_blur = par.Scales + 3
             nr_dogs = par.Scales + 2
             size = scale[0] * scale[1]
-            self.memory += size * (nr_blur + nr_dogs) * size_of_float
+            self.memory += size * (nr_blur + nr_dogs + 1) * size_of_float  # 1 temporary array
 
     def _allocate_buffers(self):
         self.buffers["raw"] = pyopencl.array.empty(self.queue, self.shape, dtype=self.dtype, order="C")
         self.buffers["input"] = pyopencl.array.empty(self.queue, self.shape, dtype=numpy.float32, order="C")
         for octave, scale in enumerate(self.scales):
-
+            self.buffers[(octave, "tmp") ] = pyopencl.array.empty(self.queue, scale, dtype=numpy.float32, order="C")
             for i in range(par.Scales + 3):
                 self.buffers[(octave, i, "G") ] = pyopencl.array.empty(self.queue, scale, dtype=numpy.float32, order="C")
             for i in range(par.Scales + 2):
@@ -96,34 +99,30 @@ class SiftPlan(object):
                 except pyopencl.LogicError:
                     logger.error("Error while freeing buffer %s" % buffer_name)
 
-    def _compile_kernels(self, kernel_file=None):
+    def _compile_kernels(self):
         """
         Call the OpenCL compiler
-        @param kernel_file: path tothe
         """
-        return
-#        kernel_name = "ocl_azim_LUT.cl"
-#        if kernel_file is None:
-#            if os.path.isfile(kernel_name):
-#                kernel_file = os.path.abspath(kernel_name)
-#            else:
-#                kernel_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), kernel_name)
-#        else:
-#            kernel_file = str(kernel_file)
-#        kernel_src = open(kernel_file).read()
-#
-#        compile_options = "-D NBINS=%i  -D NIMAGE=%i -D NLUT=%i -D ON_CPU=%i" % \
-#                (self.bins, self.size, self.lut_size, int(self.device_type == "CPU"))
-#        logger.info("Compiling file %s with options %s" % (kernel_file, compile_options))
-#        try:
-#            self._program = pyopencl.Program(self._ctx, kernel_src).build(options=compile_options)
-#        except pyopencl.MemoryError as error:
-#            raise MemoryError(error)
+        kernels = ["convolution", "preprocess"]
+        for kernel in kernels:
+            kernel_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), kernel + ".cl")
+            kernel_src = open(kernel_file).read()
+            try:
+                program = pyopencl.Program(self.ctx, kernel_src).build()
+            except pyopencl.MemoryError as error:
+                raise MemoryError(error)
+            self.programs[kernel] = program
 
     def _free_kernels(self):
         """
         free all kernels
         """
-#        for kernel in self._cl_kernel_args:
-#            self._cl_kernel_args[kernel] = []
-        self._program = None
+        self.programs = {}
+
+    def calc_workgroups(self):
+        """
+        First try to guess the best workgroup size, then calculate all global worksize
+        """
+        device = self.ctx.devices[0]
+        max_work_group_size = device.max_work_group_size
+        max_work_item_sizes = device.max_work_item_sizes
