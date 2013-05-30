@@ -77,7 +77,7 @@ __kernel void
 u8_to_float( __global unsigned char  *array_int,
 		     __global float *array_float,
 		     const int IMAGE_W,
-		     const int IMAGE_H,
+		     const int IMAGE_H
 )
 {
   int i = get_global_id(0) * IMAGE_W + get_global_id(1);
@@ -96,14 +96,14 @@ u8_to_float( __global unsigned char  *array_int,
  */
 __kernel void
 u16_to_float(__global unsigned short  *array_int,
-		     __global float *array_float
+		     __global float *array_float,
 		     const int IMAGE_W,
 		     const int IMAGE_H
 )
 {
-  int i = get_global_id(0);
+  int i = get_global_id(0) * IMAGE_W + get_global_id(1);
   //Global memory guard for padding
-  if(i < NIMAGE)
+  if(i < IMAGE_W*IMAGE_H)
 	array_float[i]=(float)array_int[i];
 }
 
@@ -118,7 +118,7 @@ u16_to_float(__global unsigned short  *array_int,
  */
 __kernel void
 s32_to_float(	__global int  *array_int,
-				__global float  *array_float
+				__global float  *array_float,
 			     const int IMAGE_W,
 			     const int IMAGE_H
 )
@@ -139,7 +139,7 @@ s32_to_float(	__global int  *array_int,
  */
 __kernel void
 s64_to_float(	__global long *array_int,
-				__global float  *array_float
+				__global float  *array_float,
 			     const int IMAGE_W,
 			     const int IMAGE_H
 )
@@ -167,7 +167,7 @@ __kernel void
 normalizes(		__global 	float 	*image,
 			const			float	min_in,
 			const 			float 	max_in,
-			const			float	max_out
+			const			float	max_out,
 			const 			int IMAGE_W,
 			const 			int IMAGE_H
 )
@@ -183,7 +183,7 @@ normalizes(		__global 	float 	*image,
 };//end kernel
 
 /**
- * \brief Performs normalization of image between 0 and max_out (255) in place.
+ * \brief Subsampling of the image.
  *
  *
  * @param image	    Float pointer to global memory storing the image.
@@ -193,13 +193,13 @@ normalizes(		__global 	float 	*image,
  * @param IMAGE_W:	Width of the image
  * @param IMAGE_H: 	Height of the image
  *
-**/
+**
 __kernel void
 scale(const __global 	float 	*image_in,
 			__global 	float 	*image_out,
 			const			float	min_in,
 			const 			float 	max_in,
-			const			float	max_out
+			const			float	max_out,
 			const 			int IMAGE_W,
 			const 			int IMAGE_H
 )
@@ -213,3 +213,4 @@ scale(const __global 	float 	*image_in,
 		image[i] = max_out*(data-min_in)/(max_in-min_in);
 	};//end if NIMAGE
 };//end kernel
+**/

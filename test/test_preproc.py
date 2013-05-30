@@ -73,13 +73,19 @@ class test_preproc(unittest.TestCase):
     def setUp(self):
         self.input = scipy.misc.lena()
         self.gpudata = pyopencl.array.empty(queue, self.input.shape, dtype=numpy.float32, order="C")
-#        self.maxout = pyopencl.array.to_device(queue, numpy.array([255.0], dtype=numpy.float32))
         kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), "preprocess.cl")
         kernel_src = open(kernel_path).read()
         compile_options = "-D NIMAGE=%i" % self.input.size
         logger.info("Compiling file %s with options %s" % (kernel_path, compile_options))
         self.program = pyopencl.Program(ctx, kernel_src).build(options=compile_options)
-        self.wg = (1024,)
+        self.wg = (2, 512)
+        self.IMAGE_W = numpy.int32(self.input.shape[-1])
+        self.IMAGE_H = numpy.int32(self.input.shape[0])
+
+    def tearDown(self):
+        self.input = None
+#        self.gpudata.release()
+        self.program = None
 
     def test_uint8(self):
         """
@@ -88,21 +94,23 @@ class test_preproc(unittest.TestCase):
         lint = self.input.astype(numpy.uint8)
         t0 = time.time()
         au8 = pyopencl.array.to_device(queue, lint)
-        k1 = self.program.u8_to_float(queue, (self.input.size,), self.wg, au8.data, self.gpudata.data)
+        k1 = self.program.u8_to_float(queue, self.input.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
         min_data = pyopencl.array.min(self.gpudata, queue).get()
         max_data = pyopencl.array.max(self.gpudata, queue).get()
-        k2 = self.program.normalizes(queue, (self.input.size,), self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255))
-#        k2 = self.program.normalizes(queue, (self.input.size,), self.wg, self.gpudata.data, min_data, max_data, numpy.float32(255))
+        k2 = self.program.normalizes(queue, self.input.shape, self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255), self.IMAGE_W, self.IMAGE_H)
+#        k2 = self.program.normalizes(queue, self.input.shape, self.wg, self.gpudata.data, min_data, max_data, numpy.float32(255))
         res = self.gpudata.get()
         t1 = time.time()
         ref = normalize(lint)
         t2 = time.time()
         delta = abs(ref - res).max()
-        self.assert_(delta < 1e-4, "delta=%s")
+        self.assert_(delta < 1e-4, "delta=%s" % delta)
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
             logger.info("conversion uint8->float took %.3fms and normalization took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start),
-                                                                                             1e-6 * (k2.profile.end - k2.profile.start)))
+                                                                                          1e-6 * (k2.profile.end - k2.profile.start)))
+#        au8.release()
+
     def test_uint16(self):
         """
         tests the uint16 kernel
@@ -110,20 +118,23 @@ class test_preproc(unittest.TestCase):
         lint = self.input.astype(numpy.uint16)
         t0 = time.time()
         au8 = pyopencl.array.to_device(queue, lint)
-        k1 = self.program.u16_to_float(queue, (self.input.size,), self.wg, au8.data, self.gpudata.data)
+        k1 = self.program.u16_to_float(queue, self.input.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
         min_data = pyopencl.array.min(self.gpudata, queue).get()
         max_data = pyopencl.array.max(self.gpudata, queue).get()
-        k2 = self.program.normalizes(queue, (self.input.size,), self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255))
+        k2 = self.program.normalizes(queue, self.input.shape, self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255), self.IMAGE_W, self.IMAGE_H)
+        k2.wait()
         res = self.gpudata.get()
         t1 = time.time()
         ref = normalize(lint)
         t2 = time.time()
         delta = abs(ref - res).max()
-        self.assert_(delta < 1e-4, "delta=%s")
+        self.assert_(delta < 1e-4, "delta=%s" % delta)
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
             logger.info("conversion uint16->float took %.3fms and normalization took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start),
-                                                                                             1e-6 * (k2.profile.end - k2.profile.start)))
+                                                                                                1e-6 * (k2.profile.end - k2.profile.start)))
+#        au8.release()
+
     def test_int32(self):
         """
         tests the int32 kernel
@@ -131,27 +142,51 @@ class test_preproc(unittest.TestCase):
         lint = self.input.astype(numpy.int32)
         t0 = time.time()
         au8 = pyopencl.array.to_device(queue, lint)
-        k1 = self.program.s32_to_float(queue, (self.input.size,), self.wg, au8.data, self.gpudata.data)
+        k1 = self.program.s32_to_float(queue, self.input.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
         min_data = pyopencl.array.min(self.gpudata, queue).get()
         max_data = pyopencl.array.max(self.gpudata, queue).get()
-        k2 = self.program.normalizes(queue, (self.input.size,), self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255))
+        k2 = self.program.normalizes(queue, self.input.shape, self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255), self.IMAGE_W, self.IMAGE_H)
         res = self.gpudata.get()
         t1 = time.time()
         ref = normalize(lint)
         t2 = time.time()
         delta = abs(ref - res).max()
-        self.assert_(delta < 1e-4, "delta=%s")
+        self.assert_(delta < 1e-4, "delta=%s" % delta)
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
             logger.info("conversion int32->float took %.3fms and normalization took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start),
                                                                                              1e-6 * (k2.profile.end - k2.profile.start)))
+#        au8.release()
 
+    def test_int64(self):
+        """
+        tests the int64 kernel
+        """
+        lint = self.input.astype(numpy.int64)
+        t0 = time.time()
+        au8 = pyopencl.array.to_device(queue, lint)
+        k1 = self.program.s64_to_float(queue, self.input.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
+        min_data = pyopencl.array.min(self.gpudata, queue).get()
+        max_data = pyopencl.array.max(self.gpudata, queue).get()
+        k2 = self.program.normalizes(queue, self.input.shape, self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255), self.IMAGE_W, self.IMAGE_H)
+        res = self.gpudata.get()
+        t1 = time.time()
+        ref = normalize(lint)
+        t2 = time.time()
+        delta = abs(ref - res).max()
+        self.assert_(delta < 1e-4, "delta=%s" % delta)
+        if PROFILE:
+            logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
+            logger.info("conversion int32->float took %.3fms and normalization took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start),
+                                                                                             1e-6 * (k2.profile.end - k2.profile.start)))
+#        au8.release()
 
 def test_suite_preproc():
     testSuite = unittest.TestSuite()
     testSuite.addTest(test_preproc("test_uint8"))
     testSuite.addTest(test_preproc("test_uint16"))
     testSuite.addTest(test_preproc("test_int32"))
+    testSuite.addTest(test_preproc("test_int64"))
     return testSuite
 
 if __name__ == '__main__':
