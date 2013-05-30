@@ -43,7 +43,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 import time, os, logging
 import numpy
 import pyopencl, pyopencl.array
-import scipy
+import scipy, scipy.misc
 import sys
 import unittest
 from utilstest import UtilsTest, getLogger

@@ -8,7 +8,7 @@
  *   All rights reserved.
  *
  *   Principal authors: J. Kieffer (kieffer@esrf.fr)
- *   Last revision: 28/05/2013
+ *   Last revision: 30/05/2013
  *
  * 
  * Redistribution and use in source and binary forms, with or without
@@ -66,80 +66,150 @@ struct lut_point_t
 };
 
 /**
- * \brief cast values of an array of uint8 into a float output array.
+ * \brief Cast values of an array of uint8 into a float output array.
  *
- * @param array_u8: Pointer to global memory with the input data as unsigned8 array
+ * @param array_int: 	Pointer to global memory with the input data as unsigned8 array
  * @param array_float:  Pointer to global memory with the output data as float array
+ * @param IMAGE_W:		Width of the image
+ * @param IMAGE_H: 		Height of the image
  */
 __kernel void
-u8_to_float(__global unsigned char  *array_u8,
-		     __global float *array_float
+u8_to_float( __global unsigned char  *array_int,
+		     __global float *array_float,
+		     const int IMAGE_W,
+		     const int IMAGE_H,
 )
 {
-  int i = get_global_id(0);
+  int i = get_global_id(0) * IMAGE_W + get_global_id(1);
   //Global memory guard for padding
-  if(i < NIMAGE)
-	array_float[i]=(float)array_u8[i];
+  if(i < IMAGE_W*IMAGE_H)
+	array_float[i]=(float)array_int[i];
 }
 
 /**
  * \brief cast values of an array of uint16 into a float output array.
  *
- * @param array_u16: Pointer to global memory with the input data as unsigned16 array
+ * @param array_int:	Pointer to global memory with the input data as unsigned16 array
  * @param array_float:  Pointer to global memory with the output data as float array
+ * @param IMAGE_W:		Width of the image
+ * @param IMAGE_H: 		Height of the image
  */
 __kernel void
-u16_to_float(__global unsigned short  *array_u16,
+u16_to_float(__global unsigned short  *array_int,
 		     __global float *array_float
+		     const int IMAGE_W,
+		     const int IMAGE_H
 )
 {
   int i = get_global_id(0);
   //Global memory guard for padding
   if(i < NIMAGE)
-	array_float[i]=(float)array_u16[i];
+	array_float[i]=(float)array_int[i];
 }
 
 
 /**
  * \brief convert values of an array of int32 into a float output array.
  *
- * @param array_int:  Pointer to global memory with the data in int
+ * @param array_int:	Pointer to global memory with the data in int
  * @param array_float:  Pointer to global memory with the data in float
+ * @param IMAGE_W:		Width of the image
+ * @param IMAGE_H: 		Height of the image
  */
 __kernel void
 s32_to_float(	__global int  *array_int,
 				__global float  *array_float
-		)
+			     const int IMAGE_W,
+			     const int IMAGE_H
+)
 {
-  int i = get_global_id(0);
+  int i = get_global_id(0) * IMAGE_W + get_global_id(1);
   //Global memory guard for padding
-  if(i < NIMAGE)
+  if(i < IMAGE_W*IMAGE_H)
+	array_float[i] = (float)(array_int[i]);
+}
+
+/**
+ * \brief convert values of an array of int64 into a float output array.
+ *
+ * @param array_int:	Pointer to global memory with the data in int
+ * @param array_float:  Pointer to global memory with the data in float
+ * @param IMAGE_W:		Width of the image
+ * @param IMAGE_H: 		Height of the image
+ */
+__kernel void
+s64_to_float(	__global long *array_int,
+				__global float  *array_float
+			     const int IMAGE_W,
+			     const int IMAGE_H
+)
+{
+  int i = get_global_id(0) * IMAGE_W + get_global_id(1);
+  //Global memory guard for padding
+  if(i < IMAGE_W*IMAGE_H)
 	array_float[i] = (float)(array_int[i]);
 }
 
 
-
-
 /**
- * \brief Performs normalization of image between 0 and 255.
+ * \brief Performs normalization of image between 0 and max_out (255) in place.
  *
  *
- * @param image	          Float pointer to global memory storing the image.
+ * @param image	    Float pointer to global memory storing the image.
+ * @param min_in: 	Minimum value in the input array
+ * @param max_in: 	Maximum value in the input array
+ * @param max_out: 	Maximum value in the output array (255 adviced)
+ * @param IMAGE_W:	Width of the image
+ * @param IMAGE_H: 	Height of the image
  *
 **/
 __kernel void
-normalizes(  		__global float 	*image,
-			const			 float	min_in,
-			const 			 float 	max_in,
-			const			 float	max_out
-			)
+normalizes(		__global 	float 	*image,
+			const			float	min_in,
+			const 			float 	max_in,
+			const			float	max_out
+			const 			int IMAGE_W,
+			const 			int IMAGE_H
+)
 {
 	float data;
-	int i= get_global_id(0);
-	if(i < NIMAGE)
+  int i = get_global_id(0) * IMAGE_W + get_global_id(1);
+  //Global memory guard for padding
+  if(i < IMAGE_W*IMAGE_H)
 	{
 		data = image[i];
 		image[i] = max_out*(data-min_in)/(max_in-min_in);
 	};//end if NIMAGE
 };//end kernel
 
+/**
+ * \brief Performs normalization of image between 0 and max_out (255) in place.
+ *
+ *
+ * @param image	    Float pointer to global memory storing the image.
+ * @param min_in: 	Minimum value in the input array
+ * @param max_in: 	Maximum value in the input array
+ * @param max_out: 	Maximum value in the output array (255 adviced)
+ * @param IMAGE_W:	Width of the image
+ * @param IMAGE_H: 	Height of the image
+ *
+**/
+__kernel void
+scale(const __global 	float 	*image_in,
+			__global 	float 	*image_out,
+			const			float	min_in,
+			const 			float 	max_in,
+			const			float	max_out
+			const 			int IMAGE_W,
+			const 			int IMAGE_H
+)
+{
+	float data;
+  int i = get_global_id(0) * IMAGE_W + get_global_id(1);
+  //Global memory guard for padding
+  if(i < IMAGE_W*IMAGE_H)
+	{
+		data = image[i];
+		image[i] = max_out*(data-min_in)/(max_in-min_in);
+	};//end if NIMAGE
+};//end kernel
