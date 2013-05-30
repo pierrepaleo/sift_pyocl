@@ -45,6 +45,7 @@ from utilstest import UtilsTest, getLogger
 logger = getLogger(__file__)
 
 from test_preproc import test_suite_preproc
+from test_convol import test_suite_convol
 
 def test_suite_all():
     testSuite = unittest.TestSuite()
