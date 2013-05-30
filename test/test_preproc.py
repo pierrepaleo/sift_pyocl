@@ -75,9 +75,10 @@ class test_preproc(unittest.TestCase):
         self.gpudata = pyopencl.array.empty(queue, self.input.shape, dtype=numpy.float32, order="C")
         kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), "preprocess.cl")
         kernel_src = open(kernel_path).read()
-        compile_options = "-D NIMAGE=%i" % self.input.size
-        logger.info("Compiling file %s with options %s" % (kernel_path, compile_options))
-        self.program = pyopencl.Program(ctx, kernel_src).build(options=compile_options)
+#        compile_options = "-D NIMAGE=%i" % self.input.size
+#        logger.info("Compiling file %s with options %s" % (kernel_path, compile_options))
+#        self.program = pyopencl.Program(ctx, kernel_src).build(options=compile_options)
+        self.program = pyopencl.Program(ctx, kernel_src).build()
         self.wg = (2, 512)
         self.IMAGE_W = numpy.int32(self.input.shape[-1])
         self.IMAGE_H = numpy.int32(self.input.shape[0])
