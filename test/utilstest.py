@@ -48,7 +48,6 @@ import bz2
 import gzip
 import numpy
 import shutil
-
 logger = logging.getLogger("utilstest")
 
 def copy(infile, outfile):
@@ -235,4 +234,13 @@ def getLogger(filename=__file__):
     if force_build:
         UtilsTest.forceBuild()
     return logger
+
+################################################################################
+# This is very specific to PyOpenCL
+################################################################################
+
+import sift
+from sift.opencl import ocl
+ctx = ocl.create_context("GPU")
+logger.info("working on %s" % ctx.devices[0].name)
 

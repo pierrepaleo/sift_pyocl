@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-#-*- coding: utf8 -*-
+# -*- coding: utf8 -*-
 #
 #    Project: Sift implementation in Python + OpenCL
 #             https://github.com/kif/sift_pyocl
@@ -46,11 +46,10 @@ import pyopencl, pyopencl.array
 import scipy, scipy.misc, scipy.ndimage
 import sys
 import unittest
-from utilstest import UtilsTest, getLogger
+from utilstest import UtilsTest, getLogger, ctx
 import sift
-from sift.opencl import ocl
+from sift.utils import calc_size
 logger = getLogger(__file__)
-ctx = ocl.create_context("GPU")
 if logger.getEffectiveLevel() <= logging.INFO:
     PROFILE = True
     queue = pyopencl.CommandQueue(ctx, properties=pyopencl.command_queue_properties.PROFILING_ENABLE)
@@ -67,13 +66,13 @@ def my_blur(img, kernel):
     which differs from Scipy's if ksize is even
     """
     tmp1 = scipy.ndimage.filters.convolve1d(img, kernel, axis= -1, mode="reflect")
-    return scipy.ndimage.filters.convolve1d(img, kernel, axis=0, mode="reflect")
+    return scipy.ndimage.filters.convolve1d(tmp1, kernel, axis=0, mode="reflect")
 
 
 class test_convol(unittest.TestCase):
     def setUp(self):
         self.input = scipy.misc.lena().astype(numpy.float32)
-        self.gpu_in = pyopencl.array.to_device(queue, self.input) 
+        self.gpu_in = pyopencl.array.to_device(queue, self.input)
         self.gpu_tmp = pyopencl.array.empty(queue, self.input.shape, dtype=numpy.float32, order="C")
         self.gpu_out = pyopencl.array.empty(queue, self.input.shape, dtype=numpy.float32, order="C")
         kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), "convolution.cl")
@@ -82,45 +81,124 @@ class test_convol(unittest.TestCase):
 #        logger.info("Compiling file %s with options %s" % (kernel_path, compile_options))
 #        self.program = pyopencl.Program(ctx, kernel_src).build(options=compile_options)
         self.program = pyopencl.Program(ctx, kernel_src).build()
-        self.wg = (2, 512)
         self.IMAGE_W = numpy.int32(self.input.shape[-1])
         self.IMAGE_H = numpy.int32(self.input.shape[0])
+        self.wg = (2, 256)
+        self.shape = calc_size(self.input.shape, self.wg)
 
     def tearDown(self):
         self.input = None
 #        self.gpudata.release()
         self.program = None
 
-    def test_convol(self):
+    def test_convol_hor(self):
         """
         tests the convolution kernel
         """
-        for sigma in [2, 15/8.]: 
-            ksize = int(8* sigma+1)
+        for sigma in [2, 15 / 8.]:
+            ksize = int(8 * sigma + 1)
             x = numpy.arange(ksize) - (ksize - 1.0) / 2.0
-            filter = numpy.exp(-(x / sigma) ** 2 / 2.0).astype(numpy.float32)
-            filter /= filter.sum(dtype=numpy.float32)
-            gpu_filter = pyopencl.array.to_device(queue, filter)
+            gaussian = numpy.exp(-(x / sigma) ** 2 / 2.0).astype(numpy.float32)
+            gaussian /= gaussian.sum(dtype=numpy.float32)
+            gpu_filter = pyopencl.array.to_device(queue, gaussian)
             t0 = time.time()
-            k1 = self.program.horizontal_convolution(queue, self.input.shape, self.wg,
-                                self.gpu_in.data, self.gpu_tmp.data, gpu_filter.data, self.IMAGE_W, self.IMAGE_H, numpy.int32(ksize))
-            k2 = self.program.vertical_convolution(queue, self.input.shape, self.wg,
-                                self.gpu_tmp.data, self.gpu_out.data, gpu_filter.data, self.IMAGE_W, self.IMAGE_H, numpy.int32(ksize))
+            k1 = self.program.horizontal_convolution(queue, self.shape, self.wg,
+                                self.gpu_in.data, self.gpu_out.data, gpu_filter.data, self.IMAGE_W, self.IMAGE_H, numpy.int32(ksize))
             res = self.gpu_out.get()
-            k2.wait()
             t1 = time.time()
-#            ref = my_blur(self.input, filter)
-            ref = scipy.ndimage.filters.gaussian_filter(self.input, sigma, mode="reflect")
+            ref = scipy.ndimage.filters.convolve1d(self.input, gaussian, axis= -1, mode="reflect")
             t2 = time.time()
             delta = abs(ref - res).max()
-            if ksize % 2 == 0: #we have a problem with even kernels !!!
-                self.assert_(delta < 30, "sigma= %s delta=%s" % (sigma, delta))
+            if ksize % 2 == 0:  #we have a problem with even kernels !!!
+                self.assert_(delta < 50, "sigma= %s delta=%s" % (sigma, delta))
             else:
                 self.assert_(delta < 1e-4, "sigma= %s delta=%s" % (sigma, delta))
             logger.info("sigma= %s delta=%s" % (sigma, delta))
             if PROFILE:
                 logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
-                logger.info("conversion uint8->float took %.3fms and normalization took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start),
+                logger.info("Horizontal convolution took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+                fig = pylab.figure()
+                fig.suptitle('convolution horizontal sigma=%s delta=%s' % (sigma, delta))
+                sp1 = fig.add_subplot(221)
+                sp1.imshow(self.input, interpolation="nearest")
+                sp2 = fig.add_subplot(222)
+                sp2.imshow(ref, interpolation="nearest")
+                sp3 = fig.add_subplot(223)
+                sp3.imshow(ref - res, interpolation="nearest")
+                sp4 = fig.add_subplot(224)
+                sp4.imshow(res, interpolation="nearest")
+                fig.show()
+                raw_input("enter")
+    def test_convol_vert(self):
+        """
+        tests the convolution kernel
+        """
+        for sigma in [2, 15 / 8.]:
+            ksize = int(8 * sigma + 1)
+            x = numpy.arange(ksize) - (ksize - 1.0) / 2.0
+            gaussian = numpy.exp(-(x / sigma) ** 2 / 2.0).astype(numpy.float32)
+            gaussian /= gaussian.sum(dtype=numpy.float32)
+            gpu_filter = pyopencl.array.to_device(queue, gaussian)
+            t0 = time.time()
+            k1 = self.program.vertical_convolution(queue, self.shape, self.wg,
+                                self.gpu_in.data, self.gpu_out.data, gpu_filter.data, self.IMAGE_W, self.IMAGE_H, numpy.int32(ksize))
+            res = self.gpu_out.get()
+            t1 = time.time()
+            ref = scipy.ndimage.filters.convolve1d(self.input, gaussian, axis=0, mode="reflect")
+            t2 = time.time()
+            delta = abs(ref - res).max()
+            if ksize % 2 == 0:  #we have a problem with even kernels !!!
+                self.assert_(delta < 50, "sigma= %s delta=%s" % (sigma, delta))
+            else:
+                self.assert_(delta < 1e-4, "sigma= %s delta=%s" % (sigma, delta))
+            logger.info("sigma= %s delta=%s" % (sigma, delta))
+            if PROFILE:
+                logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
+                logger.info("Vertical convolution took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+                fig = pylab.figure()
+                fig.suptitle('convolution horizontal sigma=%s delta=%s' % (sigma, delta))
+                sp1 = fig.add_subplot(221)
+                sp1.imshow(self.input, interpolation="nearest")
+                sp2 = fig.add_subplot(222)
+                sp2.imshow(ref, interpolation="nearest")
+                sp3 = fig.add_subplot(223)
+                sp3.imshow(ref - res, interpolation="nearest")
+                sp4 = fig.add_subplot(224)
+                sp4.imshow(res, interpolation="nearest")
+                fig.show()
+                raw_input("enter")
+
+
+    def test_convol(self):
+        """
+        tests the convolution kernel
+        """
+        for sigma in [2, 15 / 8.]:
+            ksize = int(8 * sigma + 1)
+            x = numpy.arange(ksize) - (ksize - 1.0) / 2.0
+            gaussian = numpy.exp(-(x / sigma) ** 2 / 2.0).astype(numpy.float32)
+            gaussian /= gaussian.sum(dtype=numpy.float32)
+            gpu_filter = pyopencl.array.to_device(queue, gaussian)
+            t0 = time.time()
+            k1 = self.program.horizontal_convolution(queue, self.shape, self.wg,
+                                self.gpu_in.data, self.gpu_tmp.data, gpu_filter.data, self.IMAGE_W, self.IMAGE_H, numpy.int32(ksize))
+            k2 = self.program.vertical_convolution(queue, self.shape, self.wg,
+                                self.gpu_tmp.data, self.gpu_out.data, gpu_filter.data, self.IMAGE_W, self.IMAGE_H, numpy.int32(ksize))
+            res = self.gpu_out.get()
+            k2.wait()
+            t1 = time.time()
+            ref = my_blur(self.input, gaussian)
+#            ref = scipy.ndimage.filters.gaussian_filter(self.input, sigma, mode="reflect")
+            t2 = time.time()
+            delta = abs(ref - res).max()
+            if ksize % 2 == 0:  #we have a problem with even kernels !!!
+                self.assert_(delta < 50, "sigma= %s delta=%s" % (sigma, delta))
+            else:
+                self.assert_(delta < 1e-4, "sigma= %s delta=%s" % (sigma, delta))
+            logger.info("sigma= %s delta=%s" % (sigma, delta))
+            if PROFILE:
+                logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
+                logger.info("Horizontal convolution took %.3fms and vertical convolution took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start),
                                                                                           1e-6 * (k2.profile.end - k2.profile.start)))
                 fig = pylab.figure()
                 fig.suptitle('sigma=%s' % sigma)
@@ -133,11 +211,13 @@ class test_convol(unittest.TestCase):
                 sp4 = fig.add_subplot(224)
                 sp4.imshow(res, interpolation="nearest")
                 fig.show()
-                raw_input()
+                raw_input("enter")
 
 def test_suite_convol():
     testSuite = unittest.TestSuite()
     testSuite.addTest(test_convol("test_convol"))
+    testSuite.addTest(test_convol("test_convol_hor"))
+    testSuite.addTest(test_convol("test_convol_vert"))
     return testSuite
 
 if __name__ == '__main__':

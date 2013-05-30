@@ -50,6 +50,7 @@ from test_convol import test_suite_convol
 def test_suite_all():
     testSuite = unittest.TestSuite()
     testSuite.addTest(test_suite_preproc())
+    testSuite.addTest(test_suite_convol())
     return testSuite
 
 if __name__ == '__main__':

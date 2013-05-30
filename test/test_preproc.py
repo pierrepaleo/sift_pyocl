@@ -46,11 +46,12 @@ import pyopencl, pyopencl.array
 import scipy, scipy.misc
 import sys
 import unittest
-from utilstest import UtilsTest, getLogger
+from utilstest import UtilsTest, getLogger, ctx
 import sift
-from sift.opencl import ocl
+from sift.utils import calc_size
+
 logger = getLogger(__file__)
-ctx = ocl.create_context("GPU")
+
 if logger.getEffectiveLevel() <= logging.INFO:
     PROFILE = True
     queue = pyopencl.CommandQueue(ctx, properties=pyopencl.command_queue_properties.PROFILING_ENABLE)
@@ -58,7 +59,6 @@ else:
     PROFILE = False
     queue = pyopencl.CommandQueue(ctx)
 
-print "working on %s" % ctx.devices[0].name
 
 def normalize(img, max_out=255):
     """
@@ -79,9 +79,11 @@ class test_preproc(unittest.TestCase):
 #        logger.info("Compiling file %s with options %s" % (kernel_path, compile_options))
 #        self.program = pyopencl.Program(ctx, kernel_src).build(options=compile_options)
         self.program = pyopencl.Program(ctx, kernel_src).build()
-        self.wg = (2, 512)
         self.IMAGE_W = numpy.int32(self.input.shape[-1])
         self.IMAGE_H = numpy.int32(self.input.shape[0])
+        self.wg = (2, 256)
+        self.shape = calc_size(self.input.shape, self.wg)
+
 
     def tearDown(self):
         self.input = None
@@ -95,11 +97,11 @@ class test_preproc(unittest.TestCase):
         lint = self.input.astype(numpy.uint8)
         t0 = time.time()
         au8 = pyopencl.array.to_device(queue, lint)
-        k1 = self.program.u8_to_float(queue, self.input.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
+        k1 = self.program.u8_to_float(queue, self.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
         min_data = pyopencl.array.min(self.gpudata, queue).get()
         max_data = pyopencl.array.max(self.gpudata, queue).get()
-        k2 = self.program.normalizes(queue, self.input.shape, self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255), self.IMAGE_W, self.IMAGE_H)
-#        k2 = self.program.normalizes(queue, self.input.shape, self.wg, self.gpudata.data, min_data, max_data, numpy.float32(255))
+        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255), self.IMAGE_W, self.IMAGE_H)
+#        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, min_data, max_data, numpy.float32(255))
         res = self.gpudata.get()
         t1 = time.time()
         ref = normalize(lint)
@@ -119,10 +121,10 @@ class test_preproc(unittest.TestCase):
         lint = self.input.astype(numpy.uint16)
         t0 = time.time()
         au8 = pyopencl.array.to_device(queue, lint)
-        k1 = self.program.u16_to_float(queue, self.input.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
+        k1 = self.program.u16_to_float(queue, self.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
         min_data = pyopencl.array.min(self.gpudata, queue).get()
         max_data = pyopencl.array.max(self.gpudata, queue).get()
-        k2 = self.program.normalizes(queue, self.input.shape, self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255), self.IMAGE_W, self.IMAGE_H)
+        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255), self.IMAGE_W, self.IMAGE_H)
         k2.wait()
         res = self.gpudata.get()
         t1 = time.time()
@@ -143,10 +145,10 @@ class test_preproc(unittest.TestCase):
         lint = self.input.astype(numpy.int32)
         t0 = time.time()
         au8 = pyopencl.array.to_device(queue, lint)
-        k1 = self.program.s32_to_float(queue, self.input.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
+        k1 = self.program.s32_to_float(queue, self.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
         min_data = pyopencl.array.min(self.gpudata, queue).get()
         max_data = pyopencl.array.max(self.gpudata, queue).get()
-        k2 = self.program.normalizes(queue, self.input.shape, self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255), self.IMAGE_W, self.IMAGE_H)
+        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255), self.IMAGE_W, self.IMAGE_H)
         res = self.gpudata.get()
         t1 = time.time()
         ref = normalize(lint)
@@ -166,10 +168,10 @@ class test_preproc(unittest.TestCase):
         lint = self.input.astype(numpy.int64)
         t0 = time.time()
         au8 = pyopencl.array.to_device(queue, lint)
-        k1 = self.program.s64_to_float(queue, self.input.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
+        k1 = self.program.s64_to_float(queue, self.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
         min_data = pyopencl.array.min(self.gpudata, queue).get()
         max_data = pyopencl.array.max(self.gpudata, queue).get()
-        k2 = self.program.normalizes(queue, self.input.shape, self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255), self.IMAGE_W, self.IMAGE_H)
+        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255), self.IMAGE_W, self.IMAGE_H)
         res = self.gpudata.get()
         t1 = time.time()
         ref = normalize(lint)
@@ -178,7 +180,7 @@ class test_preproc(unittest.TestCase):
         self.assert_(delta < 1e-4, "delta=%s" % delta)
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
-            logger.info("conversion int32->float took %.3fms and normalization took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start),
+            logger.info("conversion int64->float took %.3fms and normalization took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start),
                                                                                              1e-6 * (k2.profile.end - k2.profile.start)))
 #        au8.release()
 
