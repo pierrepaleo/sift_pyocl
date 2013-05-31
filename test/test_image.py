@@ -68,8 +68,43 @@ def my_gradient(mat):
 	g = numpy.gradient(mat)
 	return numpy.sqrt(g[0]**2+g[1]**2)
 	
+	
+def my_local_maxmin(mat,val,border_dist,thresh):
+	"""
+	a python implementation of 3x3 maximum (positive values) or minimum (negative or null values) detection
+	an extremum candidate "val" has to be greater than 0.8*thresh
+	"""
+	width = mat.shape[1]
+	height = mat.shape[0]
+	output = numpy.zeros_like(mat)
+	
+	for j in range(border_dist,width - border_dist +1):
+		for i in range(border_dist,height - border_dist +1):
+			output[i,j] = is_maxmin(mat,val,i,j)
+	
+	return output
+	
+def is_maxmin(mat,val,i0,j0):
+	"""
+	return 1 iff mat[i0,j0] is a local (3x3) maximum
+	return -1 iff mat[i0,j0] is a local (3x3) minimum
+	return 0 by default (neither maximum nor minimum)
+	"""	
+		for j in range(j0-1,j0+1+1):
+			for i in range(i0-1,i0+1+1):
+				if (val > 0.0):
+					if (mat[i,j] > val): return 0;
+				else:
+					if (dog[i,j] < val) return 0;
+					
+		if (val > 0.0):	return 1
+		else: return -1
 
-class test_gradient(unittest.TestCase):
+
+	
+	
+
+class test_image(unittest.TestCase):
     def setUp(self):
     	
     	self.width = numpy.int32(15)
@@ -111,7 +146,24 @@ class test_gradient(unittest.TestCase):
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
             logger.info("Gradient computation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
 
+ def test_local_maxmin(self):
+        """
+        tests the local maximum/minimum detection kernel
+        """
 
+        t0 = time.time()
+        k1 = self.program.compute_gradient_orientation(queue, self.shape, self.wg, self.gpu_mat.data, self.gpu_grad.data, self.gpu_ori.data, self.width, self.height)
+        res = self.gpu_grad.get() #we are only testing the norm of the gradient here
+        t1 = time.time()
+        ref = my_gradient(self.mat)
+        t2 = time.time()
+        delta = abs(ref - res).max()
+
+        self.assert_(delta < 1e-4, "delta=%s" % (delta))
+        logger.info("delta=%s" % delta)
+        if PROFILE:
+            logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
+            logger.info("Gradient computation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
   
 
 def test_suite_image():
