@@ -122,6 +122,8 @@ class SiftPlan(object):
     def calc_workgroups(self):
         """
         First try to guess the best workgroup size, then calculate all global worksize
+        
+        Nota the workgroup size is limited to 
         """
         device = self.ctx.devices[0]
         max_work_group_size = device.max_work_group_size

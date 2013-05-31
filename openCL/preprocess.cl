@@ -203,10 +203,11 @@ shrink(const __global 	float 	*image_in,
 	//Global memory guard for padding
 	if(i < IMAGE_W*IMAGE_H)
 	{
-		j = scale_w*(gid0 * scale_h*IMAGE_W + gid1);
+		j = gid0*IMAGE_W*scale_w*scale_h + gid1*scale_w;
 		image_out[i] = image_in[j];
 	};//end if in IMAGE
 };//end kernel
+
 
 /**
  * \brief bin: resampling of the image_in into a smaller image_out with higher dynamics.
@@ -221,12 +222,12 @@ shrink(const __global 	float 	*image_in,
  *
 **/
 __kernel void
-bin(const __global 	float 	*image_in,
-			__global 	float 	*image_out,
-			const 			int scale_w,
-			const 			int scale_h,
-			const 			int IMAGE_W,
-			const 			int IMAGE_H
+bin(		const	__global 	float 	*image_in,
+					__global 	float 	*image_out,
+			const 				int 	scale_w,
+			const 				int 	scale_h,
+			const 				int 	IMAGE_W,
+			const 				int 	IMAGE_H
 )
 {
 	int gid0=get_global_id(0), gid1=get_global_id(1);
@@ -242,6 +243,6 @@ bin(const __global 	float 	*image_in,
 				data += image_in[j];
 			};
 		};
-		image_out[i] = data;
+		image_out[i] = data/scale_w/scale_h;
 	};//end if in IMAGE
 };//end kernel
