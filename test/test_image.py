@@ -69,7 +69,7 @@ def my_gradient(mat):
     return numpy.sqrt(g[0]**2+g[1]**2), numpy.arctan2(g[0],g[1]) #image.cl/compute_gradient_orientation() puts a "-" here
     
     
-def my_local_maxmin(dog_prev,dog,dog_next,thresh,border_dist):
+def my_local_maxmin(dog_prev,dog,dog_next,thresh,border_dist,octsize,EdgeThresh0,EdgeThresh):
     """
     a python implementation of 3x3 maximum (positive values) or minimum (negative or null values) detection
     an extremum candidate "val", read in the  has to be greater than 0.8*thresh
@@ -82,20 +82,21 @@ def my_local_maxmin(dog_prev,dog,dog_next,thresh,border_dist):
     for j in range(border_dist,width - border_dist):
         for i in range(border_dist,height - border_dist):
             val = dog[i,j]
-            if (numpy.abs(val) > 0.8*thresh):
-                output[i,j] = is_maxmin(dog_prev,dog,dog_next,val,i,j)
+            if (numpy.abs(val) > 0.8*thresh): #keypoints refinement: eliminating low-contrast points
+                output[i,j] = is_maxmin(dog_prev,dog,dog_next,val,i,j,octsize,EdgeThresh0,EdgeThresh)
     return output
     
     
-def is_maxmin(dog_prev,dog,dog_next,val,i0,j0):
+def is_maxmin(dog_prev,dog,dog_next,val,i0,j0,octsize,EdgeThresh0,EdgeThresh):
     """
     return 1 iff mat[i0,j0] is a local (3x3) maximum
     return -1 iff mat[i0,j0] is a local (3x3) minimum
-    return 0 by default (neither maximum nor minimum)
+    return 0 by default (neither maximum nor minimum, or value on an edge)
      * Assumes that we are not on the edges, i.e border_dist >= 2 above
     """
     ismax = 0
     ismin = 0
+    res = 0
     if (val > 0.0): ismax = 1
     else: ismin = 1
     for j in range(j0-1,j0+1+1):
@@ -104,10 +105,29 @@ def is_maxmin(dog_prev,dog,dog_next,val,i0,j0):
                 if (dog_prev[i,j] > val or dog[i,j] > val or dog_next[i,j] > val): ismax = 0
             if (ismin == 1):
                 if (dog_prev[i,j] < val or dog[i,j] < val or dog_next[i,j] < val): ismin = 0;
-            
-    if (ismax == 1): return 1 
-    if (ismin == 1): return -1
-    return 0
+    
+    if (ismax == 1): res =  1 
+    if (ismin == 1): res = -1
+    
+    #keypoint refinement: eliminating points at edges
+    H00 = dog[i0-1,j0] - 2.0 * dog[i0,j0] + dog[i0+1,j0]
+    H11 = dog[i0,j0-1]- 2.0 * dog[i0,j0] + dog[i0,j0+1]
+    H01 = ( (dog[i0+1,j0+1] - dog[i0+1,j0-1])
+		- (dog[i0-1,j0+1] - dog[i0-1,j0-1]) ) / 4.0;
+
+    det = H00 * H11 - H01 * H01
+    trace = H00 + H11
+
+    if (octsize <= 1):
+        thr = EdgeThresh0
+    else:
+        thr = EdgeThresh
+		
+    if (det < thr * trace * trace):
+        res = 0     
+    return res
+    
+
     
     
 
@@ -164,8 +184,11 @@ class test_image(unittest.TestCase):
         tests the local maximum/minimum detection kernel
         """
         self.border_dist = numpy.int32(5) #SIFT
-        self.peakthresh = numpy.float32(255.0 * 0.04 / 3.0) #SIFT
-
+        self.peakthresh = numpy.float32(0.01)#(255.0 * 0.04 / 3.0) #SIFT
+        self.EdgeThresh = numpy.float32(0.06) #SIFT
+        self.EdgeThresh0 = numpy.float32(0.08) #SIFT
+        self.octsize = numpy.int32(4) #initially 1, then twiced at each new octave
+		
         l = scipy.misc.lena().astype(numpy.float32)
         self.width = numpy.int32(l.shape[1])
         self.height = numpy.int32(l.shape[0])
@@ -188,10 +211,14 @@ class test_image(unittest.TestCase):
         self.shape = calc_size(self.dog.shape, self.wg)
         
         t0 = time.time()
-        k1 = self.program.local_maxmin(queue, self.shape, self.wg, self.gpu_dog_prev.data, self.gpu_dog.data, self.gpu_dog_next.data, self.output.data, self.border_dist, self.peakthresh, self.width, self.height)
+        k1 = self.program.local_maxmin(queue, self.shape, self.wg, 
+        	self.gpu_dog_prev.data, self.gpu_dog.data, self.gpu_dog_next.data, self.output.data, 
+       		self.border_dist, self.peakthresh, self.octsize, self.EdgeThresh0, self.EdgeThresh, self.width, self.height)
+        
         res = self.output.get()
         t1 = time.time()
-        ref = my_local_maxmin(self.dog_prev,self.dog,self.dog_next,self.peakthresh,self.border_dist)
+        ref = my_local_maxmin(self.dog_prev,self.dog,self.dog_next,
+        	self.peakthresh,self.border_dist, self.octsize, self.EdgeThresh0, self.EdgeThresh)
         t2 = time.time()
         delta = abs(ref - res).max()
         
@@ -204,8 +231,8 @@ class test_image(unittest.TestCase):
         cbar = fig.colorbar(sh2)
         fig.show()
         raw_input("enter")
-        print("Number of keypoints: %s" %(abs(res).sum()))
         '''
+        #print("Number of keypoints: %s" %(abs(res).sum()))
 
 
         self.assert_(delta == 0, "delta=%s" % (delta)) #as the matrices contain integers, "delta == 0" can be used

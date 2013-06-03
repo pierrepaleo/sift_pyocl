@@ -66,11 +66,13 @@ __kernel void compute_gradient_orientation(
  * @param dog: Pointer to global memory with the "current" difference of gaussians image
  * @param dog_next: Pointer to global memory with the "next" difference of gaussians image
  * @param output: Pointer to global memory output *filled with zeros*
- * @param dog_width: integer number of columns of the DOG
- * @param dog_height: integer number of lines of the DOG
+ * @param octsize: initially 1 then twiced at each new octave
+ * @param EdgeThresh0: initial upper limit of the curvatures ratio, to test if the point is on an edge
+ * @param EdgeThresh: upper limit of the curvatures ratio, to test if the point is on an edge
  * @param border_dist: integer, distance between inner image and borders (SIFT takes 5)
  * @param peak_thresh: float, threshold (SIFT takes 255.0 * 0.04 / 3.0)
- 
+ * @param dog_width: integer number of columns of the DOG
+ * @param dog_height: integer number of lines of the DOG
  
  notice we still test "dog[pos] > val" to have a simple code. The inequalities have to be strict.
  */
@@ -92,6 +94,9 @@ __kernel void local_maxmin(
 	__global int* output,
 	int border_dist,
 	float peak_thresh,
+	int octsize,
+	float EdgeThresh0,
+	float EdgeThresh,
 	int dog_width,
 	int dog_height)
 {
@@ -133,15 +138,30 @@ __kernel void local_maxmin(
 				/*
 				 At this point, we know if "val" is a local extremum or not
 				 We have to test if this value lies on an edge (keypoints refinement)
+				  This is done by testing the ratio of the principal curvatures, given by the product and the sum of the
+				   Hessian eigenvalues
 				*/
+					
+				pos = gid0*dog_width+gid1;
 				
+				float H00 = dog[(gid0-1)*dog_width+gid1] - 2.0 * dog[pos] + dog[(gid0+1)*dog_width+gid1],
+				H11 = dog[pos-1] - 2.0 * dog[pos] + dog[pos+1],
+				H01 = ( (dog[(gid0+1)*dog_width+gid1+1] 
+						- dog[(gid0+1)*dog_width+gid1-1]) 
+						- (dog[(gid0-1)*dog_width+gid1+1] - dog[(gid0-1)*dog_width+gid1-1])) / 4.0;
 				
+				float	det = H00 * H11 - H01 * H01, trace = H00 + H11;
+
+				/*
+				   If (trace^2)/det < thresh, the Keypoint is OK.
+				   Note that the following "EdgeThresh" seem to be the inverse of the ratio upper limit
+				*/
+
+				float edthresh = (octsize <= 1 ? EdgeThresh0 : EdgeThresh);
 				
-				
-				
-				
-				
-				
+				if (det < edthresh * trace * trace)
+					res = 0;
+								
 				
 			} //end greater than threshold		
 		} //end "in the inner image"
