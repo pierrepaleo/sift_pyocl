@@ -6,7 +6,7 @@
 #
 
 """
-Test suite for algebra kernels
+Test suite for image kernels
 """
 
 from __future__ import division
@@ -43,7 +43,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 import time, os, logging
 import numpy
 import pyopencl, pyopencl.array
-import scipy, scipy.misc, scipy.ndimage #, pylab
+import scipy, scipy.misc, scipy.ndimage, pylab
 import sys
 import unittest
 from utilstest import UtilsTest, getLogger, ctx
@@ -117,7 +117,7 @@ class test_image(unittest.TestCase):
         kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), "image.cl")
         kernel_src = open(kernel_path).read()
         self.program = pyopencl.Program(ctx, kernel_src).build()
-        self.wg = (2, 256)
+        self.wg = (1, 512)
         
 
     def tearDown(self):
@@ -170,7 +170,6 @@ class test_image(unittest.TestCase):
         self.width = numpy.int32(l.shape[1])
         self.height = numpy.int32(l.shape[0])
 
-        #the DoG should be computed with *our* kernels
         g = (numpy.zeros(4*self.height*self.width).astype(numpy.float32)).reshape(4,self.height,self.width) #vector of 4 images
         sigma=1.6 #par.InitSigma
         g[0,:,:]= numpy.copy(scipy.ndimage.filters.gaussian_filter(l, sigma, mode="reflect"))
@@ -187,9 +186,9 @@ class test_image(unittest.TestCase):
         self.gpu_dog_next = pyopencl.array.to_device(queue, self.dog_next)
         self.output = pyopencl.array.empty(queue, self.dog.shape, dtype=numpy.int32, order="C")
         self.shape = calc_size(self.dog.shape, self.wg)
-
+        
         t0 = time.time()
-        k1 = self.program.local_maxmin(queue, self.shape, self.wg, self.gpu_dog_prev.data, self.gpu_dog.data, self.gpu_dog_next.data, self.output.data, self.width, self.height, self.border_dist, self.peakthresh)
+        k1 = self.program.local_maxmin(queue, self.shape, self.wg, self.gpu_dog_prev.data, self.gpu_dog.data, self.gpu_dog_next.data, self.output.data, self.border_dist, self.peakthresh, self.width, self.height)
         res = self.output.get()
         t1 = time.time()
         ref = my_local_maxmin(self.dog_prev,self.dog,self.dog_next,self.peakthresh,self.border_dist)
@@ -205,7 +204,9 @@ class test_image(unittest.TestCase):
         cbar = fig.colorbar(sh2)
         fig.show()
         raw_input("enter")
+        print("Number of keypoints: %s" %(abs(res).sum()))
         '''
+
 
         self.assert_(delta == 0, "delta=%s" % (delta)) #as the matrices contain integers, "delta == 0" can be used
         logger.info("delta=%s" % delta)

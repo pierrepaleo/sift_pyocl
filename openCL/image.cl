@@ -14,7 +14,7 @@
 #define MAX_CONST_SIZE 16384
 
 __kernel void compute_gradient_orientation(
-	__constant float* igray __attribute__((max_constant_size(MAX_CONST_SIZE))),
+	__global float* igray, // __attribute__((max_constant_size(MAX_CONST_SIZE))),
 	__global float *grad,
 	__global float *ori,
 	int width,
@@ -60,6 +60,8 @@ __kernel void compute_gradient_orientation(
  * output[i,j] = -1 iff [i,j] is a local (3x3) minimum in the 3 DOG
  * output[i,j] = 0 by default (neither maximum nor minimum)
  *
+ * Additionally, the extrema must not lie on an edge (test with ratio of the principal curvatures)
+ *
  * @param dog_prev: Pointer to global memory with the "previous" difference of gaussians image
  * @param dog: Pointer to global memory with the "current" difference of gaussians image
  * @param dog_next: Pointer to global memory with the "next" difference of gaussians image
@@ -84,14 +86,14 @@ TODO:
 
 
 __kernel void local_maxmin(
-	__constant float* dog_prev __attribute__((max_constant_size(MAX_CONST_SIZE))),
-	__constant float* dog __attribute__((max_constant_size(MAX_CONST_SIZE))),
-	__constant float* dog_next __attribute__((max_constant_size(MAX_CONST_SIZE))),
+	__global float* dog_prev,// __attribute__((max_constant_size(MAX_CONST_SIZE))),
+	__global float* dog,// __attribute__((max_constant_size(MAX_CONST_SIZE))),
+	__global float* dog_next,// __attribute__((max_constant_size(MAX_CONST_SIZE))),
 	__global int* output,
-	int dog_width,
-	int dog_height,
 	int border_dist,
-	float peak_thresh)
+	float peak_thresh,
+	int dog_width,
+	int dog_height)
 {
 
 	int gid1 = (int) get_global_id(1);
@@ -102,7 +104,11 @@ __kernel void local_maxmin(
 		if (gid0 < dog_height - border_dist && gid1 < dog_width - border_dist && gid0 >= border_dist && gid1 >= border_dist) {
 	
 			float val = dog[gid0*dog_width + gid1];
-			//NOTE: "fabsf" instead of "fabs" should be used, for "fabs" if for doubles. Used "fabs" to be coherent with python
+			
+			/*
+			The following condition is part of the keypoints refinement: we eliminate the low-contrast points
+			NOTE: "fabsf" instead of "fabs" should be used, for "fabs" if for doubles. Used "fabs" to be coherent with python
+			*/
 			if (fabs(val) > (0.8 * peak_thresh)) {
 	
 				int c,r,pos;
@@ -122,6 +128,21 @@ __kernel void local_maxmin(
 				//these conditions are exclusive
 				if (ismax == 1) res = 1; 
 				if (ismin == 1) res = -1;	
+				
+				
+				/*
+				 At this point, we know if "val" is a local extremum or not
+				 We have to test if this value lies on an edge (keypoints refinement)
+				*/
+				
+				
+				
+				
+				
+				
+				
+				
+				
 			} //end greater than threshold		
 		} //end "in the inner image"
 		output[gid0*dog_width+gid1] = res;
