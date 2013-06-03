@@ -60,71 +60,73 @@ __kernel void compute_gradient_orientation(
  * output[i,j] = -1 iff [i,j] is a local (3x3) minimum in the 3 DOG
  * output[i,j] = 0 by default (neither maximum nor minimum)
  *
- * @param val: integer to be tested
  * @param dog_prev: Pointer to global memory with the "previous" difference of gaussians image
  * @param dog: Pointer to global memory with the "current" difference of gaussians image
  * @param dog_next: Pointer to global memory with the "next" difference of gaussians image
  * @param output: Pointer to global memory output *filled with zeros*
  * @param dog_width: integer number of columns of the DOG
  * @param dog_height: integer number of lines of the DOG
+ * @param border_dist: integer, distance between inner image and borders (SIFT takes 5)
+ * @param peak_thresh: float, threshold (SIFT takes 255.0 * 0.04 / 3.0)
+ 
+ 
+ notice we still test "dog[pos] > val" to have a simple code. The inequalities have to be strict.
  */
 
 
 /*
 TODO:
--replace following "define"s by external parameters
+-check fabs(val) outside this kernel ? It would avoid the "if"
+-confirm usage of fabs instead of fabsf
+-confirm the need to return -atan2() rather than atan2 ; to be coherent with python
 
 */
 
-#define BORDER_DIST 5
-#define PEAKTHRESH 255.0 * 0.04 / 3.0
-
 
 __kernel void local_maxmin(
-	float val,
 	__constant float* dog_prev __attribute__((max_constant_size(MAX_CONST_SIZE))),
 	__constant float* dog __attribute__((max_constant_size(MAX_CONST_SIZE))),
 	__constant float* dog_next __attribute__((max_constant_size(MAX_CONST_SIZE))),
-	__global int* output
+	__global int* output,
 	int dog_width,
 	int dog_height,
-	int y0,
-	int x0)
+	int border_dist,
+	float peak_thresh)
 {
 
 	int gid1 = (int) get_global_id(1);
 	int gid0 = (int) get_global_id(0);
-
-	if (gid0 < dog_height - BORDER_DIST && gid1 < dog_width - BORDER_DIST && gid0 >= BORDER_DIST && gid1 >= BORDER_DIST)
+	if (gid0 < dog_height && gid1 < dog_width ) {
 	
+		int res = 0;
+		if (gid0 < dog_height - border_dist && gid1 < dog_width - border_dist && gid0 >= border_dist && gid1 >= border_dist) {
 	
-	float val = dog[gid0*dog_with + gid1];
-	if (fabsf(val) > 0.8 * PEAKTHRESH) {//use "fabsf" for floats, for "fabs" if for doubles
+			float val = dog[gid0*dog_width + gid1];
+			//NOTE: "fabsf" instead of "fabs" should be used, for "fabs" if for doubles. Used "fabs" to be coherent with python
+			if (fabs(val) > (0.8 * peak_thresh)) {
 	
-		int c,r;
-		int ismax = 0, ismin = 0;
-		if (val > 0.0) ismax = 1;
-		else ismin = 1;
+				int c,r,pos;
+				int ismax = 0, ismin = 0;
+				if (val > 0.0) ismax = 1;
+				else ismin = 1;
 		
-		for (c = gid1 - 1; x <= gid1 + 1; c++) {
-			for (r = gid0  - 1; r <= gid0 + 1; r++) {
-				pos = r*dog_width + c;
-				if (ismax == 1) //if (val > 0.0)
-					if (dog_prev[pos] > val || dog[pos] > val dog_next[pos] > val) ismax = 0;
-				if (ismin == 1) //else
-					if (dog[pos] < val || dog[pos] < val || dog[pos] < val) ismin = 0;
-			}
-		}
-		
-		int res;
-		//these conditions are exclusive
-		if (ismax == 1) res = 1; 
-		if (ismin == 1) res = -1;
-		output[pos] = res;
-		
-	}
+				for (c = gid1 - 1; c <= gid1 + 1; c++) {
+					for (r = gid0  - 1; r <= gid0 + 1; r++) {
+						pos = r*dog_width + c;
+						if (ismax == 1) //if (val > 0.0)
+							if (dog_prev[pos] > val || dog[pos] > val || dog_next[pos] > val) ismax = 0;
+						if (ismin == 1) //else
+							if (dog_prev[pos] < val || dog[pos] < val || dog_next[pos] < val) ismin = 0;
+					}
+				}
+				//these conditions are exclusive
+				if (ismax == 1) res = 1; 
+				if (ismin == 1) res = -1;	
+			} //end greater than threshold		
+		} //end "in the inner image"
+		output[gid0*dog_width+gid1] = res;
+	} //end "in the image"
 }
-
 
 
 
