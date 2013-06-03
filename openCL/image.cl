@@ -1,4 +1,28 @@
 /**
+ *
+ * Functions on images
+ *
+ *
+*/
+
+
+/*
+ Keypoint structure : (amplitude, row, column, sigma)
+*/
+typedef struct keypoint {
+	float amplitude;
+	int row;
+	int column;
+	float sigma;
+} keypoint;
+
+/*
+ Do not use __constant memory for large (usual) images
+*/
+#define MAX_CONST_SIZE 16384
+
+
+/**
  * \brief Gradient of a grayscale image
  *
  * The gradient is computed using central differences in the interior and first differences at the boundaries.
@@ -11,7 +35,7 @@
  * @param height: integer number of lines of the input image
  */
  
-#define MAX_CONST_SIZE 16384
+
 
 __kernel void compute_gradient_orientation(
 	__global float* igray, // __attribute__((max_constant_size(MAX_CONST_SIZE))),
@@ -56,8 +80,7 @@ __kernel void compute_gradient_orientation(
 /**
  * \brief Local minimum or maximum detection in a 3x3 neighborhood in 3 DOG
  *
- * output[i,j] = 1 iff [i,j] is a local (3x3) maximum in the 3 DOG
- * output[i,j] = -1 iff [i,j] is a local (3x3) minimum in the 3 DOG
+ * output[i,j] != 0 iff [i,j] is a local (3x3) maximum in the 3 DOG
  * output[i,j] = 0 by default (neither maximum nor minimum)
  *
  * Additionally, the extrema must not lie on an edge (test with ratio of the principal curvatures)
@@ -75,7 +98,7 @@ __kernel void compute_gradient_orientation(
  * @param dog_height: integer number of lines of the DOG
  
  notice we still test "dog[pos] > val" to have a simple code. The inequalities have to be strict.
- */
+*/
 
 
 /*
@@ -91,7 +114,7 @@ __kernel void local_maxmin(
 	__global float* dog_prev,// __attribute__((max_constant_size(MAX_CONST_SIZE))),
 	__global float* dog,// __attribute__((max_constant_size(MAX_CONST_SIZE))),
 	__global float* dog_next,// __attribute__((max_constant_size(MAX_CONST_SIZE))),
-	__global int* output,
+	__global float* output,
 	int border_dist,
 	float peak_thresh,
 	int octsize,
@@ -105,7 +128,7 @@ __kernel void local_maxmin(
 	int gid0 = (int) get_global_id(0);
 	if (gid0 < dog_height && gid1 < dog_width ) {
 	
-		int res = 0;
+		float res = 0.0f;
 		if (gid0 < dog_height - border_dist && gid1 < dog_width - border_dist && gid0 >= border_dist && gid1 >= border_dist) {
 	
 			float val = dog[gid0*dog_width + gid1];
@@ -130,10 +153,13 @@ __kernel void local_maxmin(
 							if (dog_prev[pos] < val || dog[pos] < val || dog_next[pos] < val) ismin = 0;
 					}
 				}
+				/*
 				//these conditions are exclusive
 				if (ismax == 1) res = 1; 
 				if (ismin == 1) res = -1;	
+				*/
 				
+				if (ismax == 1 || ismin == 1) res = val;
 				
 				/*
 				 At this point, we know if "val" is a local extremum or not
@@ -150,7 +176,7 @@ __kernel void local_maxmin(
 						- dog[(gid0+1)*dog_width+gid1-1]) 
 						- (dog[(gid0-1)*dog_width+gid1+1] - dog[(gid0-1)*dog_width+gid1-1])) / 4.0;
 				
-				float	det = H00 * H11 - H01 * H01, trace = H00 + H11;
+				float det = H00 * H11 - H01 * H01, trace = H00 + H11;
 
 				/*
 				   If (trace^2)/det < thresh, the Keypoint is OK.
@@ -160,7 +186,7 @@ __kernel void local_maxmin(
 				float edthresh = (octsize <= 1 ? EdgeThresh0 : EdgeThresh);
 				
 				if (det < edthresh * trace * trace)
-					res = 0;
+					res = 0.0f;
 								
 				
 			} //end greater than threshold		
@@ -168,6 +194,90 @@ __kernel void local_maxmin(
 		output[gid0*dog_width+gid1] = res;
 	} //end "in the image"
 }
+
+
+
+
+/**
+ * \brief Creates keypoints from the matrix filled with 0,1,-1 returned by the function above
+ *
+ *
+ * @param dog_prev: Pointer to global memory with 
+ 
+ notice we still test "dog[pos] > val" to have a simple code. The inequalities have to be strict.
+ */
+
+
+
+
+/*
+__kernel void create_keypoints(
+	__global float* dog_prev,// __attribute__((max_constant_size(MAX_CONST_SIZE))),
+	__global float* dog,// __attribute__((max_constant_size(MAX_CONST_SIZE))),
+	__global float* dog_next,// __attribute__((max_constant_size(MAX_CONST_SIZE))),
+	__global int* output,
+	int border_dist,
+	float peak_thresh,
+	int octsize,
+	float EdgeThresh0,
+	float EdgeThresh,
+	int dog_width,
+	int dog_height)
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

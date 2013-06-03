@@ -72,10 +72,10 @@ def my_gradient(mat):
 def my_local_maxmin(dog_prev,dog,dog_next,thresh,border_dist,octsize,EdgeThresh0,EdgeThresh):
     """
     a python implementation of 3x3 maximum (positive values) or minimum (negative or null values) detection
-    an extremum candidate "val", read in the  has to be greater than 0.8*thresh
+    an extremum candidate "val" has to be greater than 0.8*thresh
     The three DoG have the same size.
     """
-    output = numpy.zeros_like(dog)
+    output = numpy.zeros_like(dog).astype(numpy.float32)
     width = dog.shape[1]
     height = dog.shape[0]
     
@@ -83,7 +83,8 @@ def my_local_maxmin(dog_prev,dog,dog_next,thresh,border_dist,octsize,EdgeThresh0
         for i in range(border_dist,height - border_dist):
             val = dog[i,j]
             if (numpy.abs(val) > 0.8*thresh): #keypoints refinement: eliminating low-contrast points
-                output[i,j] = is_maxmin(dog_prev,dog,dog_next,val,i,j,octsize,EdgeThresh0,EdgeThresh)
+                if (is_maxmin(dog_prev,dog,dog_next,val,i,j,octsize,EdgeThresh0,EdgeThresh) != 0):
+                	output[i,j]=val
     return output
     
     
@@ -122,9 +123,9 @@ def is_maxmin(dog_prev,dog,dog_next,val,i0,j0,octsize,EdgeThresh0,EdgeThresh):
         thr = EdgeThresh0
     else:
         thr = EdgeThresh
-		
     if (det < thr * trace * trace):
-        res = 0     
+        res = 0
+        
     return res
     
 
@@ -179,6 +180,7 @@ class test_image(unittest.TestCase):
             logger.info("Gradient computation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
 
 
+
     def test_local_maxmin(self):
         """
         tests the local maximum/minimum detection kernel
@@ -207,7 +209,7 @@ class test_image(unittest.TestCase):
         self.gpu_dog_prev = pyopencl.array.to_device(queue, self.dog_prev)
         self.gpu_dog = pyopencl.array.to_device(queue, self.dog)
         self.gpu_dog_next = pyopencl.array.to_device(queue, self.dog_next)
-        self.output = pyopencl.array.empty(queue, self.dog.shape, dtype=numpy.int32, order="C")
+        self.output = pyopencl.array.empty(queue, self.dog.shape, dtype=numpy.float32, order="C")
         self.shape = calc_size(self.dog.shape, self.wg)
         
         t0 = time.time()
@@ -232,10 +234,9 @@ class test_image(unittest.TestCase):
         fig.show()
         raw_input("enter")
         '''
-        #print("Number of keypoints: %s" %(abs(res).sum()))
+		#print("Number of keypoints: %s" %(sum(1 for e in res if e!=0)))
 
-
-        self.assert_(delta == 0, "delta=%s" % (delta)) #as the matrices contain integers, "delta == 0" can be used
+        self.assert_(delta < 1e-4, "delta=%s" % (delta))
         logger.info("delta=%s" % delta)
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
