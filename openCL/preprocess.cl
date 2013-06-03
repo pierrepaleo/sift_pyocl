@@ -146,6 +146,30 @@ s64_to_float(	__global long *array_int,
 }//end kernel
 
 /**
+ * \brief convert values of an array of float64 into a float output array.
+ *
+ * @param array_int:	Pointer to global memory with the data in double
+ * @param array_float:  Pointer to global memory with the data in float
+ * @param IMAGE_W:		Width of the image
+ * @param IMAGE_H: 		Height of the image
+ * 
+ * COMMENTED OUT AS THIS RUNS ONLY ON GPU WITH FP64
+ */
+//__kernel void
+//double_to_float(__global double *array_int,
+//				__global float  *array_float,
+//			     const int IMAGE_W,
+//			     const int IMAGE_H
+//)
+//{
+//	int i = get_global_id(0) * IMAGE_W + get_global_id(1);
+//	//Global memory guard for padding
+//	if(i < IMAGE_W*IMAGE_H)
+//		array_float[i] = (float)(array_int[i]);
+//}//end kernel
+
+
+/**
  * \brief convert RGB of an array of 3xuint8 into a float output array.
  *
  * @param array_int:	Pointer to global memory with the data in int

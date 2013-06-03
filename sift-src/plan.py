@@ -21,6 +21,15 @@ class SiftPlan(object):
     kp is a nx132 array. the second dimension is composed of x,y, scale and angle as well as 128 floats describing the keypoint
 
     """
+    kernels = ["convolution", "preprocess", "algebra", "image"]
+    converter = {numpy.dtype(numpy.uint8):"u8_to_float",
+                 numpy.dtype(numpy.uint16):"u16_to_float",
+                 numpy.dtype(numpy.int32):"s32_to_float",
+                 numpy.dtype(numpy.int64):"s64_to_float",
+#                    numpy.float64:"double_to_float",
+                      }
+    sigmaRatio = 2.0 ** (1.0 / par.Scales)
+
     def __init__(self, shape=None, dtype=None, devicetype="GPU", template=None, profile=False, device=None):
         """
         Contructor of the class
@@ -39,13 +48,13 @@ class SiftPlan(object):
         else:
             raise RuntimeError("Unable to process image of shape %s" % (tuple(self.shape,)))
         self.profile = bool(profile)
-        self.sigmaRatio = 2.0 ** (1.0 / par.Scales)
         self.scales = [] #in XY order
         self.procsize = []
         self.wgsize = []
         self.buffers = {}
         self.programs = {}
         self.memory = None
+        self.octave_max = None
         self._calc_scales()
         self._calc_memory()
         if device is None:
@@ -79,10 +88,11 @@ class SiftPlan(object):
         self.scales = [tuple(numpy.int32(i) for i in self.shape[-1::-1])]
         shape = self.shape
         min_size = 2 * par.BorderDist + 2
-        while min(shape) > min_size:
+        while min(shape) > min_size*2:
             shape = tuple(numpy.int32(i // 2) for i in shape)
             self.scales.append(shape)
-        self.scales.pop()
+#        self.scales.pop()
+        self.octave_max = len(self.scales)
 
     def _calc_memory(self):
         # Just the context + kernel takes about 75MB on the GPU
@@ -97,7 +107,7 @@ class SiftPlan(object):
             nr_dogs = par.Scales + 2
             size = scale[0] * scale[1]
             self.memory += size * (nr_blur + nr_dogs + 1) * size_of_float  # 1 temporary array
-
+            self.memory += size * par.Scales * size_of_float # those are array of int32 but will be arrays of float32 soon to register keypoints 
         ########################################################################
         # Calculate space for gaussian kernels
         ########################################################################
@@ -120,12 +130,14 @@ class SiftPlan(object):
         if self.dtype != numpy.float32:
             self.buffers["raw"] = pyopencl.array.empty(self.queue, shape, dtype=self.dtype, order="C")
         self.buffers["input"] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
-        for octave in range(len(self.scales)):
+        for octave in range(self.octave_max):
             self.buffers[(octave, "tmp") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
             for i in range(par.Scales + 3):
                 self.buffers[(octave, i, "G") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
             for i in range(par.Scales + 2):
                 self.buffers[(octave, i, "DoG") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
+            for i in range(1, par.Scales + 1):
+                self.buffers[(octave, i, "Reg") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.int32, order="C")
             shape = (shape[0] // 2, shape[1] // 2)
 
         ########################################################################
@@ -176,9 +188,11 @@ class SiftPlan(object):
         """
         Call the OpenCL compiler
         """
-        kernels = ["convolution", "preprocess", "algebra"]
-        for kernel in kernels:
+        for kernel in self.kernels:
+#            print __path__
+            print __file__
             kernel_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), kernel + ".cl")
+            print kernel_file
             kernel_src = open(kernel_file).read()
             try:
                 program = pyopencl.Program(self.ctx, kernel_src).build()
@@ -227,26 +241,16 @@ class SiftPlan(object):
         t0 = time.time()
         if self.dtype == numpy.float32:
             pyopencl.enqueue_copy(self.queue, self.buffers["input"].data, image)
-        elif self.dtype == numpy.uint8:
+        elif (self.dtype == numpy.uint8) and (self.RGB):
             pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
-            if self.RGB:
-                self.programs["preprocess"].rgb_to_float(self.queue, self.procsize[0], self.wgsize[0],
+            self.programs["preprocess"].rgb_to_float(self.queue, self.procsize[0], self.wgsize[0],
                                                          self.buffers["raw"].data, self.buffers["input"].data, *self.scales[0])
-            else:
-                self.programs["preprocess"].u8_to_float(self.queue, self.procsize[0], self.wgsize[0],
-                                                         self.buffers["raw"].data, self.buffers["input"].data, *self.scales[0])
-        elif self.dtype == numpy.uint16:
+        
+        elif self.dtype in self.converter:
+            program = self.programs["preprocess"].__getattr__(self.converter[self.dtype])
             pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
-            self.programs["preprocess"].u16_to_float(self.queue, self.procsize[0], self.wgsize[0],
-                                                         self.buffers["raw"].data, self.buffers["input"].data, *self.scales[0])
-        elif self.dtype == numpy.int32:
-            pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
-            self.programs["preprocess"].s32_to_float(self.queue, self.procsize[0], self.wgsize[0],
-                                                         self.buffers["raw"].data, self.buffers["input"].data, *self.scales[0])
-        elif self.dtype == numpy.int64:
-            pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
-            self.programs["preprocess"].s64_to_float(self.queue, self.procsize[0], self.wgsize[0],
-                                                         self.buffers["raw"].data, self.buffers["input"].data, *self.scales[0])
+            program(self.queue, self.procsize[0], self.wgsize[0],
+                    self.buffers["raw"].data, self.buffers["input"].data, *self.scales[0])
         else:
             raise RuntimeError("invalid input format error")
         min_data = pyopencl.array.min(self.buffers["input"], self.queue).get()
@@ -268,7 +272,7 @@ class SiftPlan(object):
         ########################################################################
         # Calculate gaussian blur and DoG for every octave
         ########################################################################
-        for octave in range(len(self.scales)):
+        for octave in range(self.octave_max):
             prevSigma = par.InitSigma
             logger.debug("Working on octave %i" % octave)
             for i in range(par.Scales + 2):
@@ -281,12 +285,21 @@ class SiftPlan(object):
                                                  self.buffers[(octave, i    , "G")].data, numpy.float32(-1.0),
                                                  self.buffers[(octave, i, "DoG")].data, *self.scales[octave])
 #                self.buffers[(octave, i, "DoG")]. = self.buffers[(octave, i + 1, "G")] - self.buffers[(octave, i, "G")]
-            if i < par.Scales + 1:
+                if 1 <= i <= par.Scales:
+                    self.programs["image"].local_maxmin(self.queue, self.procsize[octave], self.wgsize[octave],
+                                                        self.buffers[(octave, i-1, "DoG")].data,
+                                                        self.buffers[(octave, i, "DoG")].data,
+                                                        self.buffers[(octave, i+1, "DoG")].data,
+                                                        self.buffers[(octave, i, "Reg")].data,
+                                                        numpy.int32(par.BorderDist),
+                                                        numpy.float32(par.PeakThresh), *self.scales[octave])
+            if octave < (self.octave_max - 1):
                 k1 = self.programs["preprocess"].shrink(self.queue, self.procsize[octave + 1], self.wgsize[octave + 1],
                                                     self.buffers[(octave, 0, "G")].data, self.buffers[(octave + 1, 0, "G")].data,
                                                     numpy.int32(2), numpy.int32(2), *self.scales[octave + 1])
-
+                
         print("Execution time: %.3fs" % (time.time() - t0))
+        self.count_kp()
     def gaussian_convolution(self, input_data, output_data, sigma, octave=0):
         """
         Calculate the gaussian convolution with precalculated kernels.
@@ -303,6 +316,13 @@ class SiftPlan(object):
             k2.wait()
             logger.info("Blur sigma %s octave %s took %.3fms + %.3fms" % (sigma, octave, 1e-6 * (k1.profile.end - k1.profile.start),
                                                                                           1e-6 * (k2.profile.end - k2.profile.start)))
+
+    def count_kp(self):
+        for octave in range(self.octave_max):
+            for i in range(par.Scales):
+                data = self.buffers[(octave, i + 1, "Reg")].get()
+                sum = (data != 0).sum()
+                print("octave %i scale %s kp count %i size %s ratio:%s" % (octave, i + 1, sum, self.scales[octave], 1000.0 * sum / self.scales[octave][1] / self.scales[octave][0]))
 
 if __name__ == "__main__":
     #Prepare debugging
