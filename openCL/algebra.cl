@@ -20,9 +20,9 @@ TODO:
 */
 
 __kernel void combine(
-	__constant float *u __attribute__((max_constant_size(MAX_CONST_SIZE))),
+	__global float *u,
 	float a,
-	__constant float *v __attribute__((max_constant_size(MAX_CONST_SIZE))),
+	__global float *v,
 	float b,
 	__global float *w,
 	int width,

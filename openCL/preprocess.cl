@@ -145,6 +145,30 @@ s64_to_float(	__global long *array_int,
 		array_float[i] = (float)(array_int[i]);
 }//end kernel
 
+/**
+ * \brief convert RGB of an array of 3xuint8 into a float output array.
+ *
+ * @param array_int:	Pointer to global memory with the data in int
+ * @param array_float:  Pointer to global memory with the data in float
+ * @param IMAGE_W:		Width of the image
+ * @param IMAGE_H: 		Height of the image
+ * 
+ * WARNING: still untested (formula is the same as PIL)
+ */
+__kernel void
+rgb_to_float(	__global unsigned char *array_int,
+				__global float  *array_float,
+			     const int IMAGE_W,
+			     const int IMAGE_H
+)
+{
+	int i = get_global_id(0) * IMAGE_W + get_global_id(1);
+	//Global memory guard for padding
+	if(i < IMAGE_W*IMAGE_H)
+		array_float[i] = (float)0.299f*array_int[i] + 0.587f*array_int[i+1] + 0.114f*array_int[i+2];
+;
+}//end kernel
+
 
 /**
  * \brief Performs normalization of image between 0 and max_out (255) in place.
@@ -246,3 +270,27 @@ bin(		const	__global 	float 	*image_in,
 		image_out[i] = data/scale_w/scale_h;
 	};//end if in IMAGE
 };//end kernel
+
+/**
+ * \brief gaussian: Initialize a vector with a gaussian function.
+ *
+ *
+ * @param data:	    Float pointer to global memory storing the vector.
+ * @param sigma:	width of the gaussian
+ * @param size: 	size of the function
+ *
+**/
+
+__kernel void
+gaussian(				__global 	float 	*data,
+			const 				float 	sigma,
+			const 				int 	SIZE
+)
+{
+	int gid=get_global_id(0);
+	if(gid < SIZE){
+		float x = ((float)gid - ((float)SIZE - 1.0f) / 2.0f) - sigma;
+        float y = exp(-x * x / 2.0f);
+        data[gid] = y / sigma / sqrt(2.0f * M_PI_F);
+	}
+}
