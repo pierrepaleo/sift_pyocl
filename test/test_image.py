@@ -136,6 +136,94 @@ def is_maxmin(dog_prev,dog,dog_next,val,i0,j0,octsize,EdgeThresh0,EdgeThresh):
         
     return res
     
+
+
+
+
+def my_interp_keypoint(dog_prev,dog,dog_next, s, r, c,movesRemain,width,height):
+    ''''
+    a Python implementation of SIFT "InterpKeyPoints"
+     (s,r,c) : coords of the processed keypoint in the scale space
+     WARNING: replace "1.6" by "InitSigma" if InitSigma has not its default value
+    '''
+    x,peakval = fit_quadratic(dogs_prev,dog,dog_next, r, c)
+    newr = r, newc = c
+    
+    if (x[1] > 0.6 and r < height - 3):
+        newr++
+    elif (x[1] < -0.6 and r > 3):
+        newr--
+    if (x[2] > 0.6 and c < width - 3):
+        newc++
+    elif (x[2] < -0.6 and c > 3):
+        newc--
+
+    if (movesRemain > 0  and  (newr != r or newc != c)):
+        my_interp_keypoint(dog_prev,dog,dog_next,s, newr, newc, movesRemain -1,width,height)
+        return
+        
+        
+    if (numpy.abs(offset[0]) <  1.5 and numpy.abs(offset[1]) <  1.5 and numpy.abs(offset[2]) <  1.5 and nympy.abs(peakval) > par.PeakThresh):
+        ki = numpy.zeros(4).astype(numpy.float32)
+        ki[0] = peakval
+        ki[1] = r + x[1]
+        ki[2] = c + x[2]
+        ki[3] = 1.6 * 2.0**((s + x[0]) / 3.0) #3.0 is "par.Scales" 
+
+    return ki #our interpolated keypoint
+
+
+
+
+def fit_quadratic(dog_prev,dog,dog_next, r, c):
+    '''
+    quadratic interpolation arround the keypoint (s,r,c)
+    '''
+
+    #gradient
+    g = numpy.zeros(3).astype(numpy.float32)
+    g[0] = (dog_next[r,c] - dog_prev[r,c]) / 2.0
+    g[1] = (dog[r+1,c] - dog[r-1,c]) / 2.0;
+    g[2] = (dog1[r,c+1] - dog1[r,c-1]) / 2.0
+	#hessian
+    H = numpy.zeros((3,3)).astype(numpy.float32)
+    H[0][0] = dog_prev[r,c]   - 2.0 * dog[r,c] + dog_next[r,c]
+    H[1][1] = dog[r-1,c] - 2.0 * dog[r,c] + dog[r+1,c]
+    H[2][2] = dog[r,c-1] - 2.0 * dog[r,c] + dog[r,c+1]
+    H[0][1] = H[1][0] 
+    		= ( (dog_next[r+1,c] - dog_next[r-1,c])
+    		 - (dog_prev[r+1,c] - dog_prev[r-1,c]) ) / 4.0
+
+
+    H[0][2] = H[2][0] 
+    		= ( (dog_next[r,c+1] - dog_next[r,c-1])
+    		 - (dog_prev[r,c+1] - dog_prev[r,c-1]) ) / 4.0
+
+    H[1][2] = H[2][1]
+    		= ( (dog[r+1,c+1] - dog[r+1,c-1])
+    		 - (dog[r-1,c+1] - dog1[r-1,c-1]) ) / 4.0
+    		 
+    x = -numpy.dot(numpy.linalg.inv(H),g) #extremum position
+	peakval = dog[r,c] + 0.5 * (x[0]*g[0]+x[1]*g[1]+x[2]*g[2])
+	
+	return x,peakval
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     
 
 def my_create_keypoints(peaks,nb_keypoints,s):

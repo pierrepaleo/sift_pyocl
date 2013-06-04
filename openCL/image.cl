@@ -218,16 +218,19 @@ __kernel void local_maxmin(
  * @param dog_prev: Pointer to global memory with the "previous" difference of gaussians image
  * @param dog: Pointer to global memory with the "current" difference of gaussians image
  * @param dog_next: Pointer to global memory with the "next" difference of gaussians image 
- * @param keypoints: Pointer to global memory current keypoints vector
+ * @param keypoints: Pointer to global memory with current keypoints vector
+ * @param output: Pointer to global memory with keypoints vector that will be processed afterwards
  * @param actual_nb_keypoints: actual number of keypoints previously found, i.e previous "counter" final value
  * @param peak_thresh: we are not counting the interpolated values if below the threshold
  * @param s: the scale in the DoG, i.e the index of the current DoG, cast to a float (this is not the std !)
+ * @param InitSigma: float "par.InitSigma" in SIFT (1.6 by default)
  * @param width: integer number of columns of the DoG
  * @param height: integer number of lines of the DoG
  */
  
 /* 
 TODO: 
+-Writing output directly into input ? It would avoid to check if we are not creating new keypoint
 -Taking "actual_nb_keypoints instead of nb_keypoints would spare some memory, is it worth returning it in the previous func ?
 
 -"Check that no keypoint has been created at this location (to avoid duplicates).  Otherwise, mark this map location"	if (map(c,r) > 0.0) return;
@@ -240,9 +243,11 @@ __kernel void interp_keypoint(
 	__global float* dog,
 	__global float* dog_next,
 	__global keypoint* keypoints,
+	__global keypoint* output,
 	int actual_nb_keypoints,
 	float peak_thresh,
 	int s,
+	float InitSigma,
 	int width,
 	int height)
 {
@@ -322,8 +327,8 @@ __kernel void interp_keypoint(
 			peakval = dog[pos] + 0.5 * (solution0*g0+solution1*g1+solution2*g2);
 		
 		
-		/* Move to an adjacent (row,col) location if quadratic interpolation is larger than 0.6 units in some direction. 					The movesRemain counter allows only a fixed number of moves to prevent possibility of infinite loops.
-			*/
+		/* Move to an adjacent (row,col) location if quadratic interpolation is larger than 0.6 units in some direction. 				The movesRemain counter allows only a fixed number of moves to prevent possibility of infinite loops.
+		*/
 
 			if (solution1 > 0.6 && gid0 < height - 3)
 				newr++;
@@ -349,13 +354,13 @@ __kernel void interp_keypoint(
 			or if magnitude of peak value is below threshold (i.e., contrast is too low).
 		*/
 		if (fabs(solution0) < 1.5 && fabs(solution1) < 1.5 && fabs(solution2) < 1.5 && fabs(peakval) > peak_thresh) {
-			keypoint k = 0.0; //float4
-			k.s0 = peakval;
-			k.s1 = ((float) gid0) + solution1;
-			k.s2 = ((float) gid1) + solution2;
-			k.s3 = InitSigma * pow(2.0, (s + solution0) / 3.0); //3.0 is "par.Scales"
-			int old = atomic_inc(counter);
-			if (old < nb_keypoints) output[old]=k;
+			keypoint ki = 0.0; //float4
+			ki.s0 = peakval;
+			ki.s1 = k.s1 + solution1;
+			ki.s2 = k.s2 + solution2;
+			ki.s3 = InitSigma * pow(2.0, (s + solution0) / 3.0); //3.0 is "par.Scales"
+			output[gid0]=ki;
+			
 		}
 	
 	/*
