@@ -57,6 +57,9 @@ if logger.getEffectiveLevel() <= logging.INFO:
 else:
     PROFILE = False
     queue = pyopencl.CommandQueue(ctx)
+    
+SHOW_FIGURES = False
+    
 
 print "working on %s" % ctx.devices[0].name
 
@@ -128,6 +131,27 @@ def is_maxmin(dog_prev,dog,dog_next,val,i0,j0,octsize,EdgeThresh0,EdgeThresh):
         
     return res
     
+    
+
+def my_create_keypoints(peaks,nb_keypoints,s):
+    '''
+    create a vector of nb_keypoints from the peaks matrix
+    '''
+    height, width = peaks.shape
+    output = numpy.zeros((nb_keypoints,4),dtype=numpy.float32)
+    
+    b = (peaks != 0)
+    nb = b.sum()
+    tmp = numpy.where(b)
+    output[:nb,1],output[:nb,2] = tmp
+    output[:nb,0] = peaks[tmp]
+    output[:nb,3] = s
+    
+    return output
+    
+    
+    
+    
 
     
     
@@ -144,6 +168,9 @@ class test_image(unittest.TestCase):
     def tearDown(self):
         self.mat = None
         self.program = None
+        
+        
+        
         
         
         
@@ -181,6 +208,8 @@ class test_image(unittest.TestCase):
 
 
 
+
+
     def test_local_maxmin(self):
         """
         tests the local maximum/minimum detection kernel
@@ -191,7 +220,7 @@ class test_image(unittest.TestCase):
         self.EdgeThresh0 = numpy.float32(0.08) #SIFT
         self.octsize = numpy.int32(4) #initially 1, then twiced at each new octave
 		
-        l = scipy.misc.lena().astype(numpy.float32)
+        l = scipy.misc.lena().astype(numpy.float32)[100:250,100:250]
         self.width = numpy.int32(l.shape[1])
         self.height = numpy.int32(l.shape[0])
 
@@ -224,17 +253,18 @@ class test_image(unittest.TestCase):
         t2 = time.time()
         delta = abs(ref - res).max()
         
-        '''
-        fig = pylab.figure()
-        sp1 = fig.add_subplot(221)
-        sh1 = sp1.imshow(res, interpolation="nearest")
-        sp2 = fig.add_subplot(222)
-        sh2 = sp2.imshow(ref,interpolation="nearest")
-        cbar = fig.colorbar(sh2)
-        fig.show()
-        raw_input("enter")
-        '''
-		#print("Number of keypoints: %s" %(sum(1 for e in res if e!=0)))
+        if (SHOW_FIGURES):
+            fig = pylab.figure()
+            sp1 = fig.add_subplot(221)
+            sh1 = sp1.imshow(res, interpolation="nearest")
+            sp2 = fig.add_subplot(222)
+            sh2 = sp2.imshow(ref,interpolation="nearest")
+            cbar = fig.colorbar(sh2)
+            fig.show()
+            raw_input("enter")
+        
+        #nk = numpy.sum(numpy.sum([[1 for e in res[i,:] if e != 0] for i in range(self.height)]))
+        #print("Number of keypoints: %s" %nk)      
 
         self.assert_(delta < 1e-4, "delta=%s" % (delta))
         logger.info("delta=%s" % delta)
@@ -245,10 +275,81 @@ class test_image(unittest.TestCase):
 
 
 
+
+    def test_create_keypoints(self):
+        """
+        tests the create_keypoints kernel
+        """
+        self.width = numpy.int32(150)
+        self.height = numpy.int32(146)
+        self.nb_keypoints = 10000 #constant size !
+        self.s = numpy.float32(1.0) #0, 1, 2 or 3
+        #fill with zeros
+        self.peaks = numpy.random.rand(self.height,self.width).astype(numpy.float32)
+        thres = (self.peaks <= 0.7)
+        self.peaks[thres] = 0
+        
+        self.gpu_peaks = pyopencl.array.to_device(queue, self.peaks)
+        self.output = pyopencl.array.zeros(queue, (self.nb_keypoints,4), dtype=numpy.float32, order="C")
+        self.counter = pyopencl.array.zeros(queue, (1,), dtype=numpy.int32, order="C")
+        self.shape = calc_size(self.peaks.shape, self.wg)
+        self.nb_keypoints = numpy.int32(self.nb_keypoints)
+        
+        t0 = time.time()
+        k1 = self.program.create_keypoints(queue, self.shape, self.wg,
+        	self.gpu_peaks.data, self.s, self.output.data, self.nb_keypoints, self.counter.data, self.width, self.height)
+        res = self.output.get()
+        t1 = time.time()
+        ref = my_create_keypoints(self.peaks,self.nb_keypoints,self.s)
+        t2 = time.time()
+        
+        #we have to sort the arrays, for peaks orders is unknown for GPU
+        res_peaks = res[(res[:,0].argsort(axis=0)),0]
+        ref_peaks = ref[(ref[:,0].argsort(axis=0)),0]
+        res_r = res[(res[:,1].argsort(axis=0)),1]
+        ref_r = ref[(ref[:,1].argsort(axis=0)),1]
+        res_c = res[(res[:,2].argsort(axis=0)),2]
+        ref_c = ref[(ref[:,2].argsort(axis=0)),2]
+        #res_s = res[(res[:,3].argsort(axis=0)),3]
+        #ref_s = ref[(ref[:,3].argsort(axis=0)),3]
+        
+        delta_peaks = abs(ref_peaks - res_peaks).max()
+        delta_r = abs(ref_r - res_r).max()
+        delta_c = abs(ref_c - res_c).max()
+               
+        self.assert_(delta_peaks < 1e-4, "delta_peaks=%s" % (delta_peaks))
+        self.assert_(delta_r < 1e-4, "delta_r=%s" % (delta_r))
+        self.assert_(delta_c < 1e-4, "delta_c=%s" % (delta_c))
+        logger.info("delta_peaks=%s" % delta_peaks)
+        logger.info("delta_r=%s" % delta_r)
+        logger.info("delta_c=%s" % delta_c)
+        
+        if PROFILE:
+            logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
+            logger.info("Keypoints vector creation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def test_suite_image():
     testSuite = unittest.TestSuite()
-    testSuite.addTest(test_image("test_gradient"))
-    testSuite.addTest(test_image("test_local_maxmin"))
+    #testSuite.addTest(test_image("test_gradient"))
+    #testSuite.addTest(test_image("test_local_maxmin"))
+    testSuite.addTest(test_image("test_create_keypoints"))
     return testSuite
 
 if __name__ == '__main__':

@@ -8,13 +8,16 @@
 
 /*
  Keypoint structure : (amplitude, row, column, sigma)
+ 
+ k.x == k.s0 : amplitude
+ k.y == k.s1 : row
+ k.z == k.s2 : column
+ k.w == k.s3 : sigma
+ 
 */
-typedef struct keypoint {
-	float amplitude;
-	int row;
-	int column;
-	float sigma;
-} keypoint;
+typedef float4 keypoint;
+
+
 
 /*
  Do not use __constant memory for large (usual) images
@@ -189,44 +192,67 @@ __kernel void local_maxmin(
 					res = 0.0f;
 								
 				
-			} //end greater than threshold		
-		} //end "in the inner image"
+			}		
+		}
 		output[gid0*dog_width+gid1] = res;
-	} //end "in the image"
+	}
 }
 
 
 
 
 /**
- * \brief Creates keypoints from the matrix filled with 0,1,-1 returned by the function above
+ * \brief Creates keypoints from the matrix returned above. The resulting keypoints vector is for ONE DoG ! 
+ *
+ *  The matrix returned by local_maxmin has mainly zeros. Working directly on this matrix would be inefficient on GPU, 
+ *   so we have to create a keypoints vector from this matrix. 
+ * At this stage, the keypoints are detected for a given DoG of std "s", so we shall initialize keypoint.sigma to "s".
+ *  The further 3D-interpolation will certainly find keypoints with same (x,y) and different sigma.
  *
  *
- * @param dog_prev: Pointer to global memory with 
+ * Here the output is a 1D vector: his size differs from the input matrix. Therefore, we need a counter for this vector.
+ * The counter is shared between the GPU threads, so we need an atomic function to avoid conflicts.
+ *
+ * @param peaks: Pointer to global memory with the output of the previous "local_maxmin" function
+ * @param sigma: float "standard deviation" (scale factor) indexing the DoG
+ * @param output: Pointer to global memory with the list of keypoints
+ * @param nb_keypoints: integer, number of elements of output
+ * @param counter: pointer to the shared counter between threads
+ * @param width: integer number of columns of "peaks"
+ * @param height: integer number of lines of "peaks"
  
- notice we still test "dog[pos] > val" to have a simple code. The inequalities have to be strict.
  */
 
 
 
-
-/*
 __kernel void create_keypoints(
-	__global float* dog_prev,// __attribute__((max_constant_size(MAX_CONST_SIZE))),
-	__global float* dog,// __attribute__((max_constant_size(MAX_CONST_SIZE))),
-	__global float* dog_next,// __attribute__((max_constant_size(MAX_CONST_SIZE))),
-	__global int* output,
-	int border_dist,
-	float peak_thresh,
-	int octsize,
-	float EdgeThresh0,
-	float EdgeThresh,
-	int dog_width,
-	int dog_height)
+	__global float* peaks,
+	float scale,
+	__global keypoint* output,
+	int nb_keypoints,
+	__global int* counter,
+	int width,
+	int height)
+{
+	int gid1 = (int) get_global_id(1);
+	int gid0 = (int) get_global_id(0);
+	if (gid0 < height && gid1 < width ) {
+	
+		float val = peaks[gid0*width+gid1];
+		if (val != 0) {
+			int old = atomic_inc(counter);
+			keypoint k = 0.0; //no malloc, for this is a float4
+			k.s0 = val;
+			k.s1 = (float) gid0;
+			k.s2 = (float) gid1;
+			k.s3 = scale;
+			if (old < nb_keypoints) output[old]=k;
+		}
+	}
+}
 
 
 
-*/
 
 
 
