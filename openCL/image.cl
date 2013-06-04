@@ -252,8 +252,8 @@ __kernel void interp_keypoint(
 	int height)
 {
 
-	int gid1 = (int) get_global_id(1);
-	//int gid0 = (int) get_global_id(0);
+	//int gid1 = (int) get_global_id(1);
+	int gid0 = (int) get_global_id(0);
 
 	if (gid0 < actual_nb_keypoints) {
 	
@@ -267,7 +267,7 @@ __kernel void interp_keypoint(
 			K00, K11, K22, K01, K02, K12, K10, K20, K21,
 			solution0, solution1, solution2, det, peakval;
 		int pos = r*width+c;
-		int loop = 1, moveRemain = 5;
+		int loop = 1, movesRemain = 5;
 		int newr = r, newc = c;
 		
 		//this loop replaces the recursive "InterpKeyPoint"

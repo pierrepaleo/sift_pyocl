@@ -150,13 +150,13 @@ def my_interp_keypoint(dog_prev,dog,dog_next, s, r, c,movesRemain,width,height):
     newr = r, newc = c
     
     if (x[1] > 0.6 and r < height - 3):
-        newr++
+        newr+=1
     elif (x[1] < -0.6 and r > 3):
-        newr--
+        newr-=1
     if (x[2] > 0.6 and c < width - 3):
-        newc++
+        newc+=1
     elif (x[2] < -0.6 and c > 3):
-        newc--
+        newc-=1
 
     if (movesRemain > 0  and  (newr != r or newc != c)):
         my_interp_keypoint(dog_prev,dog,dog_next,s, newr, newc, movesRemain -1,width,height)
@@ -190,23 +190,20 @@ def fit_quadratic(dog_prev,dog,dog_next, r, c):
     H[0][0] = dog_prev[r,c]   - 2.0 * dog[r,c] + dog_next[r,c]
     H[1][1] = dog[r-1,c] - 2.0 * dog[r,c] + dog[r+1,c]
     H[2][2] = dog[r,c-1] - 2.0 * dog[r,c] + dog[r,c+1]
-    H[0][1] = H[1][0] 
-    		= ( (dog_next[r+1,c] - dog_next[r-1,c])
-    		 - (dog_prev[r+1,c] - dog_prev[r-1,c]) ) / 4.0
+    H[0][1] = H[1][0] = ( (dog_next[r+1,c] - dog_next[r-1,c])
+    		 			- (dog_prev[r+1,c] - dog_prev[r-1,c]) ) / 4.0
 
 
-    H[0][2] = H[2][0] 
-    		= ( (dog_next[r,c+1] - dog_next[r,c-1])
-    		 - (dog_prev[r,c+1] - dog_prev[r,c-1]) ) / 4.0
+    H[0][2] = H[2][0] = ( (dog_next[r,c+1] - dog_next[r,c-1])
+		    		 - (dog_prev[r,c+1] - dog_prev[r,c-1]) ) / 4.0
 
-    H[1][2] = H[2][1]
-    		= ( (dog[r+1,c+1] - dog[r+1,c-1])
-    		 - (dog[r-1,c+1] - dog1[r-1,c-1]) ) / 4.0
+    H[1][2] = H[2][1]= ( (dog[r+1,c+1] - dog[r+1,c-1])
+    				 - (dog[r-1,c+1] - dog1[r-1,c-1]) ) / 4.0
     		 
     x = -numpy.dot(numpy.linalg.inv(H),g) #extremum position
-	peakval = dog[r,c] + 0.5 * (x[0]*g[0]+x[1]*g[1]+x[2]*g[2])
+    peakval = dog[r,c] + 0.5 * (x[0]*g[0]+x[1]*g[1]+x[2]*g[2])
 	
-	return x,peakval
+    return x, peakval
 
 
 
@@ -257,12 +254,16 @@ class test_image(unittest.TestCase):
         kernel_src = open(kernel_path).read()
         self.program = pyopencl.Program(ctx, kernel_src).build()
         self.wg = (1, 512)
+
+        
+        
+        
         
 
     def tearDown(self):
         self.mat = None
         self.program = None
-        
+
         
         
         
@@ -349,8 +350,8 @@ class test_image(unittest.TestCase):
        		self.width, self.height)
         
         res = self.output.get()        
-        self.keypoints1 = self.output #for next use
-        self.actual_nb_keypoints = self.counter.get() #for next use
+        self.keypoints1 = self.output #for further use
+        self.actual_nb_keypoints = self.counter.get() #for further use
       
         t1 = time.time()
         ref = my_local_maxmin(self.dog_prev,self.dog,self.dog_next,
@@ -454,6 +455,7 @@ class test_image(unittest.TestCase):
         tests the keypoints interpolation kernel
         Requires "test_local_maxmin" to be run in order to get "self.keypoints1", "self.actual_nb_keypoints", 				"self.gpu_dog_prev", self.gpu_dog", "self.gpu_dog_next", "self.s", "self.width", "self.height", "self.peakthresh"
         """
+        print self.meow
 
         InitSigma = numpy.float32(1.6) #warning: it must be the same in my_keypoints_interpolation
         self.output = pyopencl.array.zeros(queue, (self.actual_nb_keypoints,4), dtype=numpy.float32, order="C")
@@ -463,23 +465,23 @@ class test_image(unittest.TestCase):
         k1 = self.program.interp_keypoint(queue, self.shape, self.wg, 
         	self.dog_prev.data, self.dog.data, self.dog_next.data, self.keypoints1.data, self.output.data,
         	self.actual_nb_keypoints, self.peakthresh, self.s, InitSigma,
-        	self.width, self.height)
-        	    	
+        	self.width, self.height)    	    	
         res = self.output.get()
 
         t1 = time.time()
-        ref_norm,ref_ori = my_gradient(self.mat)
+        ref = numpy.zeros(self.actual_nb_keypoints).astype(numpy.float32)
+        ref = self.keypoints1.get()
+        for i,k in enumerate(ref):
+            ref[i]= my_interp_keypoint(self.dog_prev,self.dog,self.dog_next, self.s, k[1], k[2],5,self.width,self.height)
+                
         t2 = time.time()
-        delta_norm = abs(ref_norm - res_norm).max()
-        delta_ori = abs(ref_ori - res_ori).max()
-        self.assert_(delta_norm < 1e-4, "delta_norm=%s" % (delta_norm))
-        self.assert_(delta_ori < 1e-4, "delta_ori=%s" % (delta_ori))
-        logger.info("delta_norm=%s" % delta_norm)
-        logger.info("delta_ori=%s" % delta_ori)
+        delta = abs(ref - res).max()
+        self.assert_(delta < 1e-4, "delta=%s" % (delta))
+        logger.info("delta=%s" % delta)
         
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
-            logger.info("Gradient computation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+            logger.info("Keypoints interpolation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
 
 
 
@@ -495,7 +497,8 @@ def test_suite_image():
     testSuite = unittest.TestSuite()
     #testSuite.addTest(test_image("test_gradient"))
     testSuite.addTest(test_image("test_local_maxmin"))
-    #testSuite.addTest(test_image("test_create_keypoints"))
+    testSuite.addTest(test_image("test_interpolation"))
+    #testSuite.addTest(test_image("test_create_keypoints")) #Not used anymore
     return testSuite
 
 if __name__ == '__main__':
