@@ -229,6 +229,7 @@ def fit_quadratic(dog_prev,dog,dog_next, r, c):
 def my_create_keypoints(peaks,nb_keypoints,s):
     '''
     create a vector of nb_keypoints from the peaks matrix
+    THIS FUNCTION IS NOT USED ANYMORE
     '''
     height, width = peaks.shape
     output = numpy.zeros((nb_keypoints,4),dtype=numpy.float32)
@@ -347,7 +348,10 @@ class test_image(unittest.TestCase):
        		self.counter.data, self.nb_keypoints, self.s,
        		self.width, self.height)
         
-        res = self.output.get()
+        res = self.output.get()        
+        self.keypoints1 = self.output #for next use
+        self.actual_nb_keypoints = self.counter.get() #for next use
+      
         t1 = time.time()
         ref = my_local_maxmin(self.dog_prev,self.dog,self.dog_next,
         	self.peakthresh,self.border_dist, self.octsize, self.EdgeThresh0, self.EdgeThresh,self.nb_keypoints,self.s)
@@ -385,7 +389,7 @@ class test_image(unittest.TestCase):
     def test_create_keypoints(self):
         """
         tests the create_keypoints kernel
-        OLD function, useless now
+        THIS FUNCTION IS NOT USED ANYMORE
         """
         self.width = numpy.int32(150)
         self.height = numpy.int32(146)
@@ -434,6 +438,50 @@ class test_image(unittest.TestCase):
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
             logger.info("Keypoints vector creation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+
+
+
+
+
+
+
+
+
+
+       
+    def test_interpolation(self):
+        """
+        tests the keypoints interpolation kernel
+        Requires "test_local_maxmin" to be run in order to get "self.keypoints1", "self.actual_nb_keypoints", 				"self.gpu_dog_prev", self.gpu_dog", "self.gpu_dog_next", "self.s", "self.width", "self.height", "self.peakthresh"
+        """
+
+        InitSigma = numpy.float32(1.6) #warning: it must be the same in my_keypoints_interpolation
+        self.output = pyopencl.array.zeros(queue, (self.actual_nb_keypoints,4), dtype=numpy.float32, order="C")
+        self.shape = calc_size(self.output.shape, self.wg)
+
+        t0 = time.time()
+        k1 = self.program.interp_keypoint(queue, self.shape, self.wg, 
+        	self.dog_prev.data, self.dog.data, self.dog_next.data, self.keypoints1.data, self.output.data,
+        	self.actual_nb_keypoints, self.peakthresh, self.s, InitSigma,
+        	self.width, self.height)
+        	    	
+        res = self.output.get()
+
+        t1 = time.time()
+        ref_norm,ref_ori = my_gradient(self.mat)
+        t2 = time.time()
+        delta_norm = abs(ref_norm - res_norm).max()
+        delta_ori = abs(ref_ori - res_ori).max()
+        self.assert_(delta_norm < 1e-4, "delta_norm=%s" % (delta_norm))
+        self.assert_(delta_ori < 1e-4, "delta_ori=%s" % (delta_ori))
+        logger.info("delta_norm=%s" % delta_norm)
+        logger.info("delta_ori=%s" % delta_ori)
+        
+        if PROFILE:
+            logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
+            logger.info("Gradient computation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+
+
 
 
 

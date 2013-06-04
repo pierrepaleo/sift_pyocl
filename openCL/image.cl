@@ -221,7 +221,7 @@ __kernel void local_maxmin(
  * @param keypoints: Pointer to global memory with current keypoints vector
  * @param output: Pointer to global memory with keypoints vector that will be processed afterwards
  * @param actual_nb_keypoints: actual number of keypoints previously found, i.e previous "counter" final value
- * @param peak_thresh: we are not counting the interpolated values if below the threshold
+ * @param peak_thresh: we are not counting the interpolated values if below the threshold (par.PeakThresh = 255.0*0.04/3.0)
  * @param s: the scale in the DoG, i.e the index of the current DoG, cast to a float (this is not the std !)
  * @param InitSigma: float "par.InitSigma" in SIFT (1.6 by default)
  * @param width: integer number of columns of the DoG
