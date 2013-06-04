@@ -83,24 +83,23 @@ __kernel void compute_gradient_orientation(
 /**
  * \brief Local minimum or maximum detection in a 3x3 neighborhood in 3 DOG
  *
- * output[i,j] != 0 iff [i,j] is a local (3x3) maximum in the 3 DOG
- * output[i,j] = 0 by default (neither maximum nor minimum)
- *
- * Additionally, the extrema must not lie on an edge (test with ratio of the principal curvatures)
+ * Refactored to return a vector of keypoints, rather than a matrix filled (almost everywhere) with zeros
  *
  * @param dog_prev: Pointer to global memory with the "previous" difference of gaussians image
  * @param dog: Pointer to global memory with the "current" difference of gaussians image
- * @param dog_next: Pointer to global memory with the "next" difference of gaussians image
+ * @param dog_next: Pointer to global memory with the "next" difference of gaussians image 
+ * @param border_dist: integer, distance between inner image and borders (SIFT takes 5)
+ * @param peak_thresh: float, threshold (SIFT takes 255.0 * 0.04 / 3.0)
  * @param output: Pointer to global memory output *filled with zeros*
  * @param octsize: initially 1 then twiced at each new octave
  * @param EdgeThresh0: initial upper limit of the curvatures ratio, to test if the point is on an edge
  * @param EdgeThresh: upper limit of the curvatures ratio, to test if the point is on an edge
- * @param border_dist: integer, distance between inner image and borders (SIFT takes 5)
- * @param peak_thresh: float, threshold (SIFT takes 255.0 * 0.04 / 3.0)
+ * @param counter: pointer to the current position in keypoints vector -- shared between threads
+ * @param nb_keypoints: Maximum number of keypoints: size of the keypoints vector
+ * @param scale: the scale in the DoG, i.e the index of the current DoG, cast to a float (it is not the std !)
  * @param dog_width: integer number of columns of the DOG
  * @param dog_height: integer number of lines of the DOG
  
- notice we still test "dog[pos] > val" to have a simple code. The inequalities have to be strict.
 */
 
 
@@ -114,15 +113,18 @@ TODO:
 
 
 __kernel void local_maxmin(
-	__global float* dog_prev,// __attribute__((max_constant_size(MAX_CONST_SIZE))),
-	__global float* dog,// __attribute__((max_constant_size(MAX_CONST_SIZE))),
-	__global float* dog_next,// __attribute__((max_constant_size(MAX_CONST_SIZE))),
-	__global float* output,
+	__global float* dog_prev,
+	__global float* dog,
+	__global float* dog_next,
+	__global keypoint* output,
 	int border_dist,
 	float peak_thresh,
 	int octsize,
 	float EdgeThresh0,
 	float EdgeThresh,
+	__global int* counter,
+	int nb_keypoints,
+	float scale,
 	int dog_width,
 	int dog_height)
 {
@@ -156,11 +158,6 @@ __kernel void local_maxmin(
 							if (dog_prev[pos] < val || dog[pos] < val || dog_next[pos] < val) ismin = 0;
 					}
 				}
-				/*
-				//these conditions are exclusive
-				if (ismax == 1) res = 1; 
-				if (ismin == 1) res = -1;	
-				*/
 				
 				if (ismax == 1 || ismin == 1) res = val;
 				
@@ -190,13 +187,29 @@ __kernel void local_maxmin(
 				
 				if (det < edthresh * trace * trace)
 					res = 0.0f;
-								
+					
+				/*
+				 At this stage, res != 0.0f iff the current pixel is a good keypoint
+				*/
+				if (res != 0.0f) {
+					int old = atomic_inc(counter);
+					keypoint k = 0.0; //no malloc, for this is a float4
+					k.s0 = val;
+					k.s1 = (float) gid0;
+					k.s2 = (float) gid1;
+					k.s3 = scale;
+					if (old < nb_keypoints) output[old]=k;
+				}
 				
-			}		
-		}
-		output[gid0*dog_width+gid1] = res;
-	}
+			}//end "value >thresh"		
+		}//end "in the inner image"
+	}//end "in the image"
 }
+
+
+
+
+
 
 
 
