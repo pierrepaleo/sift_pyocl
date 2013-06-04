@@ -297,7 +297,7 @@ class SiftPlan(object):
                                                         numpy.int32(par.BorderDist),
                                                         numpy.float32(par.PeakThresh), *self.scales[octave])
             if octave < (self.octave_max - 1):
-                k1 = self.programs["preprocess"].shrink(self.queue, self.procsize[octave + 1], self.wgsize[octave + 1],
+                 self.programs["preprocess"].shrink(self.queue, self.procsize[octave + 1], self.wgsize[octave + 1],
                                                     self.buffers[(octave, 0, "G")].data, self.buffers[(octave + 1, 0, "G")].data,
                                                     numpy.int32(2), numpy.int32(2), *self.scales[octave + 1])
 
@@ -321,12 +321,14 @@ class SiftPlan(object):
                                                                                           1e-6 * (k2.profile.end - k2.profile.start)))
 
     def count_kp(self):
+        kpt = 0
         for octave in range(self.octave_max):
             for i in range(par.Scales):
                 data = self.buffers[(octave, i + 1, "Reg")].get()
                 sum = (data != 0).sum()
+                kpt+=sum
                 print("octave %i scale %s kp count %i size %s ratio:%s" % (octave, i + 1, sum, self.scales[octave], 1000.0 * sum / self.scales[octave][1] / self.scales[octave][0]))
-
+        print("Found total %i guess keypoints so %s/Mpix"%(kpt,kpt*1.0e6/self.shape[0]/self.shape[1]))
 if __name__ == "__main__":
     #Prepare debugging
     import scipy.misc
