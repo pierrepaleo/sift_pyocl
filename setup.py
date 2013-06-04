@@ -113,7 +113,7 @@ if ("sdist" in sys.argv):
 
 installDir = os.path.join(get_python_lib(), "sift")
 
-data_files = [(installDir, glob.glob("*.cl"))]
+data_files = [(installDir, glob.glob("openCL/*.cl"))]
 
 if sys.platform == "win32":
     # This is for mingw32/gomp?

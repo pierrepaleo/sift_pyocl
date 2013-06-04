@@ -189,7 +189,7 @@ rgb_to_float(	__global unsigned char *array_int,
 	int i = get_global_id(0) * IMAGE_W + get_global_id(1);
 	//Global memory guard for padding
 	if(i < IMAGE_W*IMAGE_H)
-		array_float[i] = (float)0.299f*array_int[i] + 0.587f*array_int[i+1] + 0.114f*array_int[i+2];
+		array_float[i] = 0.299f*array_int[3*i] + 0.587f*array_int[3*i+1] + 0.114f*array_int[3*i+2];
 ;
 }//end kernel
 
