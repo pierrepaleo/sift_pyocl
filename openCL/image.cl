@@ -96,7 +96,7 @@ __kernel void compute_gradient_orientation(
  * @param EdgeThresh: upper limit of the curvatures ratio, to test if the point is on an edge
  * @param counter: pointer to the current position in keypoints vector -- shared between threads
  * @param nb_keypoints: Maximum number of keypoints: size of the keypoints vector
- * @param scale: the scale in the DoG, i.e the index of the current DoG, cast to a float (it is not the std !)
+ * @param scale: the scale in the DoG, i.e the index of the current DoG, cast to a float (this is not the std !)
  * @param dog_width: integer number of columns of the DOG
  * @param dog_height: integer number of lines of the DOG
  
@@ -211,21 +211,26 @@ __kernel void local_maxmin(
 
 
 /**
- * \brief Create a keypoint at a peak near scale space location (s,r,c), 
- * where s is scale (index of DOGs image), and (r,c) is (row, col) location.
- *  Add to the list of keys with any new keys added.
+ * \brief From the (temporary) keypoints, create a vector of interpolated keypoints 
+ * 			(this is the last step of keypoints refinement)
+ *  
  *
  * @param dog_prev: Pointer to global memory with the "previous" difference of gaussians image
  * @param dog: Pointer to global memory with the "current" difference of gaussians image
  * @param dog_next: Pointer to global memory with the "next" difference of gaussians image 
- * @param border_dist: integer, distance between inner image and borders (SIFT takes 5)
- * @param output: Pointer to global memory output *filled with zeros*
+ * @param keypoints: Pointer to global memory current keypoints vector
+ * @param actual_nb_keypoints: actual number of keypoints previously found, i.e previous "counter" final value
+ * @param peak_thresh: we are not counting the interpolated values if below the threshold
+ * @param s: the scale in the DoG, i.e the index of the current DoG, cast to a float (this is not the std !)
  * @param width: integer number of columns of the DoG
  * @param height: integer number of lines of the DoG
  */
  
 /* 
-TODO: "Check that no keypoint has been created at this location (to avoid duplicates).  Otherwise, mark this map location"	if (map(c,r) > 0.0) return;
+TODO: 
+-Taking "actual_nb_keypoints instead of nb_keypoints would spare some memory, is it worth returning it in the previous func ?
+
+-"Check that no keypoint has been created at this location (to avoid duplicates).  Otherwise, mark this map location"	if (map(c,r) > 0.0) return;
 	map(c,r) = 1.0
 */
 
@@ -234,7 +239,8 @@ __kernel void interp_keypoint(
 	__global float* dog_prev,
 	__global float* dog,
 	__global float* dog_next,
-	int border_dist,
+	__global keypoint* keypoints,
+	int actual_nb_keypoints,
 	float peak_thresh,
 	int s,
 	int width,
@@ -242,101 +248,103 @@ __kernel void interp_keypoint(
 {
 
 	int gid1 = (int) get_global_id(1);
-	int gid0 = (int) get_global_id(0);
+	//int gid0 = (int) get_global_id(0);
 
-	if (gid0 < height && gid1 < width) {
-		if (gid0 < dog_height - border_dist && gid1 < dog_width - border_dist && gid0 >= border_dist && gid1 >= border_dist) {
-
-
-			//pre-allocating variables before entering into the loop
-			float g0, g1, g2, 
-				H00, H11, H22, H01, H02, H12, H10, H20, H21, 
-				K00, K11, K22, K01, K02, K12, K10, K20, K21,
-				solution0, solution1, solution2, det, peakval;
-			int pos = gid0*width+gid1;
-			int loop = 1, moveRemain = 5;
-			int newr = gid0, newc = gid1;
-			
-			//this loop replaces the recursive "InterpKeyPoint"
-			while (loop == 1) { 
-
-				pos = newr*width+newc;
-
-				//Fill in the values of the gradient from pixel differences
-				g0 = (dog_next[pos] - dog_prev[pos]) / 2.0;
-				g1 = (dog[(newr+1)*width+newc] - dog[(newr-1)*width+newc]) / 2.0;
-				g2 = (dog[pos+1] - dog[pos-1]) / 2.0;
-
-				//Fill in the values of the Hessian from pixel differences
-				H00 = dog_prev[pos]   - 2.0 * dog[pos] + dog_next[pos];
-				H11 = dog[(newr-1)*width+newc] - 2.0 * dog[pos] + dog[(newr+1)*width+newc];
-				H22 = dog[pos-1] - 2.0 * dog[pos] + dog[pos+1];
-				
-				H01 = ( (dog_next[(newr+1)*width+newc] - dog_next[(newr-1)*width+newc])
-						- (dog_prev[(newr+1)*width+newc] - dog_prev[(newr-1)*width+newc])) / 4.0;
-							
-				H02 = ( (dog_next[pos+1] - dog_next[pos-1])
-						-(dog_prev[pos+1] - dog_prev[pos-1])) / 4.0;
-							
-				H12 = ( (dog[(newr+1)*width+newc+1] - dog[(newr+1)*width+newc-1])
-						- (dog[(newr-1)*width+newc+1] - dog[(newr-1)*width+newc-1])) / 4.0;
-										
-				H10 = H01; H20 = H02; H21 = H12;
-
-
-				//inversion of the Hessian	: det*K = H^(-1)
-
-				// a_13 (a_21 a_32-a_22 a_31)+a_12 (a_23 a_31-a_21 a_33)+a_11 (a_22 a_33-a_23 a_32)
-				det = H02*(H10*H21-H11*H20) + H01*(H12*H20-H10*H22) + H00*(H11*H22-H12-H21); 
-				/*
-				(a_22 a_33-a_23 a_32 | a_13 a_32-a_12 a_33 | a_12 a_23-a_13 a_22
-				 a_23 a_31-a_21 a_33 | a_11 a_33-a_13 a_31 | a_13 a_21-a_11 a_23
-				 a_21 a_32-a_22 a_31 | a_12 a_31-a_11 a_32 | a_11 a_22-a_12 a_21)
-				*/
+	if (gid0 < actual_nb_keypoints) {
 	
-				K00 = H11*H22 - H12*H21;
-				K01 = H02*H21 - H01*H22;
-				K02 = H01*H12 - H02*H11;
-				K10 = H12*H20 - H10*H22;
-				K11 = H00*H22 - H02*H20;
-				K12 = H02*H10 - H00*H12;
-				K20 = H10*H21 - H11*H20;
-				K21 = H01*H20 - H00*H21;
-				K22 = H00*H11 - H01*H10;
+		keypoint k = keypoints[gid0];
+		int r = (int) k.s1;
+		int c = (int) k.s2;
+		
+		//pre-allocating variables before entering into the loop
+		float g0, g1, g2, 
+			H00, H11, H22, H01, H02, H12, H10, H20, H21, 
+			K00, K11, K22, K01, K02, K12, K10, K20, K21,
+			solution0, solution1, solution2, det, peakval;
+		int pos = r*width+c;
+		int loop = 1, moveRemain = 5;
+		int newr = r, newc = c;
+		
+		//this loop replaces the recursive "InterpKeyPoint"
+		while (loop == 1) { 
 
-				//x = -H^(-1)*g
-				solution0 = -(g0*K00 + g1*K01 + g2*K02)/det;
-				solution1 = -(g0*K10 + g1*K11 + g2*K12)/det;
-				solution2 = -(g0*K20 + g1*K21 + g2*K22)/det;
+			pos = newr*width+newc;
 
+			//Fill in the values of the gradient from pixel differences
+			g0 = (dog_next[pos] - dog_prev[pos]) / 2.0;
+			g1 = (dog[(newr+1)*width+newc] - dog[(newr-1)*width+newc]) / 2.0;
+			g2 = (dog[pos+1] - dog[pos-1]) / 2.0;
 
-				//interpolated DoG magnitude at this peak
-				peakval = dog[pos] + 0.5 * (solution0*g0+solution1*g1+solution2*g2);
+			//Fill in the values of the Hessian from pixel differences
+			H00 = dog_prev[pos]   - 2.0 * dog[pos] + dog_next[pos];
+			H11 = dog[(newr-1)*width+newc] - 2.0 * dog[pos] + dog[(newr+1)*width+newc];
+			H22 = dog[pos-1] - 2.0 * dog[pos] + dog[pos+1];
 			
-			
-			/* Move to an adjacent (row,col) location if quadratic interpolation is larger than 0.6 units in some direction. 					The movesRemain counter allows only a fixed number of moves to prevent possibility of infinite loops.
-				*/
+			H01 = ( (dog_next[(newr+1)*width+newc] - dog_next[(newr-1)*width+newc])
+					- (dog_prev[(newr+1)*width+newc] - dog_prev[(newr-1)*width+newc])) / 4.0;
+						
+			H02 = ( (dog_next[pos+1] - dog_next[pos-1])
+					-(dog_prev[pos+1] - dog_prev[pos-1])) / 4.0;
+						
+			H12 = ( (dog[(newr+1)*width+newc+1] - dog[(newr+1)*width+newc-1])
+					- (dog[(newr-1)*width+newc+1] - dog[(newr-1)*width+newc-1])) / 4.0;
+									
+			H10 = H01; H20 = H02; H21 = H12;
 
-				if (solution1 > 0.6 && gid0 < height - 3)
-					newr++;
-				else if (solution1 < -0.6 && r > 3)
-					newr--;
-				if (solution2 > 0.6 && c < width - 3)
-					newc++;
-				else if (solution2 < -0.6 && c > 3)
-					newc--;
 
-				/*
-					Loop test
-				*/
-				if (movesRemain > 0  &&  (newr != r || newc != c))
-					movesRemain--;
-				else
-					loop = 0;
-					
-			}//end of the big loop
+			//inversion of the Hessian	: det*K = H^(-1)
+
+			// a_13 (a_21 a_32-a_22 a_31)+a_12 (a_23 a_31-a_21 a_33)+a_11 (a_22 a_33-a_23 a_32)
+			det = H02*(H10*H21-H11*H20) + H01*(H12*H20-H10*H22) + H00*(H11*H22-H12-H21); 
+			/*
+			(a_22 a_33-a_23 a_32 | a_13 a_32-a_12 a_33 | a_12 a_23-a_13 a_22
+			 a_23 a_31-a_21 a_33 | a_11 a_33-a_13 a_31 | a_13 a_21-a_11 a_23
+			 a_21 a_32-a_22 a_31 | a_12 a_31-a_11 a_32 | a_11 a_22-a_12 a_21)
+			*/
+
+			K00 = H11*H22 - H12*H21;
+			K01 = H02*H21 - H01*H22;
+			K02 = H01*H12 - H02*H11;
+			K10 = H12*H20 - H10*H22;
+			K11 = H00*H22 - H02*H20;
+			K12 = H02*H10 - H00*H12;
+			K20 = H10*H21 - H11*H20;
+			K21 = H01*H20 - H00*H21;
+			K22 = H00*H11 - H01*H10;
+
+			//x = -H^(-1)*g
+			solution0 = -(g0*K00 + g1*K01 + g2*K02)/det;
+			solution1 = -(g0*K10 + g1*K11 + g2*K12)/det;
+			solution2 = -(g0*K20 + g1*K21 + g2*K22)/det;
+
+
+			//interpolated DoG magnitude at this peak
+			peakval = dog[pos] + 0.5 * (solution0*g0+solution1*g1+solution2*g2);
+		
+		
+		/* Move to an adjacent (row,col) location if quadratic interpolation is larger than 0.6 units in some direction. 					The movesRemain counter allows only a fixed number of moves to prevent possibility of infinite loops.
+			*/
+
+			if (solution1 > 0.6 && gid0 < height - 3)
+				newr++;
+			else if (solution1 < -0.6 && r > 3)
+				newr--;
+			if (solution2 > 0.6 && c < width - 3)
+				newc++;
+			else if (solution2 < -0.6 && c > 3)
+				newc--;
+
+			/*
+				Loop test
+			*/
+			if (movesRemain > 0  &&  (newr != r || newc != c))
+				movesRemain--;
+			else
+				loop = 0;
 				
-	
+		}//end of the big loop
+			
+
 		/* Do not create a keypoint if interpolation still remains far outside expected limits, 
 			or if magnitude of peak value is below threshold (i.e., contrast is too low).
 		*/
@@ -349,11 +357,10 @@ __kernel void interp_keypoint(
 			int old = atomic_inc(counter);
 			if (old < nb_keypoints) output[old]=k;
 		}
-		
-		/*
-			Better return here and compute histogram in another kernel
-		*/
-		
+	
+	/*
+		Better return here and compute histogram in another kernel
+	*/
 	}
 }
 
