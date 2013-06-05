@@ -57,6 +57,9 @@ if logger.getEffectiveLevel() <= logging.INFO:
 else:
     PROFILE = False
     queue = pyopencl.CommandQueue(ctx)
+    
+SHOW_FIGURES = False
+    
 
 print "working on %s" % ctx.devices[0].name
 
@@ -69,33 +72,40 @@ def my_gradient(mat):
     return numpy.sqrt(g[0]**2+g[1]**2), numpy.arctan2(g[0],g[1]) #image.cl/compute_gradient_orientation() puts a "-" here
     
     
-def my_local_maxmin(dog_prev,dog,dog_next,thresh,border_dist):
+def my_local_maxmin(dog_prev,dog,dog_next,thresh,border_dist,octsize,EdgeThresh0,EdgeThresh,nb_keypoints,s):
     """
     a python implementation of 3x3 maximum (positive values) or minimum (negative or null values) detection
-    an extremum candidate "val", read in the  has to be greater than 0.8*thresh
+    an extremum candidate "val" has to be greater than 0.8*thresh
     The three DoG have the same size.
     """
-    output = numpy.zeros_like(dog)
+    output = numpy.zeros((nb_keypoints,4),dtype=numpy.float32)
     width = dog.shape[1]
     height = dog.shape[0]
+    counter = 0
     
     for j in range(border_dist,width - border_dist):
         for i in range(border_dist,height - border_dist):
             val = dog[i,j]
-            if (numpy.abs(val) > 0.8*thresh):
-                output[i,j] = is_maxmin(dog_prev,dog,dog_next,val,i,j)
+            if (numpy.abs(val) > 0.8*thresh): #keypoints refinement: eliminating low-contrast points
+                if (is_maxmin(dog_prev,dog,dog_next,val,i,j,octsize,EdgeThresh0,EdgeThresh) != 0):
+                	output[counter,0]=val
+                	output[counter,1]=i
+                	output[counter,2]=j
+                	output[counter,3]=s
+                	counter+=1   	      	
     return output
     
     
-def is_maxmin(dog_prev,dog,dog_next,val,i0,j0):
+def is_maxmin(dog_prev,dog,dog_next,val,i0,j0,octsize,EdgeThresh0,EdgeThresh):
     """
     return 1 iff mat[i0,j0] is a local (3x3) maximum
     return -1 iff mat[i0,j0] is a local (3x3) minimum
-    return 0 by default (neither maximum nor minimum)
+    return 0 by default (neither maximum nor minimum, or value on an edge)
      * Assumes that we are not on the edges, i.e border_dist >= 2 above
     """
     ismax = 0
     ismin = 0
+    res = 0
     if (val > 0.0): ismax = 1
     else: ismin = 1
     for j in range(j0-1,j0+1+1):
@@ -104,10 +114,135 @@ def is_maxmin(dog_prev,dog,dog_next,val,i0,j0):
                 if (dog_prev[i,j] > val or dog[i,j] > val or dog_next[i,j] > val): ismax = 0
             if (ismin == 1):
                 if (dog_prev[i,j] < val or dog[i,j] < val or dog_next[i,j] < val): ismin = 0;
-            
-    if (ismax == 1): return 1 
-    if (ismin == 1): return -1
-    return 0
+    
+    if (ismax == 1): res =  1 
+    if (ismin == 1): res = -1
+    
+    #keypoint refinement: eliminating points at edges
+    H00 = dog[i0-1,j0] - 2.0 * dog[i0,j0] + dog[i0+1,j0]
+    H11 = dog[i0,j0-1]- 2.0 * dog[i0,j0] + dog[i0,j0+1]
+    H01 = ( (dog[i0+1,j0+1] - dog[i0+1,j0-1])
+		- (dog[i0-1,j0+1] - dog[i0-1,j0-1]) ) / 4.0;
+
+    det = H00 * H11 - H01 * H01
+    trace = H00 + H11
+
+    if (octsize <= 1):
+        thr = EdgeThresh0
+    else:
+        thr = EdgeThresh
+    if (det < thr * trace * trace):
+        res = 0
+        
+    return res
+    
+
+
+
+
+def my_interp_keypoint(dog_prev,dog,dog_next, s, r, c,movesRemain,peakthresh,width,height):
+    ''''
+    a Python implementation of SIFT "InterpKeyPoints"
+     (s,r,c) : coords of the processed keypoint in the scale space
+     WARNING: replace "1.6" by "InitSigma" if InitSigma has not its default value
+    '''
+    x,peakval = fit_quadratic(dog_prev,dog,dog_next, r, c)
+    newr = r
+    newc = c
+    
+    if (x[1] > 0.6 and r < height - 3):
+        newr+=1
+    elif (x[1] < -0.6 and r > 3):
+        newr-=1
+    if (x[2] > 0.6 and c < width - 3):
+        newc+=1
+    elif (x[2] < -0.6 and c > 3):
+        newc-=1
+
+    if (movesRemain > 0  and  (newr != r or newc != c)): #recursive call as in SIFT
+        my_interp_keypoint(dog_prev,dog,dog_next,s, newr, newc, movesRemain -1,peakthresh,width,height)
+        return
+               
+    if (abs(x[0]) <  1.5 and numpy.abs(x[1]) <  1.5 and numpy.abs(x[2]) <  1.5 and numpy.abs(peakval) > peakthresh):
+        ki = numpy.zeros(4,dtype=numpy.float32)
+        ki[0] = peakval
+        ki[1] = r + x[1]
+        ki[2] = c + x[2]
+        ki[3] = 1.6 * 2.0**((s + x[0]) / 3.0) #3.0 is "par.Scales" 
+        return ki #our interpolated keypoint
+
+
+
+
+def fit_quadratic(dog_prev,dog,dog_next, r, c):
+    '''
+    quadratic interpolation arround the keypoint (s,r,c)
+    '''
+
+    #gradient
+    g = numpy.zeros(3,dtype=numpy.float32)
+    g[0] = (dog_next[r,c] - dog_prev[r,c]) / 2.0
+    g[1] = (dog[r+1,c] - dog[r-1,c]) / 2.0;
+    g[2] = (dog[r,c+1] - dog[r,c-1]) / 2.0
+	#hessian
+    H = numpy.zeros((3,3)).astype(numpy.float32)
+    H[0][0] = dog_prev[r,c]   - 2.0 * dog[r,c] + dog_next[r,c]
+    H[1][1] = dog[r-1,c] - 2.0 * dog[r,c] + dog[r+1,c]
+    H[2][2] = dog[r,c-1] - 2.0 * dog[r,c] + dog[r,c+1]
+    H[0][1] = H[1][0] = ( (dog_next[r+1,c] - dog_next[r-1,c])
+    		 			- (dog_prev[r+1,c] - dog_prev[r-1,c]) ) / 4.0
+
+
+    H[0][2] = H[2][0] = ( (dog_next[r,c+1] - dog_next[r,c-1])
+		    		 - (dog_prev[r,c+1] - dog_prev[r,c-1]) ) / 4.0
+
+    H[1][2] = H[2][1]= ( (dog[r+1,c+1] - dog[r+1,c-1])
+    				 - (dog[r-1,c+1] - dog[r-1,c-1]) ) / 4.0
+    		 
+    x = -numpy.dot(numpy.linalg.inv(H),g) #extremum position
+    peakval = dog[r,c] + 0.5 * (x[0]*g[0]+x[1]*g[1]+x[2]*g[2])
+	
+    return x, peakval
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+def my_create_keypoints(peaks,nb_keypoints,s):
+    '''
+    create a vector of nb_keypoints from the peaks matrix
+    THIS FUNCTION IS NOT USED ANYMORE
+    '''
+    height, width = peaks.shape
+    output = numpy.zeros((nb_keypoints,4),dtype=numpy.float32)
+    
+    b = (peaks != 0)
+    nb = b.sum()
+    tmp = numpy.where(b)
+    output[:nb,1],output[:nb,2] = tmp
+    output[:nb,0] = peaks[tmp]
+    output[:nb,3] = s
+    
+    return output
+    
+    
+    
+    
+
     
     
 
@@ -118,11 +253,15 @@ class test_image(unittest.TestCase):
         kernel_src = open(kernel_path).read()
         self.program = pyopencl.Program(ctx, kernel_src).build()
         self.wg = (1, 512)
+
         
 
     def tearDown(self):
         self.mat = None
         self.program = None
+
+        
+        
         
         
         
@@ -159,14 +298,22 @@ class test_image(unittest.TestCase):
             logger.info("Gradient computation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
 
 
+
+
+
     def test_local_maxmin(self):
         """
         tests the local maximum/minimum detection kernel
         """
         self.border_dist = numpy.int32(5) #SIFT
-        self.peakthresh = numpy.float32(255.0 * 0.04 / 3.0) #SIFT
-
-        l = scipy.misc.lena().astype(numpy.float32)
+        self.peakthresh = numpy.float32(0.01)#(255.0 * 0.04 / 3.0) #SIFT
+        self.EdgeThresh = numpy.float32(0.06) #SIFT
+        self.EdgeThresh0 = numpy.float32(0.08) #SIFT
+        self.octsize = numpy.int32(4) #initially 1, then twiced at each new octave
+        self.nb_keypoints = 10000 #constant size !
+		
+		
+        l = scipy.misc.lena().astype(numpy.float32)[100:250,100:250]
         self.width = numpy.int32(l.shape[1])
         self.height = numpy.int32(l.shape[0])
 
@@ -180,36 +327,55 @@ class test_image(unittest.TestCase):
         self.dog_prev = g[1]-g[0]
         self.dog = g[2]-g[1]
         self.dog_next = g[3]-g[2]
-
+        self.s = numpy.float32(1.0) #0, 1, 2 or 3... 1 here
+        
         self.gpu_dog_prev = pyopencl.array.to_device(queue, self.dog_prev)
         self.gpu_dog = pyopencl.array.to_device(queue, self.dog)
         self.gpu_dog_next = pyopencl.array.to_device(queue, self.dog_next)
-        self.output = pyopencl.array.empty(queue, self.dog.shape, dtype=numpy.int32, order="C")
+        self.output = pyopencl.array.zeros(queue, (self.nb_keypoints,4), dtype=numpy.float32, order="C")
+        self.counter = pyopencl.array.zeros(queue, (1,), dtype=numpy.int32, order="C")
+        self.nb_keypoints = numpy.int32(self.nb_keypoints)
         self.shape = calc_size(self.dog.shape, self.wg)
         
         t0 = time.time()
-        k1 = self.program.local_maxmin(queue, self.shape, self.wg, self.gpu_dog_prev.data, self.gpu_dog.data, self.gpu_dog_next.data, self.output.data, self.border_dist, self.peakthresh, self.width, self.height)
-        res = self.output.get()
-        t1 = time.time()
-        ref = my_local_maxmin(self.dog_prev,self.dog,self.dog_next,self.peakthresh,self.border_dist)
-        t2 = time.time()
-        delta = abs(ref - res).max()
+        k1 = self.program.local_maxmin(queue, self.shape, self.wg, 
+        	self.gpu_dog_prev.data, self.gpu_dog.data, self.gpu_dog_next.data, self.output.data, 
+       		self.border_dist, self.peakthresh, self.octsize, self.EdgeThresh0, self.EdgeThresh,
+       		self.counter.data, self.nb_keypoints, self.s,
+       		self.width, self.height)
         
-        '''
-        fig = pylab.figure()
-        sp1 = fig.add_subplot(221)
-        sh1 = sp1.imshow(res, interpolation="nearest")
-        sp2 = fig.add_subplot(222)
-        sh2 = sp2.imshow(ref,interpolation="nearest")
-        cbar = fig.colorbar(sh2)
-        fig.show()
-        raw_input("enter")
-        print("Number of keypoints: %s" %(abs(res).sum()))
-        '''
+        res = self.output.get()        
+        self.keypoints1 = self.output #for further use
+        self.actual_nb_keypoints = self.counter.get()[0] #for further use
+      
+        t1 = time.time()
+        ref = my_local_maxmin(self.dog_prev,self.dog,self.dog_next,
+        	self.peakthresh,self.border_dist, self.octsize, self.EdgeThresh0, self.EdgeThresh,self.nb_keypoints,self.s)
+        t2 = time.time()
+        
+        #we have to sort the arrays, for peaks orders is unknown for GPU
+        res_peaks = res[(res[:,0].argsort(axis=0)),0]
+        ref_peaks = ref[(ref[:,0].argsort(axis=0)),0]
+        res_r = res[(res[:,1].argsort(axis=0)),1]
+        ref_r = ref[(ref[:,1].argsort(axis=0)),1]
+        res_c = res[(res[:,2].argsort(axis=0)),2]
+        ref_c = ref[(ref[:,2].argsort(axis=0)),2]
+        #res_s = res[(res[:,3].argsort(axis=0)),3]
+        #ref_s = ref[(ref[:,3].argsort(axis=0)),3]
+        
+        delta_peaks = abs(ref_peaks - res_peaks).max()
+        delta_r = abs(ref_r - res_r).max()
+        delta_c = abs(ref_c - res_c).max()
+        #print("keypoints after 2 steps of refinement: %s" %(self.actual_nb_keypoints))
+        
+        self.assert_(delta_peaks < 1e-4, "delta_peaks=%s" % (delta_peaks))
+        self.assert_(delta_r < 1e-4, "delta_r=%s" % (delta_r))
+        self.assert_(delta_c < 1e-4, "delta_c=%s" % (delta_c))
+        logger.info("delta_peaks=%s" % delta_peaks)
+        logger.info("delta_r=%s" % delta_r)
+        logger.info("delta_c=%s" % delta_c)
 
 
-        self.assert_(delta == 0, "delta=%s" % (delta)) #as the matrices contain integers, "delta == 0" can be used
-        logger.info("delta=%s" % delta)
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
             logger.info("Local extrema search took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
@@ -217,10 +383,176 @@ class test_image(unittest.TestCase):
 
 
 
+
+    def test_create_keypoints(self):
+        """
+        tests the create_keypoints kernel
+        THIS FUNCTION IS NOT USED ANYMORE
+        """
+        self.width = numpy.int32(150)
+        self.height = numpy.int32(146)
+        self.nb_keypoints = 10000 #constant size !
+        self.s = numpy.float32(1.0) #0, 1, 2 or 3
+        #fill with zeros
+        self.peaks = numpy.random.rand(self.height,self.width).astype(numpy.float32)
+        thres = (self.peaks <= 0.7)
+        self.peaks[thres] = 0
+        
+        self.gpu_peaks = pyopencl.array.to_device(queue, self.peaks)
+        self.output = pyopencl.array.zeros(queue, (self.nb_keypoints,4), dtype=numpy.float32, order="C")
+        self.counter = pyopencl.array.zeros(queue, (1,), dtype=numpy.int32, order="C")
+        self.shape = calc_size(self.peaks.shape, self.wg)
+        self.nb_keypoints = numpy.int32(self.nb_keypoints)
+        
+        t0 = time.time()
+        k1 = self.program.create_keypoints(queue, self.shape, self.wg,
+        	self.gpu_peaks.data, self.s, self.output.data, self.nb_keypoints, self.counter.data, self.width, self.height)
+        res = self.output.get()
+        t1 = time.time()
+        ref = my_create_keypoints(self.peaks,self.nb_keypoints,self.s)
+        t2 = time.time()
+        
+        #we have to sort the arrays, for peaks orders is unknown for GPU
+        res_peaks = res[(res[:,0].argsort(axis=0)),0]
+        ref_peaks = ref[(ref[:,0].argsort(axis=0)),0]
+        res_r = res[(res[:,1].argsort(axis=0)),1]
+        ref_r = ref[(ref[:,1].argsort(axis=0)),1]
+        res_c = res[(res[:,2].argsort(axis=0)),2]
+        ref_c = ref[(ref[:,2].argsort(axis=0)),2]
+        #res_s = res[(res[:,3].argsort(axis=0)),3]
+        #ref_s = ref[(ref[:,3].argsort(axis=0)),3]
+        
+        delta_peaks = abs(ref_peaks - res_peaks).max()
+        delta_r = abs(ref_r - res_r).max()
+        delta_c = abs(ref_c - res_c).max()
+               
+        self.assert_(delta_peaks < 1e-4, "delta_peaks=%s" % (delta_peaks))
+        self.assert_(delta_r < 1e-4, "delta_r=%s" % (delta_r))
+        self.assert_(delta_c < 1e-4, "delta_c=%s" % (delta_c))
+        logger.info("delta_peaks=%s" % delta_peaks)
+        logger.info("delta_r=%s" % delta_r)
+        logger.info("delta_c=%s" % delta_c)
+        
+        if PROFILE:
+            logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
+            logger.info("Keypoints vector creation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+
+
+
+
+
+
+
+
+
+
+       
+    def test_interpolation(self):
+        """
+        tests the keypoints interpolation kernel
+        Requires the following: "self.keypoints1", "self.actual_nb_keypoints", 	"self.gpu_dog_prev", self.gpu_dog", 			"self.gpu_dog_next", "self.s", "self.width", "self.height", "self.peakthresh"
+        """
+
+
+
+        '''
+        WILD COPYPASTE IN ORDER TO GET THE REQUIRED VALUES 
+        ''' 
+        self.border_dist = numpy.int32(5) #SIFT
+        self.peakthresh = numpy.float32(0.21)#(255.0 * 0.04 / 3.0) #SIFT
+        self.EdgeThresh = numpy.float32(0.06) #SIFT
+        self.EdgeThresh0 = numpy.float32(0.08) #SIFT
+        self.octsize = numpy.int32(4) #initially 1, then twiced at each new octave
+        self.nb_keypoints = 10000 #constant size !
+		
+		
+        l = scipy.misc.lena().astype(numpy.float32)[100:250,100:250]
+        self.width = numpy.int32(l.shape[1])
+        self.height = numpy.int32(l.shape[0])
+
+        g = (numpy.zeros(4*self.height*self.width).astype(numpy.float32)).reshape(4,self.height,self.width)
+        sigma=1.6 #par.InitSigma
+        g[0,:,:]= numpy.copy(scipy.ndimage.filters.gaussian_filter(l, sigma, mode="reflect"))
+        for i in range(1,4):
+            sigma = sigma*(2.0**(1.0/5.0)) #SIFT
+            g[i] = numpy.copy(scipy.ndimage.filters.gaussian_filter(l, sigma, mode="reflect"))
+
+        self.dog_prev = g[1]-g[0]
+        self.dog = g[2]-g[1]
+        self.dog_next = g[3]-g[2]
+        self.s = numpy.float32(1.0) #0, 1, 2 or 3... 1 here
+        
+        self.gpu_dog_prev = pyopencl.array.to_device(queue, self.dog_prev)
+        self.gpu_dog = pyopencl.array.to_device(queue, self.dog)
+        self.gpu_dog_next = pyopencl.array.to_device(queue, self.dog_next)
+       
+        self.output = pyopencl.array.empty(queue, (self.nb_keypoints,4), dtype=numpy.float32, order="C")
+        self.output.fill(-1.0,queue) #memset TODO: integrate it above
+       
+        self.nb_keypoints = numpy.int32(self.nb_keypoints)
+        self.shape = calc_size(self.output.shape, self.wg)
+        
+        #Assumes that local_maxmin is working so that we can use Python's "my_local_maxmin" instead of the kernel
+        ref = my_local_maxmin(self.dog_prev,self.dog,self.dog_next,
+        	self.peakthresh,self.border_dist, self.octsize, self.EdgeThresh0, self.EdgeThresh,self.nb_keypoints,self.s)
+
+
+        
+        '''
+        END OF WILD COPYPASTE
+        '''
+        keypoints1 = ref
+        self.gpu_keypoints1 = pyopencl.array.to_device(queue,keypoints1)
+        self.actual_nb_keypoints = numpy.int32(len((ref[:,0])[ref[:,0] != 0]))
+        InitSigma = numpy.float32(1.6) #warning: it must be the same in my_keypoints_interpolation
+
+        t0 = time.time()
+        k1 = self.program.interp_keypoint(queue, self.shape, self.wg, 
+        	self.gpu_dog_prev.data, self.gpu_dog.data, self.gpu_dog_next.data, self.gpu_keypoints1.data, self.output.data, self.actual_nb_keypoints, self.peakthresh, self.s, InitSigma, self.width, self.height)    	    	
+        res = self.output.get()
+
+        t1 = time.time()
+        ref = numpy.zeros(self.actual_nb_keypoints).astype(numpy.float32)
+        ref = self.gpu_keypoints1.get()
+        for i,k in enumerate(ref):
+            ref[i]= my_interp_keypoint(self.dog_prev,self.dog,self.dog_next, self.s, k[1], k[2],5,self.peakthresh,self.width,self.height)
+                
+        t2 = time.time()
+        
+
+        #print("Keypoints before interpolation:")
+        #print keypoints1[0:32,:]
+        print("Keypoints after interpolation:")
+        print res[0:32,:]
+        print("Ref:")
+        print ref[0:32,:]
+        
+        
+        delta = abs(ref - res)[0:32,:]
+        print delta
+        #self.assert_(delta < 1e-4, "delta=%s" % (delta))
+        #logger.info("delta=%s" % delta)
+        
+        if PROFILE:
+            logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
+            logger.info("Keypoints interpolation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+
+
+
+
+
+
+
+
+
+
+
 def test_suite_image():
     testSuite = unittest.TestSuite()
-    testSuite.addTest(test_image("test_gradient"))
-    testSuite.addTest(test_image("test_local_maxmin"))
+    #testSuite.addTest(test_image("test_gradient"))
+    #testSuite.addTest(test_image("test_local_maxmin"))
+    testSuite.addTest(test_image("test_interpolation"))
+    #testSuite.addTest(test_image("test_create_keypoints")) #Not used anymore
     return testSuite
 
 if __name__ == '__main__':
