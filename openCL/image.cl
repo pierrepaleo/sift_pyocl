@@ -246,7 +246,7 @@ __kernel void interp_keypoint(
 	__global keypoint* output,
 	int actual_nb_keypoints,
 	float peak_thresh,
-	int s,
+	float s,
 	float InitSigma,
 	int width,
 	int height)
