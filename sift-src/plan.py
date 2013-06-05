@@ -29,6 +29,7 @@ class SiftPlan(object):
 #                    numpy.float64:"double_to_float",
                       }
     sigmaRatio = 2.0 ** (1.0 / par.Scales)
+    PIX_PER_KP = 100 # pre_allocate buffers for keypoints
 
     def __init__(self, shape=None, dtype=None, devicetype="GPU", template=None, profile=False, device=None):
         """
@@ -51,6 +52,7 @@ class SiftPlan(object):
         self.scales = [] #in XY order
         self.procsize = []
         self.wgsize = []
+        self.kpsize = []
         self.buffers = {}
         self.programs = {}
         self.memory = None
@@ -109,7 +111,11 @@ class SiftPlan(object):
             nr_dogs = par.Scales + 2
             size = scale[0] * scale[1]
             self.memory += size * (nr_blur + nr_dogs + 1) * size_of_float  # 1 temporary array
-            self.memory += size * par.Scales * size_of_float # those are array of int32 but will be arrays of float32 soon to register keypoints
+            kpsize = int(size // self.PIX_PER_KP)      # int64 causes problems with pyopencl
+            self.memory += kpsize * size_of_float * 4  # those are array of float4 to register keypoints
+            self.memory += 4 #keypoint index Counter
+            self.kpsize.append(kpsize)
+
         ########################################################################
         # Calculate space for gaussian kernels
         ########################################################################
@@ -138,12 +144,12 @@ class SiftPlan(object):
         self.buffers["input"] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
         for octave in range(self.octave_max):
             self.buffers[(octave, "tmp") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
+            self.buffers[(octave, "Kp") ] = pyopencl.array.empty(self.queue, (self.kpsize[octave], 4), dtype=numpy.float32, order="C")
+            self.buffers[(octave, "cnt") ] = pyopencl.array.empty(self.queue, (1,), dtype=numpy.int32, order="C")
             for i in range(par.Scales + 3):
                 self.buffers[(octave, i, "G") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
             for i in range(par.Scales + 2):
                 self.buffers[(octave, i, "DoG") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
-            for i in range(1, par.Scales + 1):
-                self.buffers[(octave, i, "Reg") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.int32, order="C")
             shape = (shape[0] // 2, shape[1] // 2)
 
         ########################################################################
@@ -242,6 +248,10 @@ class SiftPlan(object):
         assert image.shape[:2] == self.shape
         assert image.dtype == self.dtype
         t0 = time.time()
+
+        for octave in range(self.octave_max):#Memset the keypoints
+            self.buffers[(octave, "Kp")].fill(-1, self.queue)
+            self.buffers[(octave, "cnt")].fill(0, self.queue)
         if self.dtype == numpy.float32:
             pyopencl.enqueue_copy(self.queue, self.buffers["input"].data, image)
         elif (image.ndim == 3) and (self.dtype == numpy.uint8) and (self.RGB):
@@ -290,12 +300,20 @@ class SiftPlan(object):
 #                self.buffers[(octave, i, "DoG")]. = self.buffers[(octave, i + 1, "G")] - self.buffers[(octave, i, "G")]
                 if 1 <= i <= par.Scales:
                     self.programs["image"].local_maxmin(self.queue, self.procsize[octave], self.wgsize[octave],
-                                                        self.buffers[(octave, i - 1, "DoG")].data,
-                                                        self.buffers[(octave, i, "DoG")].data,
-                                                        self.buffers[(octave, i + 1, "DoG")].data,
-                                                        self.buffers[(octave, i, "Reg")].data,
-                                                        numpy.int32(par.BorderDist),
-                                                        numpy.float32(par.PeakThresh), *self.scales[octave])
+                                                        self.buffers[(octave, i - 1, "DoG")].data,      #__global float* dog_prev,
+                                                        self.buffers[(octave, i, "DoG")].data,          #__global float* dog,
+                                                        self.buffers[(octave, i + 1, "DoG")].data,      # __global float* dog_next,
+                                                        self.buffers[(octave, "Kp")].data,              #__global keypoint* output,
+                                                        numpy.int32(par.BorderDist),                    #int border_dist,
+                                                        numpy.float32(par.PeakThresh),                  #float peak_thresh,
+                                                        numpy.int32(2 ** octave),                       #    int octsize,
+                                                        numpy.float32(par.EdgeThresh1),                 #    float EdgeThresh0,
+                                                        numpy.float32(par.EdgeThresh),                  #    float EdgeThresh,
+                                                        self.buffers[(octave, "cnt")].data,             #    __global int* counter,
+                                                        numpy.int32(self.kpsize[octave]),                #    int nb_keypoints,
+                                                        numpy.float32(i),                               #    float scale,
+                                                         *self.scales[octave])                          #    int dog_width, int dog_height)
+
             if octave < (self.octave_max - 1):
                  self.programs["preprocess"].shrink(self.queue, self.procsize[octave + 1], self.wgsize[octave + 1],
                                                     self.buffers[(octave, 0, "G")].data, self.buffers[(octave + 1, 0, "G")].data,
@@ -323,12 +341,11 @@ class SiftPlan(object):
     def count_kp(self):
         kpt = 0
         for octave in range(self.octave_max):
-            for i in range(par.Scales):
-                data = self.buffers[(octave, i + 1, "Reg")].get()
-                sum = (data != 0).sum()
-                kpt+=sum
-                print("octave %i scale %s kp count %i size %s ratio:%s" % (octave, i + 1, sum, self.scales[octave], 1000.0 * sum / self.scales[octave][1] / self.scales[octave][0]))
-        print("Found total %i guess keypoints so %s/Mpix"%(kpt,kpt*1.0e6/self.shape[0]/self.shape[1]))
+            data = self.buffers[(octave, "Kp")].get()
+            sum = (data[:, 1] != -1.0).sum()
+            kpt += sum
+            print("octave %i kp count %i/%i size %s ratio:%s" % (octave, sum, self.kpsize[octave], self.scales[octave], 1000.0 * sum / self.scales[octave][1] / self.scales[octave][0]))
+        print("Found total %i guess %s pixels per keypoint" % (kpt, self.shape[0] * self.shape[1] / kpt))
 if __name__ == "__main__":
     #Prepare debugging
     import scipy.misc
