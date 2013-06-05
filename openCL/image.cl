@@ -230,7 +230,6 @@ __kernel void local_maxmin(
  
 /* 
 TODO: 
--Writing output directly into input ? It would avoid to check if we are not creating new keypoint
 -Taking "actual_nb_keypoints instead of nb_keypoints would spare some memory, is it worth returning it in the previous func ?
 
 -"Check that no keypoint has been created at this location (to avoid duplicates).  Otherwise, mark this map location"	if (map(c,r) > 0.0) return;
@@ -300,12 +299,32 @@ __kernel void interp_keypoint(
 			//inversion of the Hessian	: det*K = H^(-1)
 
 			// a_13 (a_21 a_32-a_22 a_31)+a_12 (a_23 a_31-a_21 a_33)+a_11 (a_22 a_33-a_23 a_32)
-			det = H02*(H10*H21-H11*H20) + H01*(H12*H20-H10*H22) + H00*(H11*H22-H12-H21); 
+			
+			
+			
+			det = -(H02*H11*H20) + H01*H12*H20 + H02*H10*H21 - H00*H12*H21 - H01*H10*H22 + H00*H11*H22;
+			
+			//det = H02*(H10*H21-H11*H20) + H01*(H12*H20-H10*H22) + H00*(H11*H22-H12-H21); 
 			/*
 			(a_22 a_33-a_23 a_32 | a_13 a_32-a_12 a_33 | a_12 a_23-a_13 a_22
 			 a_23 a_31-a_21 a_33 | a_11 a_33-a_13 a_31 | a_13 a_21-a_11 a_23
 			 a_21 a_32-a_22 a_31 | a_12 a_31-a_11 a_32 | a_11 a_22-a_12 a_21)
 			*/
+			
+			
+		/*	
+		 -(a12*a21) + a11*a22
+			a02*a21 - a01*a22
+			-(a02*a11) + a01*a12
+			a12*a20 - a10*a22
+			-(a02*a20) + a00*a22
+			a02*a10 - a00*a12
+  			-(a11*a20) + a10*a21
+  			a01*a20 - a00*a21
+  			-(a01*a10) + a00*a11
+			*/
+			
+			
 
 			K00 = H11*H22 - H12*H21;
 			K01 = H02*H21 - H01*H22;
@@ -317,10 +336,14 @@ __kernel void interp_keypoint(
 			K21 = H01*H20 - H00*H21;
 			K22 = H00*H11 - H01*H10;
 
-			//x = -H^(-1)*g
-			solution0 = -(g0*K00 + g1*K01 + g2*K02)/det;
-			solution1 = -(g0*K10 + g1*K11 + g2*K12)/det;
-			solution2 = -(g0*K20 + g1*K21 + g2*K22)/det;
+			/*
+				x = -H^(-1)*g 
+			 As the Taylor Serie is calcualted around the current keypoint, 
+			 the position of the true extremum x_opt is exactly the "offset" between x and x_opt ("x" is the origin)
+			*/
+			solution0 = -(g0*K00 + g1*K01 + g2*K02)/det; //"offset" in sigma
+			solution1 = -(g0*K10 + g1*K11 + g2*K12)/det; //"offset" in r
+			solution2 = -(g0*K20 + g1*K21 + g2*K22)/det; //"offset" in c
 
 
 			//interpolated DoG magnitude at this peak
@@ -331,7 +354,7 @@ __kernel void interp_keypoint(
 		*/
 
 			if (solution1 > 0.6 && gid0 < height - 3)
-				newr++;
+				newr++; //if the extremum is too far (along "r" here), we get closer if we can
 			else if (solution1 < -0.6 && r > 3)
 				newr--;
 			if (solution2 > 0.6 && c < width - 3)
@@ -359,8 +382,7 @@ __kernel void interp_keypoint(
 			ki.s1 = k.s1 + solution1;
 			ki.s2 = k.s2 + solution2;
 			ki.s3 = InitSigma * pow(2.0, (s + solution0) / 3.0); //3.0 is "par.Scales"
-			output[gid0]=ki;
-			
+			output[gid0]=ki;	
 		}
 	
 	/*

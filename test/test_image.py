@@ -163,8 +163,8 @@ def my_interp_keypoint(dog_prev,dog,dog_next, s, r, c,movesRemain,peakthresh,wid
         my_interp_keypoint(dog_prev,dog,dog_next,s, newr, newc, movesRemain -1,peakthresh,width,height)
         return
                
-    if (numpy.abs(x[0]) <  1.5 and numpy.abs(x[1]) <  1.5 and numpy.abs(x[2]) <  1.5 and numpy.abs(peakval) > peakthresh):
-        ki = numpy.zeros(4).astype(numpy.float32)
+    if (abs(x[0]) <  1.5 and numpy.abs(x[1]) <  1.5 and numpy.abs(x[2]) <  1.5 and numpy.abs(peakval) > peakthresh):
+        ki = numpy.zeros(4,dtype=numpy.float32)
         ki[0] = peakval
         ki[1] = r + x[1]
         ki[2] = c + x[2]
@@ -180,7 +180,7 @@ def fit_quadratic(dog_prev,dog,dog_next, r, c):
     '''
 
     #gradient
-    g = numpy.zeros(3).astype(numpy.float32)
+    g = numpy.zeros(3,dtype=numpy.float32)
     g[0] = (dog_next[r,c] - dog_prev[r,c]) / 2.0
     g[1] = (dog[r+1,c] - dog[r-1,c]) / 2.0;
     g[2] = (dog[r,c+1] - dog[r,c-1]) / 2.0
@@ -459,7 +459,7 @@ class test_image(unittest.TestCase):
         WILD COPYPASTE IN ORDER TO GET THE REQUIRED VALUES 
         ''' 
         self.border_dist = numpy.int32(5) #SIFT
-        self.peakthresh = numpy.float32(0.01)#(255.0 * 0.04 / 3.0) #SIFT
+        self.peakthresh = numpy.float32(0.21)#(255.0 * 0.04 / 3.0) #SIFT
         self.EdgeThresh = numpy.float32(0.06) #SIFT
         self.EdgeThresh0 = numpy.float32(0.08) #SIFT
         self.octsize = numpy.int32(4) #initially 1, then twiced at each new octave
@@ -485,7 +485,10 @@ class test_image(unittest.TestCase):
         self.gpu_dog_prev = pyopencl.array.to_device(queue, self.dog_prev)
         self.gpu_dog = pyopencl.array.to_device(queue, self.dog)
         self.gpu_dog_next = pyopencl.array.to_device(queue, self.dog_next)
-        self.output = pyopencl.array.zeros(queue, (self.nb_keypoints,4), dtype=numpy.float32, order="C")
+       
+        self.output = pyopencl.array.empty(queue, (self.nb_keypoints,4), dtype=numpy.float32, order="C")
+        self.output.fill(-1.0,queue) #memset TODO: integrate it above
+       
         self.nb_keypoints = numpy.int32(self.nb_keypoints)
         self.shape = calc_size(self.output.shape, self.wg)
         
@@ -502,8 +505,6 @@ class test_image(unittest.TestCase):
         self.gpu_keypoints1 = pyopencl.array.to_device(queue,keypoints1)
         self.actual_nb_keypoints = numpy.int32(len((ref[:,0])[ref[:,0] != 0]))
         InitSigma = numpy.float32(1.6) #warning: it must be the same in my_keypoints_interpolation
-        
-        print self.shape
 
         t0 = time.time()
         k1 = self.program.interp_keypoint(queue, self.shape, self.wg, 
@@ -518,15 +519,17 @@ class test_image(unittest.TestCase):
                 
         t2 = time.time()
         
-        #print ref[0:32,:]
-        print("Keypoints before interpolation:")
-        print keypoints1[0:32,:]
+
+        #print("Keypoints before interpolation:")
+        #print keypoints1[0:32,:]
         print("Keypoints after interpolation:")
         print res[0:32,:]
+        print("Ref:")
+        print ref[0:32,:]
         
         
-        
-        delta = abs(ref - res).max()
+        delta = abs(ref - res)[0:32,:]
+        print delta
         #self.assert_(delta < 1e-4, "delta=%s" % (delta))
         #logger.info("delta=%s" % delta)
         
