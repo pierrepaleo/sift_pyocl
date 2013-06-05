@@ -78,7 +78,7 @@ def my_local_maxmin(dog_prev,dog,dog_next,thresh,border_dist,octsize,EdgeThresh0
     an extremum candidate "val" has to be greater than 0.8*thresh
     The three DoG have the same size.
     """
-    output = numpy.zeros((nb_keypoints,4),dtype=numpy.float32)
+    output = -numpy.ones((nb_keypoints,4),dtype=numpy.float32) #for invalid keypoints
     width = dog.shape[1]
     height = dog.shape[0]
     counter = 0
@@ -142,7 +142,7 @@ def is_maxmin(dog_prev,dog,dog_next,val,i0,j0,octsize,EdgeThresh0,EdgeThresh):
 
 def my_interp_keypoint(dog_prev,dog,dog_next, s, r, c,movesRemain,peakthresh,width,height):
     ''''
-    a Python implementation of SIFT "InterpKeyPoints"
+     A Python implementation of SIFT "InterpKeyPoints"
      (s,r,c) : coords of the processed keypoint in the scale space
      WARNING: replace "1.6" by "InitSigma" if InitSigma has not its default value
     '''
@@ -161,15 +161,16 @@ def my_interp_keypoint(dog_prev,dog,dog_next, s, r, c,movesRemain,peakthresh,wid
 
     if (movesRemain > 0  and  (newr != r or newc != c)): #recursive call as in SIFT
         my_interp_keypoint(dog_prev,dog,dog_next,s, newr, newc, movesRemain -1,peakthresh,width,height)
-        return
-               
-    if (abs(x[0]) <  1.5 and numpy.abs(x[1]) <  1.5 and numpy.abs(x[2]) <  1.5 and numpy.abs(peakval) > peakthresh):
-        ki = numpy.zeros(4,dtype=numpy.float32)
-        ki[0] = peakval
-        ki[1] = r + x[1]
-        ki[2] = c + x[2]
-        ki[3] = 1.6 * 2.0**((s + x[0]) / 3.0) #3.0 is "par.Scales" 
-        return ki #our interpolated keypoint
+    
+    else:           
+        if (abs(x[0]) <  1.5 and numpy.abs(x[1]) <  1.5 and numpy.abs(x[2]) <  1.5 and numpy.abs(peakval) > peakthresh):
+            ki = numpy.zeros(4,dtype=numpy.float32)
+            ki[0] = peakval
+            ki[1] = r + x[1]
+            ki[2] = c + x[2]
+            ki[3] = 1.6 * 2.0**((float(s) + x[0]) / 3.0) #3.0 is "par.Scales" 
+            return ki #our interpolated keypoint
+        else: return (-1,-1,-1,-1) #it seems that a simple "return" lead to "nan" values in the array 
 
 
 
@@ -214,32 +215,6 @@ def fit_quadratic(dog_prev,dog,dog_next, r, c):
 
 
 
-
-
-
-
-
-
-    
-
-def my_create_keypoints(peaks,nb_keypoints,s):
-    '''
-    create a vector of nb_keypoints from the peaks matrix
-    THIS FUNCTION IS NOT USED ANYMORE
-    '''
-    height, width = peaks.shape
-    output = numpy.zeros((nb_keypoints,4),dtype=numpy.float32)
-    
-    b = (peaks != 0)
-    nb = b.sum()
-    tmp = numpy.where(b)
-    output[:nb,1],output[:nb,2] = tmp
-    output[:nb,0] = peaks[tmp]
-    output[:nb,3] = s
-    
-    return output
-    
-    
     
     
 
@@ -332,7 +307,9 @@ class test_image(unittest.TestCase):
         self.gpu_dog_prev = pyopencl.array.to_device(queue, self.dog_prev)
         self.gpu_dog = pyopencl.array.to_device(queue, self.dog)
         self.gpu_dog_next = pyopencl.array.to_device(queue, self.dog_next)
-        self.output = pyopencl.array.zeros(queue, (self.nb_keypoints,4), dtype=numpy.float32, order="C")
+        self.output = pyopencl.array.empty(queue, (self.nb_keypoints,4), dtype=numpy.float32, order="C")
+        self.output.fill(-1.0,queue) #memset for invalid keypoints
+     
         self.counter = pyopencl.array.zeros(queue, (1,), dtype=numpy.int32, order="C")
         self.nb_keypoints = numpy.int32(self.nb_keypoints)
         self.shape = calc_size(self.dog.shape, self.wg)
@@ -384,69 +361,6 @@ class test_image(unittest.TestCase):
 
 
 
-    def test_create_keypoints(self):
-        """
-        tests the create_keypoints kernel
-        THIS FUNCTION IS NOT USED ANYMORE
-        """
-        self.width = numpy.int32(150)
-        self.height = numpy.int32(146)
-        self.nb_keypoints = 10000 #constant size !
-        self.s = numpy.float32(1.0) #0, 1, 2 or 3
-        #fill with zeros
-        self.peaks = numpy.random.rand(self.height,self.width).astype(numpy.float32)
-        thres = (self.peaks <= 0.7)
-        self.peaks[thres] = 0
-        
-        self.gpu_peaks = pyopencl.array.to_device(queue, self.peaks)
-        self.output = pyopencl.array.zeros(queue, (self.nb_keypoints,4), dtype=numpy.float32, order="C")
-        self.counter = pyopencl.array.zeros(queue, (1,), dtype=numpy.int32, order="C")
-        self.shape = calc_size(self.peaks.shape, self.wg)
-        self.nb_keypoints = numpy.int32(self.nb_keypoints)
-        
-        t0 = time.time()
-        k1 = self.program.create_keypoints(queue, self.shape, self.wg,
-        	self.gpu_peaks.data, self.s, self.output.data, self.nb_keypoints, self.counter.data, self.width, self.height)
-        res = self.output.get()
-        t1 = time.time()
-        ref = my_create_keypoints(self.peaks,self.nb_keypoints,self.s)
-        t2 = time.time()
-        
-        #we have to sort the arrays, for peaks orders is unknown for GPU
-        res_peaks = res[(res[:,0].argsort(axis=0)),0]
-        ref_peaks = ref[(ref[:,0].argsort(axis=0)),0]
-        res_r = res[(res[:,1].argsort(axis=0)),1]
-        ref_r = ref[(ref[:,1].argsort(axis=0)),1]
-        res_c = res[(res[:,2].argsort(axis=0)),2]
-        ref_c = ref[(ref[:,2].argsort(axis=0)),2]
-        #res_s = res[(res[:,3].argsort(axis=0)),3]
-        #ref_s = ref[(ref[:,3].argsort(axis=0)),3]
-        
-        delta_peaks = abs(ref_peaks - res_peaks).max()
-        delta_r = abs(ref_r - res_r).max()
-        delta_c = abs(ref_c - res_c).max()
-               
-        self.assert_(delta_peaks < 1e-4, "delta_peaks=%s" % (delta_peaks))
-        self.assert_(delta_r < 1e-4, "delta_r=%s" % (delta_r))
-        self.assert_(delta_c < 1e-4, "delta_c=%s" % (delta_c))
-        logger.info("delta_peaks=%s" % delta_peaks)
-        logger.info("delta_r=%s" % delta_r)
-        logger.info("delta_c=%s" % delta_c)
-        
-        if PROFILE:
-            logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
-            logger.info("Keypoints vector creation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
-
-
-
-
-
-
-
-
-
-
-       
     def test_interpolation(self):
         """
         tests the keypoints interpolation kernel
@@ -464,8 +378,7 @@ class test_image(unittest.TestCase):
         self.EdgeThresh0 = numpy.float32(0.08) #SIFT
         self.octsize = numpy.int32(4) #initially 1, then twiced at each new octave
         self.nb_keypoints = 10000 #constant size !
-		
-		
+			
         l = scipy.misc.lena().astype(numpy.float32)[100:250,100:250]
         self.width = numpy.int32(l.shape[1])
         self.height = numpy.int32(l.shape[0])
@@ -485,51 +398,49 @@ class test_image(unittest.TestCase):
         self.gpu_dog_prev = pyopencl.array.to_device(queue, self.dog_prev)
         self.gpu_dog = pyopencl.array.to_device(queue, self.dog)
         self.gpu_dog_next = pyopencl.array.to_device(queue, self.dog_next)
-       
-        self.output = pyopencl.array.empty(queue, (self.nb_keypoints,4), dtype=numpy.float32, order="C")
-        self.output.fill(-1.0,queue) #memset TODO: integrate it above
-       
+      
         self.nb_keypoints = numpy.int32(self.nb_keypoints)
-        self.shape = calc_size(self.output.shape, self.wg)
         
         #Assumes that local_maxmin is working so that we can use Python's "my_local_maxmin" instead of the kernel
-        ref = my_local_maxmin(self.dog_prev,self.dog,self.dog_next,
+        keypoints_prev = my_local_maxmin(self.dog_prev,self.dog,self.dog_next,
         	self.peakthresh,self.border_dist, self.octsize, self.EdgeThresh0, self.EdgeThresh,self.nb_keypoints,self.s)
-
-
         
+        self.shape = calc_size(keypoints_prev.shape, self.wg)	   	
         '''
         END OF WILD COPYPASTE
         '''
-        keypoints1 = ref
-        self.gpu_keypoints1 = pyopencl.array.to_device(queue,keypoints1)
-        self.actual_nb_keypoints = numpy.int32(len((ref[:,0])[ref[:,0] != 0]))
+
+        self.gpu_keypoints1 = pyopencl.array.to_device(queue,keypoints_prev)
+        self.actual_nb_keypoints = numpy.int32(len((keypoints_prev[:,0])[keypoints_prev[:,1] != -1]))
         InitSigma = numpy.float32(1.6) #warning: it must be the same in my_keypoints_interpolation
 
         t0 = time.time()
         k1 = self.program.interp_keypoint(queue, self.shape, self.wg, 
-        	self.gpu_dog_prev.data, self.gpu_dog.data, self.gpu_dog_next.data, self.gpu_keypoints1.data, self.output.data, self.actual_nb_keypoints, self.peakthresh, self.s, InitSigma, self.width, self.height)    	    	
-        res = self.output.get()
+        	self.gpu_dog_prev.data, self.gpu_dog.data, self.gpu_dog_next.data, self.gpu_keypoints1.data, self.actual_nb_keypoints, self.peakthresh, self.s, InitSigma, self.width, self.height)    	    	
+        res = self.gpu_keypoints1.get()
 
         t1 = time.time()
-        ref = numpy.zeros(self.actual_nb_keypoints).astype(numpy.float32)
-        ref = self.gpu_keypoints1.get()
+        #ref = numpy.zeros(self.actual_nb_keypoints).astype(numpy.float32)
+        ref = numpy.copy(keypoints_prev) #important here
         for i,k in enumerate(ref):
             ref[i]= my_interp_keypoint(self.dog_prev,self.dog,self.dog_next, self.s, k[1], k[2],5,self.peakthresh,self.width,self.height)
                 
         t2 = time.time()
         
-
+        
         #print("Keypoints before interpolation:")
-        #print keypoints1[0:32,:]
-        print("Keypoints after interpolation:")
+        #print keypoints_prev[0:32,:]
+        #print("Keypoints after interpolation:")
         print res[0:32,:]
         print("Ref:")
         print ref[0:32,:]
         
+        #we have to compare keypoints different from (-1,-1,-1,-1)
+        #res2 = res[res!=(-1,-1,-1,-1)]
+        #ref2 = ref[ref!=(-1,-1,-1,-1)]
         
-        delta = abs(ref - res)[0:32,:]
-        print delta
+        #delta = abs(ref2 - res2).max()
+        #print delta
         #self.assert_(delta < 1e-4, "delta=%s" % (delta))
         #logger.info("delta=%s" % delta)
         

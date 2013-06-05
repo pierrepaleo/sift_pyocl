@@ -84,13 +84,14 @@ __kernel void compute_gradient_orientation(
  * \brief Local minimum or maximum detection in a 3x3 neighborhood in 3 DOG
  *
  * Refactored to return a vector of keypoints, rather than a matrix filled (almost everywhere) with zeros
+ * NOTE: IMPORTANT: The output have to be Memset to (-1,-1,-1)
  *
  * @param dog_prev: Pointer to global memory with the "previous" difference of gaussians image
  * @param dog: Pointer to global memory with the "current" difference of gaussians image
  * @param dog_next: Pointer to global memory with the "next" difference of gaussians image 
  * @param border_dist: integer, distance between inner image and borders (SIFT takes 5)
  * @param peak_thresh: float, threshold (SIFT takes 255.0 * 0.04 / 3.0)
- * @param output: Pointer to global memory output *filled with zeros*
+ * @param output: Pointer to global memory output *filled with (-1,-1,-1)* by default for invalid keypoints
  * @param octsize: initially 1 then twiced at each new octave
  * @param EdgeThresh0: initial upper limit of the curvatures ratio, to test if the point is on an edge
  * @param EdgeThresh: upper limit of the curvatures ratio, to test if the point is on an edge
@@ -213,13 +214,12 @@ __kernel void local_maxmin(
 /**
  * \brief From the (temporary) keypoints, create a vector of interpolated keypoints 
  * 			(this is the last step of keypoints refinement)
- *  
+ *  	 Note that we take the value (-1,-1,-1) for invalid keypoints
  *
  * @param dog_prev: Pointer to global memory with the "previous" difference of gaussians image
  * @param dog: Pointer to global memory with the "current" difference of gaussians image
  * @param dog_next: Pointer to global memory with the "next" difference of gaussians image 
- * @param keypoints: Pointer to global memory with current keypoints vector
- * @param output: Pointer to global memory with keypoints vector that will be processed afterwards
+ * @param keypoints: Pointer to global memory with current keypoints vector. It will be modified with the interpolated points
  * @param actual_nb_keypoints: actual number of keypoints previously found, i.e previous "counter" final value
  * @param peak_thresh: we are not counting the interpolated values if below the threshold (par.PeakThresh = 255.0*0.04/3.0)
  * @param s: the scale in the DoG, i.e the index of the current DoG, cast to a float (this is not the std !)
@@ -228,21 +228,12 @@ __kernel void local_maxmin(
  * @param height: integer number of lines of the DoG
  */
  
-/* 
-TODO: 
--Taking "actual_nb_keypoints instead of nb_keypoints would spare some memory, is it worth returning it in the previous func ?
-
--"Check that no keypoint has been created at this location (to avoid duplicates).  Otherwise, mark this map location"	if (map(c,r) > 0.0) return;
-	map(c,r) = 1.0
-*/
-
 
 __kernel void interp_keypoint(
 	__global float* dog_prev,
 	__global float* dog,
 	__global float* dog_next,
 	__global keypoint* keypoints,
-	__global keypoint* output,
 	int actual_nb_keypoints,
 	float peak_thresh,
 	float s,
@@ -297,34 +288,8 @@ __kernel void interp_keypoint(
 
 
 			//inversion of the Hessian	: det*K = H^(-1)
-
-			// a_13 (a_21 a_32-a_22 a_31)+a_12 (a_23 a_31-a_21 a_33)+a_11 (a_22 a_33-a_23 a_32)
-			
-			
 			
 			det = -(H02*H11*H20) + H01*H12*H20 + H02*H10*H21 - H00*H12*H21 - H01*H10*H22 + H00*H11*H22;
-			
-			//det = H02*(H10*H21-H11*H20) + H01*(H12*H20-H10*H22) + H00*(H11*H22-H12-H21); 
-			/*
-			(a_22 a_33-a_23 a_32 | a_13 a_32-a_12 a_33 | a_12 a_23-a_13 a_22
-			 a_23 a_31-a_21 a_33 | a_11 a_33-a_13 a_31 | a_13 a_21-a_11 a_23
-			 a_21 a_32-a_22 a_31 | a_12 a_31-a_11 a_32 | a_11 a_22-a_12 a_21)
-			*/
-			
-			
-		/*	
-		 -(a12*a21) + a11*a22
-			a02*a21 - a01*a22
-			-(a02*a11) + a01*a12
-			a12*a20 - a10*a22
-			-(a02*a20) + a00*a22
-			a02*a10 - a00*a12
-  			-(a11*a20) + a10*a21
-  			a01*a20 - a00*a21
-  			-(a01*a10) + a00*a11
-			*/
-			
-			
 
 			K00 = H11*H22 - H12*H21;
 			K01 = H02*H21 - H01*H22;
@@ -376,14 +341,18 @@ __kernel void interp_keypoint(
 		/* Do not create a keypoint if interpolation still remains far outside expected limits, 
 			or if magnitude of peak value is below threshold (i.e., contrast is too low).
 		*/
+		keypoint ki = 0.0; //float4
 		if (fabs(solution0) < 1.5 && fabs(solution1) < 1.5 && fabs(solution2) < 1.5 && fabs(peakval) > peak_thresh) {
-			keypoint ki = 0.0; //float4
 			ki.s0 = peakval;
 			ki.s1 = k.s1 + solution1;
 			ki.s2 = k.s2 + solution2;
 			ki.s3 = InitSigma * pow(2.0, (s + solution0) / 3.0); //3.0 is "par.Scales"
-			output[gid0]=ki;	
 		}
+		else { //the keypoint was not correctly interpolated : we reject it
+			ki.s0 = -1.0f; ki.s1 = -1.0f; ki.s2 = -1.0f; ki.s3 = -1.0f;
+		}
+		
+		keypoints[gid0]=ki;	
 	
 	/*
 		Better return here and compute histogram in another kernel
