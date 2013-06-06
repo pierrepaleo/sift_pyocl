@@ -137,7 +137,7 @@ class test_image(unittest.TestCase):
         self.nb_keypoints = 10000 #constant size !
 		
 		
-        l = scipy.misc.lena().astype(numpy.float32)[100:250,100:250]
+        l = scipy.misc.lena().astype(numpy.float32)#[100:250,100:250]
         self.width = numpy.int32(l.shape[1])
         self.height = numpy.int32(l.shape[0])
 
@@ -222,13 +222,13 @@ class test_image(unittest.TestCase):
         WILD COPYPASTE IN ORDER TO GET THE REQUIRED VALUES 
         ''' 
         self.border_dist = numpy.int32(5) #SIFT
-        self.peakthresh = numpy.float32(0.21)#(255.0 * 0.04 / 3.0) #SIFT
+        self.peakthresh = numpy.float32(255.0 * 0.04 / 3.0) #SIFT - Take a lower threshold for more keypoints
         self.EdgeThresh = numpy.float32(0.06) #SIFT
         self.EdgeThresh0 = numpy.float32(0.08) #SIFT
         self.octsize = numpy.int32(4) #initially 1, then twiced at each new octave
         self.nb_keypoints = 10000 #constant size !
 			
-        l = scipy.misc.lena().astype(numpy.float32)[100:250,100:250]
+        l = scipy.misc.lena().astype(numpy.float32)#[100:250,100:250] #take a part of the image to fasten the tests
         self.width = numpy.int32(l.shape[1])
         self.height = numpy.int32(l.shape[0])
 
@@ -285,8 +285,11 @@ class test_image(unittest.TestCase):
         #print ref[0:32,:]
         
         #we have to compare keypoints different from (-1,-1,-1,-1)
-        res2 = res[res!=(-1,-1,-1,-1)]
-        ref2 = ref[ref!=(-1,-1,-1,-1)]
+        res2 = res[res[:,1]!=-1] 
+        ref2 = ref[ref[:,1]!=-1]
+        #print("Number of keypoints before interpolation : %s" %(self.actual_nb_keypoints))
+        #print("Number of keypoints after interpolation : %s" %(res2.shape[0]))
+        
         
         delta = abs(ref2 - res2).max()
         #print delta
