@@ -9,27 +9,29 @@ def my_gradient(mat):
     return numpy.sqrt(g[0]**2+g[1]**2), numpy.arctan2(g[0],g[1]) #image.cl/compute_gradient_orientation() puts a "-" here
     
     
-def my_local_maxmin(dog_prev,dog,dog_next,thresh,border_dist,octsize,EdgeThresh0,EdgeThresh,nb_keypoints,s):
+def my_local_maxmin(DOGS,thresh,border_dist,octsize,EdgeThresh0,EdgeThresh,nb_keypoints,s,dog_width,dog_height):
     """
     a python implementation of 3x3 maximum (positive values) or minimum (negative or null values) detection
     an extremum candidate "val" has to be greater than 0.8*thresh
     The three DoG have the same size.
     """
     output = -numpy.ones((nb_keypoints,4),dtype=numpy.float32) #for invalid keypoints
-    width = dog.shape[1]
-    height = dog.shape[0]
+    
+    dog_prev = DOGS[s-1]
+    dog = DOGS[s]
+    dog_next = DOGS[s+1]
     counter = 0
     
-    for j in range(border_dist,width - border_dist):
-        for i in range(border_dist,height - border_dist):
+    for j in range(border_dist,dog_width - border_dist):
+        for i in range(border_dist,dog_height - border_dist):
             val = dog[i,j]
             if (numpy.abs(val) > 0.8*thresh): #keypoints refinement: eliminating low-contrast points
                 if (is_maxmin(dog_prev,dog,dog_next,val,i,j,octsize,EdgeThresh0,EdgeThresh) != 0):
                 	output[counter,0]=val
                 	output[counter,1]=i
                 	output[counter,2]=j
-                	output[counter,3]=s
-                	counter+=1   	      	
+                	output[counter,3]=numpy.float32(s)
+                	counter+=1	      	
     return output
     
     
