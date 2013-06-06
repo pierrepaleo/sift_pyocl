@@ -16,8 +16,8 @@
  
 */
 typedef float4 keypoint;
-
-
+#define MIN(i,j) ( (i)<(j) ? (i):(j) )
+#define MAX(i,j) ( (i)<(j) ? (j):(i) )
 
 /*
  Do not use __constant memory for large (usual) images
@@ -217,10 +217,8 @@ __kernel void local_maxmin(
  * \brief From the (temporary) keypoints, create a vector of interpolated keypoints 
  * 			(this is the last step of keypoints refinement)
  *  	 Note that we take the value (-1,-1,-1) for invalid keypoints
- *
- * @param dog_prev: Pointer to global memory with the "previous" difference of gaussians image
- * @param dog: Pointer to global memory with the "current" difference of gaussians image
- * @param dog_next: Pointer to global memory with the "next" difference of gaussians image 
+ * 
+ * @param DOGS: Pointer to global memory with ALL the coutiguously pre-allocated Differences of Gaussians
  * @param keypoints: Pointer to global memory with current keypoints vector. It will be modified with the interpolated points
  * @param actual_nb_keypoints: actual number of keypoints previously found, i.e previous "counter" final value
  * @param peak_thresh: we are not counting the interpolated values if below the threshold (par.PeakThresh = 255.0*0.04/3.0)
@@ -371,10 +369,124 @@ __kernel void interp_keypoint(
 
 
 
+/**
+ * \brief Assign an orientation to the keypoints.  This is done by creating a Gaussian weighted histogram
+ *   of the gradient directions in the region.  The histogram is smoothed and the largest peak selected.
+ *    The results are in the range of -PI to PI.
+ *
+ * @param keypoints: Pointer to global memory with current keypoints vector. It will be modified with the interpolated points
+ * @param angles: Pointer to global memory with output angles, memset to zero
+ * @param grad: Pointer to global memory with gradient norm previously calculated
+ * @param ori: Pointer to global memory with gradient orientation previously calculated
+ * @param octsize: initially 1 then twiced at each octave
+ * @param actual_nb_keypoints: actual number of keypoints previously found, i.e previous "counter" final value
+ * @param OriSigma : a SIFT parameter, default is 1.5. Warning : it is not "InitSigma".
+ * @param grad_width: integer number of columns of the gradient
+ * @param grad_height: integer num of lines of the gradient
+ */
+
+
+/*
+par.OriBins = 36
+TODO: replace "36" by an external paramater ?
+par.OriHistThresh = 0.8;
+TODO: replace "0.8" by an external parameter
+*/
+void AssignOriHist(
+	__constant keypoint* keypoints,
+	__constant float* angles,
+	__constant float* grad, 
+	__constant float* ori,
+	float octsize,
+	int actual_nb_keypoints,
+	float OriSigma, //WARNING: (1.5) it is not "InitSigma (=1.6)"
+	int grad_width,
+	int grad_height)
+{
+
+
+	if (gid0 < actual_nb_keypoints) {
+		keypoint k = keypoints[gid0]
+
+		int	bin, prev, next;
+
+		float distsq, dif, gval, weight, angle, interp;
+		float *hist = new float[36];
+
+		float radius2, sigma2;
+
+		int	row = (int) (k.s1 + 0.5),
+			col = (int) (k.s2 + 0.5),
+
+
+		/* Look at pixels within 3 sigma around the point and sum their
+		  Gaussian weighted gradient magnitudes into the histogram. */
+		  
+		float sigma = OriSigma * k.s3;
+		int	radius = (int) (sigma * 3.0);
+		int rmin = MAX(0,row - radius);
+		int cmin = MAX(0,col - radius);
+		int rmax = MIN(row + radius,grad_width - 2);
+		int cmax = MIN(col + radius,grad_height - 2);
+		radius2 = (float)(radius * radius);
+		sigma2 = 2.0*sigma*sigma;
+
+		for (int r = rmin; r <= rmax; r++) {
+			for (int c = cmin; c <= cmax; c++) {
+
+				gval = grad[r*grad_width+c];
+				dif = (r - k.s1);	distsq = dif*dif;
+				dif = (c - k.s2);	distsq += dif*dif;
+
+				if (gval > 0.0  &&  distsq < radius2 + 0.5) {
+
+					weight = exp(- distsq / sigma2);
+
+					/* Ori is in range of -PI to PI. */
+					angle = ori[r*grad_width+c];
+					bin = (int) (36 * (angle + M_PI_F + 0.001) / (2.0 * M_PI_F));
+					assert(bin >= 0 && bin <= 36); //FIXME: no assert in a kernel
+					bin = MIN(bin, 36 - 1);
+					hist[bin] += weight * gval;
+				}
+			}
+		}
+
+
+	/* Apply smoothing 6 times for accurate Gaussian approximation. */
+	for (int i = 0; i < 6; i++)
+		SmoothHistogram(hist, 36);
+
+	/* Find maximum value in histogram. */
+	float maxval = 0.0;
+	for (int i = 0; i < 36; i++)
+		if (hist[i] > maxval) maxval = hist[i];
+
+	/* Look for each local peak in histogram.  If value is within
+	  par.OriHistThresh of maximum value, then generate a keypoint. */
+	for (int i = 0; i < 36; i++) {
+		prev = (i == 0 ? 36 - 1 : i - 1);
+		next = (i == 36 - 1 ? 0 : i + 1);
+
+		if (hist[i] > hist[prev]  &&  hist[i] > hist[next]  && hist[i] >= 0.8 * maxval) {
+
+			/* Use parabolic fit to interpolate peak location from 3 samples.
+			  Set angle in range -PI to PI. */
+			interp = InterpPeak(hist[prev], hist[i], hist[next]);
+			angle = 2.0 * M_PI_F * (i + 0.5 + interp) / 36 - M_PI_F;
+			assert(angle >= -M_PI_F  &&  angle <= M_PI_F);
 
 
 
+			/* Create a keypoint with this orientation. */
+			MakeKeypoint(
+				grad, ori, octSize, octScale,
+				octRow, octCol, angle, keys,par);
+		}
 
+	}
+
+}
 
 
 
