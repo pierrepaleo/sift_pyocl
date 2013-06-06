@@ -1,3 +1,8 @@
+typedef float4 keypoint;
+
+
+
+
 /**
  * \brief Linear combination of two matrices
  *
@@ -13,12 +18,7 @@
  
 #define MAX_CONST_SIZE 16384
 
-/*
-TODO:
--check if u and v are indeed in constant memory
-
-*/
-
+//TODO: replace by Jerome's version
 __kernel void combine(
 	__constant float *u __attribute__((max_constant_size(MAX_CONST_SIZE))),
 	float a,
@@ -38,3 +38,58 @@ __kernel void combine(
 		w[index] = a * u[index] + b * v[index];
 	}
 }
+
+
+
+/**
+ * \brief Deletes the (-1,-1,-1,-1) in order to get a more "compact" keypoints vector
+ 		Also arranges the keypoints coordinates in the SIFT order : (x:col,y:row,sigma,angle)
+ *		(initially we had (peak,r,c,sigma), but at this stage peak is not useful anymore)
+ *
+ *
+ * @param keypoints: Pointer to global memory with the keypoints
+ * @param output: Pointer to global memory with the output
+ * @param counter: Pointer to global memory with the shared counter in the output
+ * @param nbkeypoints: max number of keypoints
+ *
+ */
+
+
+
+__kernel void compact(
+	__global keypoint* keypoints,
+	__global keypoint* output,
+	__global int* counter,
+	int nbkeypoints)
+{	
+	
+	int gid0 = (int) get_global_id(0);
+	if (gid0 < nbkeypoints) {
+		
+		keypoint k = keypoints[gid0];
+		
+		if (k.s1 != -1.0) { //should also test k.s2, k.s3 ? Coordinates are never negative
+			
+			k.s0 = k.s2; //col
+			k.s2 = k.s3; //sigma
+			k.s3 = 0.0f; //angle
+			int old = atomic_inc(counter);
+			output[old] = k;
+		}
+	}
+}
+	
+	
+
+
+
+
+
+
+
+
+
+
+
+
+

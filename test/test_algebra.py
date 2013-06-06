@@ -60,6 +60,9 @@ else:
 
 print "working on %s" % ctx.devices[0].name
 
+
+
+
 def my_combine(mat1,a1,mat2,a2):
     """
     reference linear combination
@@ -67,10 +70,34 @@ def my_combine(mat1,a1,mat2,a2):
     return a1*mat1+a2*mat2
 
 
-class test_combine(unittest.TestCase):
+
+
+
+
+class test_algebra(unittest.TestCase):
     def setUp(self):
     	
-    	self.width = numpy.int32(15)
+        kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), "algebra.cl")
+        kernel_src = open(kernel_path).read()
+        self.program = pyopencl.Program(ctx, kernel_src).build()
+        self.wg = (2, 256)
+       
+
+    def tearDown(self):
+        self.mat1 = None
+        self.mat2 = None
+        self.program = None
+        
+        
+        
+        
+        
+        
+    def test_combine(self):
+        """
+        tests the combine (linear combination) kernel
+        """
+        self.width = numpy.int32(15)
     	self.height = numpy.int32(14)
     	self.coeff1 = numpy.random.rand(1)[0].astype(numpy.float32)
     	self.coeff2 = numpy.random.rand(1)[0].astype(numpy.float32)
@@ -80,22 +107,7 @@ class test_combine(unittest.TestCase):
         self.gpu_mat1 = pyopencl.array.to_device(queue, self.mat1)
         self.gpu_mat2 = pyopencl.array.to_device(queue, self.mat2)
         self.gpu_out = pyopencl.array.empty(queue, self.mat1.shape, dtype=numpy.float32, order="C")
-        
-        kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), "algebra.cl")
-        kernel_src = open(kernel_path).read()
-        self.program = pyopencl.Program(ctx, kernel_src).build()
-        self.wg = (2, 256)
         self.shape = calc_size(self.mat1.shape, self.wg)
-
-    def tearDown(self):
-        self.mat1 = None
-        self.mat2 = None
-        self.program = None
-        
-    def test_combine(self):
-        """
-        tests the combine (linear combination) kernel
-        """
 
         t0 = time.time()
         k1 = self.program.combine(queue, self.shape, self.wg, self.gpu_mat1.data, self.coeff1, self.gpu_mat2.data, self.coeff2, self.gpu_out.data, self.width, self.height)
@@ -112,11 +124,63 @@ class test_combine(unittest.TestCase):
             logger.info("Linear combination took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
 
 
+
+    def test_compact(self):
+        """
+        tests the "compact" kernel
+        """
+        
+        nbkeypoints = numpy.int32(1000) #constant value
+        keypoints = numpy.random.rand(nbkeypoints,4)
+        for i in range(0,nbkeypoints):
+            if ((numpy.random.rand(1))[0] < 0.75):
+                keypoints[i]=(-1,-1,-1,-1)
+        
+        
+        self.width = numpy.int32(keypoints.shape[1])
+    	self.height = numpy.int32(keypoints.shape[0])
+    	
+        self.gpu_keypoints = pyopencl.array.to_device(queue, keypoints)
+        self.output = pyopencl.array.empty(queue, keypoints.shape, dtype=numpy.float32, order="C")
+        self.counter = pyopencl.array.zeros(queue, (1,1), dtype=numpy.int32, order="C")
+        self.shape = calc_size(keypoints.shape, self.wg)
+
+        t0 = time.time()
+        k1 = self.program.compact(queue, self.shape, self.wg, 
+        	self.gpu_keypoints.data, self.output.data, self.counter.data, nbkeypoints)
+        res = self.output.get()
+        t1 = time.time()
+        #ref = my_combine(self.mat1,self.coeff1,self.mat2,self.coeff2)
+        t2 = time.time()
+        #delta = abs(ref - res).max()
+        print res
+
+        #self.assert_(delta < 1e-4, "delta=%s" % (delta))
+        #logger.info("delta=%s" % delta)
+        if PROFILE:
+            logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
+            logger.info("Compact operation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   
 
 def test_suite_algebra():
     testSuite = unittest.TestSuite()
-    testSuite.addTest(test_combine("test_combine"))
+    testSuite.addTest(test_algebra("test_combine"))
+    testSuite.addTest(test_algebra("test_compact"))
     return testSuite
 
 if __name__ == '__main__':

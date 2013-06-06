@@ -388,9 +388,11 @@ __kernel void interp_keypoint(
 
 /*
 par.OriBins = 36
-TODO: replace "36" by an external paramater ?
 par.OriHistThresh = 0.8;
-TODO: replace "0.8" by an external parameter
+TODO: 
+-replace "36" by an external paramater ?
+-replace "0.8" by an external parameter ?
+
 */
 void AssignOriHist(
 	__constant keypoint* keypoints,
@@ -409,12 +411,9 @@ void AssignOriHist(
 		keypoint k = keypoints[gid0]
 
 		int	bin, prev, next;
-
-		float distsq, dif, gval, weight, angle, interp;
-		float *hist = new float[36];
-
+		float distsq, gval, weight, angle, interp;
+		float hist[36];
 		float radius2, sigma2;
-
 		int	row = (int) (k.s1 + 0.5),
 			col = (int) (k.s2 + 0.5),
 
@@ -435,9 +434,8 @@ void AssignOriHist(
 			for (int c = cmin; c <= cmax; c++) {
 
 				gval = grad[r*grad_width+c];
-				dif = (r - k.s1);	distsq = dif*dif;
-				dif = (c - k.s2);	distsq += dif*dif;
-
+				distsq = (r-k.s1)*(r-k.s1) + (c-k.s2)*(c-k.s2);
+				
 				if (gval > 0.0  &&  distsq < radius2 + 0.5) {
 
 					weight = exp(- distsq / sigma2);
@@ -454,25 +452,36 @@ void AssignOriHist(
 
 
 	/* Apply smoothing 6 times for accurate Gaussian approximation. */
-	for (int i = 0; i < 6; i++)
-		SmoothHistogram(hist, 36);
+	float prev, temp;
+	for (int i = 0; i < 6; i++) {
+		prev = hist[36 - 1];
+		for (int i = 0; i < 36; i++) {
+			temp = hist[i];
+			hist[i] = ( prev + hist[i] + hist[(i + 1 == 36) ? 0 : i + 1] ) / 3.0;
+			prev = temp;
+		}
+	}
 
 	/* Find maximum value in histogram. */
 	float maxval = 0.0;
 	for (int i = 0; i < 36; i++)
 		if (hist[i] > maxval) maxval = hist[i];
 
-	/* Look for each local peak in histogram.  If value is within
-	  par.OriHistThresh of maximum value, then generate a keypoint. */
+	/*
+	 For every local peak in histogram, every peak of value >= 80% of maxval generates a new keypoint	
+	*/
+
 	for (int i = 0; i < 36; i++) {
 		prev = (i == 0 ? 36 - 1 : i - 1);
 		next = (i == 36 - 1 ? 0 : i + 1);
-
 		if (hist[i] > hist[prev]  &&  hist[i] > hist[next]  && hist[i] >= 0.8 * maxval) {
 
-			/* Use parabolic fit to interpolate peak location from 3 samples.
-			  Set angle in range -PI to PI. */
-			interp = InterpPeak(hist[prev], hist[i], hist[next]);
+			/* Use parabolic fit to interpolate peak location from 3 samples. Set angle in range -PI to PI. */
+			
+			
+			interp = InterpPeak(hist[prev], hist[i], hist[next]); //TODO
+			
+			
 			angle = 2.0 * M_PI_F * (i + 0.5 + interp) / 36 - M_PI_F;
 			assert(angle >= -M_PI_F  &&  angle <= M_PI_F);
 
