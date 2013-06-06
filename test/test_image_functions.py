@@ -79,14 +79,16 @@ def is_maxmin(dog_prev,dog,dog_next,val,i0,j0,octsize,EdgeThresh0,EdgeThresh):
 
 
 
-def my_interp_keypoint(dog_prev,dog,dog_next, s, r, c,movesRemain,peakthresh,width,height):
+def my_interp_keypoint(DOGS, s, r, c,movesRemain,peakthresh,width,height):
     ''''
      A Python implementation of SIFT "InterpKeyPoints"
      (s,r,c) : coords of the processed keypoint in the scale space
      WARNING: replace "1.6" by "InitSigma" if InitSigma has not its default value 
      The recursive calls were replaced by a loop.
     '''
-    
+    dog_prev = DOGS[s-1]
+    dog = DOGS[s]
+    dog_next = DOGS[s+1]
     newr = r
     newc = c
     loop = 1
