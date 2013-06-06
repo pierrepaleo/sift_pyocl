@@ -318,13 +318,13 @@ __kernel void interp_keypoint(
 		/* Move to an adjacent (row,col) location if quadratic interpolation is larger than 0.6 units in some direction. 				The movesRemain counter allows only a fixed number of moves to prevent possibility of infinite loops.
 		*/
 
-			if (solution1 > 0.6 && gid0 < height - 3)
+			if (solution1 > 0.6 && newr < height - 3)
 				newr++; //if the extremum is too far (along "r" here), we get closer if we can
-			else if (solution1 < -0.6 && r > 3)
+			else if (solution1 < -0.6 && newr > 3)
 				newr--;
-			if (solution2 > 0.6 && c < width - 3)
+			if (solution2 > 0.6 && newc < width - 3)
 				newc++;
-			else if (solution2 < -0.6 && c > 3)
+			else if (solution2 < -0.6 && newc > 3)
 				newc--;
 
 			/*
