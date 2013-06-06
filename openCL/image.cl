@@ -245,7 +245,7 @@ __kernel void interp_keypoint(
 	//int gid1 = (int) get_global_id(1);
 	int gid0 = (int) get_global_id(0);
 
-	if (gid0 < actual_nb_keypoints) { //TODO: test boundaries
+	if (gid0 < actual_nb_keypoints) {
 	
 		int index_dog_prev = (scale-1)*(width*height);
 		int index_dog =scale*(width*height);
