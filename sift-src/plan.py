@@ -148,8 +148,11 @@ class SiftPlan(object):
             self.buffers[(octave, "cnt") ] = pyopencl.array.empty(self.queue, (1,), dtype=numpy.int32, order="C")
             for i in range(par.Scales + 3):
                 self.buffers[(octave, i, "G") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
-            for i in range(par.Scales + 2):
-                self.buffers[(octave, i, "DoG") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
+#            Allocate all DOGs in a single array
+            self.buffers[(octave, "DoGs") ] = pyopencl.array.empty(self.queue, (par.Scales + 2, shape[0], shape[1]),
+                                                                   dtype=numpy.float32, order="C")
+#            for i in range(par.Scales + 2):
+#                self.buffers[(octave, i, "DoG") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
             shape = (shape[0] // 2, shape[1] // 2)
 
         ########################################################################
@@ -177,11 +180,24 @@ class SiftPlan(object):
         size = int(8 * sigma + 1)
         logger.debug("Allocating %s float for blur sigma: %s" % (size, sigma))
         self.buffers[name] = pyopencl.array.empty(self.queue, size, dtype=numpy.float32, order="C")
-#            Norming the gaussian would takes three OCL kernel launch (gaussian, calc_sum and norm) -> calculation done on CPU
-        x = numpy.arange(size) - (size - 1.0) / 2.0
-        gaussian = numpy.exp(-(x / sigma) ** 2 / 2.0).astype(numpy.float32)
-        gaussian /= gaussian.sum(dtype=numpy.float32)
-        self.buffers[name].set(gaussian)
+
+#       Norming the gaussian takes three OCL kernel launch (gaussian, calc_sum and norm) -
+        self.kernels["preprocess"].gaussian(self.queue, (size,), (1,),
+                                            self.buffers[name],        #__global     float     *data,
+                                            numpy.float32(sigma),      #const        float     sigma,
+                                            numpy.int32(size))         #const        int     SIZE
+        sum_data = pyopencl.array.sum(self.buffers[name], self.queue).get()
+        self.kernels["preprocess"].divide_cst(self.queue, (size,), (1,),
+                                            self.buffers[name],        #__global     float     *data,
+                                            numpy.float32(sum_data),   #const        float     sigma,
+                                            numpy.int32(size))         #const        int     SIZE
+
+
+#        Same calculation done on CPU
+#        x = numpy.arange(size) - (size - 1.0) / 2.0
+#        gaussian = numpy.exp(-(x / sigma) ** 2 / 2.0).astype(numpy.float32)
+#        gaussian /= gaussian.sum(dtype=numpy.float32)
+#        self.buffers[name].set(gaussian)
 
 
     def _free_buffers(self):
@@ -296,13 +312,17 @@ class SiftPlan(object):
                 self.programs["algebra"].combine(self.queue, self.procsize[octave], self.wgsize[octave],
                                                  self.buffers[(octave, i + 1, "G")].data, numpy.float32(1.0),
                                                  self.buffers[(octave, i    , "G")].data, numpy.float32(-1.0),
-                                                 self.buffers[(octave, i, "DoG")].data, *self.scales[octave])
-#                self.buffers[(octave, i, "DoG")]. = self.buffers[(octave, i + 1, "G")] - self.buffers[(octave, i, "G")]
+                                                 self.buffers[(octave, "DoGs")].data, numpy.int32(i),
+                                                 *self.scales[octave])
+                kpsize = self.kpsize[octave]
+
                 if 1 <= i <= par.Scales:
                     self.programs["image"].local_maxmin(self.queue, self.procsize[octave], self.wgsize[octave],
-                                                        self.buffers[(octave, i - 1, "DoG")].data,      #__global float* dog_prev,
-                                                        self.buffers[(octave, i, "DoG")].data,          #__global float* dog,
-                                                        self.buffers[(octave, i + 1, "DoG")].data,      # __global float* dog_next,
+                                                        self.buffers[(octave, "DoGs")].data,
+                                                        numpy.int32(i),
+#                                                        self.buffers[(octave, i - 1, "DoG")].data,      #__global float* dog_prev,
+#                                                        self.buffers[(octave, i, "DoG")].data,          #__global float* dog,
+#                                                        self.buffers[(octave, i + 1, "DoG")].data,      # __global float* dog_next,
                                                         self.buffers[(octave, "Kp")].data,              #__global keypoint* output,
                                                         numpy.int32(par.BorderDist),                    #int border_dist,
                                                         numpy.float32(par.PeakThresh),                  #float peak_thresh,
@@ -310,10 +330,23 @@ class SiftPlan(object):
                                                         numpy.float32(par.EdgeThresh1),                 #    float EdgeThresh0,
                                                         numpy.float32(par.EdgeThresh),                  #    float EdgeThresh,
                                                         self.buffers[(octave, "cnt")].data,             #    __global int* counter,
-                                                        numpy.int32(self.kpsize[octave]),                #    int nb_keypoints,
+                                                        numpy.int32(kpsize),                            #    int nb_keypoints,
                                                         numpy.float32(i),                               #    float scale,
                                                          *self.scales[octave])                          #    int dog_width, int dog_height)
-
+                    workgroup = (max(self.wgsize[octave]),)
+                    procsize = calc_size((kpsize,), wg)
+#           Refine keypoints 
+            self.programs["image"].interp_keypoint(self.queue, procsize, workgroup ,
+                                                                                                        #__global float* dog_prev,
+                                                                                                        #__global float* dog,
+                                                                                                        #__global float* dog_next,
+                                                                                                        #__global keypoint* keypoints,
+                                                                                                        #int actual_nb_keypoints,
+                                                                                                        #float peak_thresh,
+                                                                                                        #float s,
+                                                                                                        #float InitSigma,
+                                                                                                        #int width,
+                                                    *self.scales[octave])                               #int height)
             if octave < (self.octave_max - 1):
                  self.programs["preprocess"].shrink(self.queue, self.procsize[octave + 1], self.wgsize[octave + 1],
                                                     self.buffers[(octave, 0, "G")].data, self.buffers[(octave + 1, 0, "G")].data,

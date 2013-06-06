@@ -11,20 +11,13 @@
  *
  */
  
-#define MAX_CONST_SIZE 16384
-
-/*
-TODO:
--check if u and v are indeed in constant memory
-
-*/
-
 __kernel void combine(
 	__global float *u,
 	float a,
 	__global float *v,
 	float b,
 	__global float *w,
+	int dog,
 	int width,
 	int height)
 {
@@ -35,6 +28,7 @@ __kernel void combine(
 	if (gid0 < height && gid1 < width) {
 	
 		int index = gid0 * width + gid1;
-		w[index] = a * u[index] + b * v[index];
+		int index_dog = dog * width * height +  index;
+		w[index_dog] = a * u[index] + b * v[index];
 	}
 }

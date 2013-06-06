@@ -306,7 +306,7 @@ bin(		const	__global 	float 	*image_in,
 **/
 
 __kernel void
-gaussian(				__global 	float 	*data,
+gaussian(			__global 	float 	*data,
 			const 				float 	sigma,
 			const 				int 	SIZE
 )
@@ -316,5 +316,27 @@ gaussian(				__global 	float 	*data,
 		float x = ((float)gid - ((float)SIZE - 1.0f) / 2.0f) - sigma;
         float y = exp(-x * x / 2.0f);
         data[gid] = y / sigma / sqrt(2.0f * M_PI_F);
+	}
+}
+
+/**
+ * \brief divide_cst: divide a vector by a constant.
+ *
+ *
+ * @param data:	    Float pointer to global memory storing the vector.
+ * @param value:	calc data/value
+ * @param size: 	size of the vector
+ *
+**/
+
+__kernel void
+divide_cst(			__global 	float 	*data,
+			const 				float 	value,
+			const 				int 	SIZE
+)
+{
+	int gid=get_global_id(0);
+	if(gid < SIZE){
+        data[gid] = data[gid] / value;
 	}
 }
