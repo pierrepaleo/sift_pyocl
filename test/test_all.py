@@ -44,6 +44,7 @@ import unittest
 from utilstest import UtilsTest, getLogger
 logger = getLogger(__file__)
 
+from test_gaussian import test_suite_gaussian
 from test_preproc import test_suite_preproc
 from test_convol import test_suite_convol
 from test_algebra import test_suite_algebra
@@ -51,6 +52,7 @@ from test_image import test_suite_image
 
 def test_suite_all():
     testSuite = unittest.TestSuite()
+    testSuite.addTest(test_suite_gaussian())
     testSuite.addTest(test_suite_preproc())
     testSuite.addTest(test_suite_convol())
     testSuite.addTest(test_suite_algebra())

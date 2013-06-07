@@ -313,7 +313,7 @@ gaussian(			__global 	float 	*data,
 {
 	int gid=get_global_id(0);
 	if(gid < SIZE){
-		float x = ((float)gid - ((float)SIZE - 1.0f) / 2.0f) - sigma;
+		float x = ((float)gid - ((float)SIZE - 1.0f)/2.0f) / sigma;
         float y = exp(-x * x / 2.0f);
         data[gid] = y / sigma / sqrt(2.0f * M_PI_F);
 	}

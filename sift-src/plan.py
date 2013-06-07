@@ -8,8 +8,9 @@ import numpy
 import pyopencl, pyopencl.array
 from .param import par
 from .opencl import ocl
-from .utils import calc_size
+from .utils import calc_size, kernel_size
 logger = logging.getLogger("sift.plan")
+
 
 class SiftPlan(object):
     """
@@ -124,13 +125,14 @@ class SiftPlan(object):
         curSigma = 1.0 if par.DoubleImSize else 0.5
         if par.InitSigma > curSigma:
             sigma = math.sqrt(par.InitSigma ** 2 - curSigma ** 2)
-            size = int(8 * sigma + 1)
+            size = kernel_size(sigma, True)
+            # TODO: possible enhancement, if size is even make it odd
             logger.debug("pre-Allocating %s float for init blur" % size)
             self.memory += size * size_of_float
         prevSigma = par.InitSigma
         for i in range(par.Scales + 2):
             increase = prevSigma * math.sqrt(self.sigmaRatio ** 2 - 1.0)
-            size = int(8 * increase + 1)
+            size = kernel_size(increase, True)
             logger.debug("pre-Allocating %s float for blur sigma: %s" % (size, increase))
             self.memory += size * size_of_float
             prevSigma *= self.sigmaRatio;
@@ -156,7 +158,8 @@ class SiftPlan(object):
 #            for i in range(par.Scales + 2):
 #                self.buffers[(octave, i, "DoG") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
             shape = (shape[0] // 2, shape[1] // 2)
-
+        for buffer in self.buffers.values():
+            buffer.fill(0)
         ########################################################################
         # Allocate space for gaussian kernels
         ########################################################################
@@ -179,7 +182,7 @@ class SiftPlan(object):
         @param  sigma: width of the gaussian, the length of the function will be 8*sigma + 1
         """
         name = "gaussian_%s" % sigma
-        size = int(8 * sigma + 1)
+        size = kernel_size(sigma, True)
         logger.debug("Allocating %s float for blur sigma: %s" % (size, sigma))
         gaussian_gpu = pyopencl.array.empty(self.queue, size, dtype=numpy.float32, order="C")
 #       Norming the gaussian takes three OCL kernel launch (gaussian, calc_sum and norm) -
@@ -338,13 +341,13 @@ class SiftPlan(object):
             if kp_counter>0.9*self.kpsize[octave]:
                 logger.warning("Keypoint counter overflow risk: counted %s / %s" % (kp_counter, self.kpsize[octave]))
             print("Keypoint counted %s / %s" % (kp_counter, self.kpsize[octave]))
-            self.programs["image"].interp_keypoint(self.queue, procsize, wgsize,
-                                          self.buffers[(octave, "DoGs")].data,  #__global float* DOGS,
-                                          self.buffers[(octave, "Kp")].data,    # __global keypoint* keypoints,
-                                          kp_counter,                           # int actual_nb_keypoints,
-                                          numpy.float32(par.PeakThresh),        # float peak_thresh,
-                                          numpy.float32(par.InitSigma),         # float InitSigma,
-                                          *self.scales[octave])                 # int width, int height)
+#            self.programs["image"].interp_keypoint(self.queue, procsize, wgsize,
+#                                          self.buffers[(octave, "DoGs")].data,  #__global float* DOGS,
+#                                          self.buffers[(octave, "Kp")].data,    # __global keypoint* keypoints,
+#                                          kp_counter,                           # int actual_nb_keypoints,
+#                                          numpy.float32(par.PeakThresh),        # float peak_thresh,
+#                                          numpy.float32(par.InitSigma),         # float InitSigma,
+#                                          *self.scales[octave]).wait()                 # int width, int height)
             if octave < (self.octave_max - 1):
                  self.programs["preprocess"].shrink(self.queue, self.procsize[octave + 1], self.wgsize[octave + 1],
                                                     self.buffers[(octave, 0, "G")].data, self.buffers[(octave + 1, 0, "G")].data,
