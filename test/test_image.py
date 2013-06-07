@@ -256,7 +256,6 @@ class test_image(unittest.TestCase):
         	self.EdgeThresh0, self.EdgeThresh,self.nb_keypoints,self.s,self.width,self.height)
         
         self.shape = calc_size(keypoints_prev.shape, self.wg)	
-        print("---------"); print self.shape   	
         '''
         END OF WILD COPYPASTE
         '''
@@ -264,11 +263,10 @@ class test_image(unittest.TestCase):
         self.gpu_keypoints1 = pyopencl.array.to_device(queue,keypoints_prev)
         self.actual_nb_keypoints = numpy.int32(len((keypoints_prev[:,0])[keypoints_prev[:,1] != -1]))
         InitSigma = numpy.float32(1.6) #warning: it must be the same in my_keypoints_interpolation
-        print self.shape
         t0 = time.time()
         k1 = self.program.interp_keypoint(queue, self.shape, self.wg, 
         	self.gpu_dogs.data, self.gpu_keypoints1.data, self.actual_nb_keypoints, 
-        	self.peakthresh, self.s, InitSigma, self.width, self.height)    	    	
+        	self.peakthresh, InitSigma, self.width, self.height)    	    	
         res = self.gpu_keypoints1.get()
 
         t1 = time.time()
