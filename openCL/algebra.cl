@@ -1,3 +1,8 @@
+typedef float4 keypoint;
+
+
+
+
 /**
  * \brief Linear combination of two matrices
  *
@@ -32,3 +37,60 @@ __kernel void combine(
 		w[index_dog] = a * u[index] + b * v[index];
 	}
 }
+
+
+
+/**
+ * \brief Deletes the (-1,-1,-1,-1) in order to get a more "compact" keypoints vector
+ 		Also arranges the keypoints coordinates in the SIFT order : (x:col,y:row,sigma,angle)
+ *		(initially we had (peak,r,c,sigma), but at this stage peak is not useful anymore)
+ *
+ *
+ * @param keypoints: Pointer to global memory with the keypoints
+ * @param output: Pointer to global memory with the output
+ * @param counter: Pointer to global memory with the shared counter in the output
+ * @param nbkeypoints: max number of keypoints
+ *
+ */
+
+
+
+__kernel void compact(
+	__global keypoint* keypoints,
+	__global keypoint* output,
+	__global int* counter,
+	int nbkeypoints)
+{	
+	
+	int gid0 = (int) get_global_id(0);
+	if (gid0 < nbkeypoints) {
+		
+		keypoint k = keypoints[gid0];
+		
+		if (k.s1 != -1) { //Coordinates are never negative
+			
+			k.s0 = (float) k.s2; //col
+			k.s2 = k.s3; //sigma
+			k.s3 = 0.0; //angle
+			
+			int old = atomic_inc(counter);
+			if (old < nbkeypoints) output[old] = k;
+			
+		}
+	}
+}
+	
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
