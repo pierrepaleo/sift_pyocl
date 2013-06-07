@@ -374,7 +374,10 @@ __kernel void interp_keypoint(
  *   of the gradient directions in the region.  The histogram is smoothed and the largest peak selected.
  *    The results are in the range of -PI to PI.
  *
- * Warning: this function requires "keypoints" to be compacted
+ * Warning: -this function requires "keypoints" to be compacted
+ * 			-At this stage, a keypoint is: (peak,r,c,sigma)
+ 			 After this function, it will be (c,r,sigma,angle)
+ 			-The workgroup size have to be "small" in order to achieve "hist[36]"
  *
  * @param keypoints: Pointer to global memory with current keypoints vector. It will be modified with the interpolated points
  * @param grad: Pointer to global memory with gradient norm previously calculated
@@ -402,30 +405,31 @@ __kernel void orientation_assignment(
 	__global float* grad, 
 	__global float* ori,
 	__global int* counter,
-	float octsize,
+	int octsize,
 	float OriSigma, //WARNING: (1.5), it is not "InitSigma (=1.6)"
 	int nb_keypoints,
+	int actual_nb_keypoints,
 	int grad_width,
 	int grad_height)
 {
 	int gid0 = (int) get_global_id(0);
 
-	if (gid0 < *counter) {
+	if (gid0 < actual_nb_keypoints) { //do not use *counter, for it will be modified below
 		keypoint k = keypoints[gid0];
 
 		int	bin, prev, next;
 		int old;
 		float distsq, gval, weight, angle, interp=0.0;
 		float hist[36];
+		hist[35] = 50.0;
 		float radius2, sigma2;
 		int	row = (int) (k.s1 + 0.5),
-			col = (int) (k.s0 + 0.5);
-
+			col = (int) (k.s2 + 0.5);
 
 		/* Look at pixels within 3 sigma around the point and sum their
 		  Gaussian weighted gradient magnitudes into the histogram. */
 		  
-		float sigma = OriSigma * k.s2;
+		float sigma = OriSigma * k.s3;
 		int	radius = (int) (sigma * 3.0);
 		int rmin = MAX(0,row - radius);
 		int cmin = MAX(0,col - radius);
@@ -433,23 +437,22 @@ __kernel void orientation_assignment(
 		int cmax = MIN(col + radius,grad_height - 2);
 		radius2 = (float)(radius * radius);
 		sigma2 = 2.0*sigma*sigma;
-
+		float debug = 0.0; //DEBUG
 		for (int r = rmin; r <= rmax; r++) {
 			for (int c = cmin; c <= cmax; c++) {
 
 				gval = grad[r*grad_width+c];
-				distsq = (r-k.s1)*(r-k.s1) + (c-k.s0)*(c-k.s0);
+				distsq = (r-k.s1)*(r-k.s1) + (c-k.s2)*(c-k.s2);
 				
 				if (gval > 0.0  &&  distsq < radius2 + 0.5) {
-
 					weight = exp(- distsq / sigma2);
-
 					/* Ori is in range of -PI to PI. */
 					angle = ori[r*grad_width+c];
 					bin = (int) (36 * (angle + M_PI_F + 0.001) / (2.0 * M_PI_F));
 					if (bin >= 0 && bin <= 36) {
 						bin = MIN(bin, 36 - 1);
 						hist[bin] += weight * gval;
+						if (debug == 0.0) debug = (float) hist[35];
 					}
 				}
 			}
@@ -458,7 +461,7 @@ __kernel void orientation_assignment(
 
 		/* Apply smoothing 6 times for accurate Gaussian approximation. */
 		float prev2, temp2;
-		for (int i = 0; i < 6; i++) {
+		for (int j = 0; j < 6; j++) {
 			prev2 = hist[36 - 1];
 			for (int i = 0; i < 36; i++) {
 				temp2 = hist[i];
@@ -466,7 +469,7 @@ __kernel void orientation_assignment(
 				prev2 = temp2;
 			}
 		}
-
+        
 		/* Find maximum value in histogram. */
 		float maxval = 0.0;
 		int argmax = 0;
@@ -483,11 +486,11 @@ __kernel void orientation_assignment(
 			hist[prev] = -hist[prev]; maxval = -maxval; hist[next] = -hist[next];
 
 		interp = 0.5 * (hist[prev] - hist[next]) / (hist[prev] - 2.0 * maxval + hist[next]);
-		angle = 2.0 * M_PI_F * (argmax + 0.5 + interp) / 36 - M_PI_F;
-		k.s0 = octsize * k.s0;
-		k.s1 = octsize * k.s1; 
-		k.s2 = octsize * k.s2;
-		k.s3 = angle;
+		//angle = 2.0 * M_PI_F * (argmax + 0.5 + interp) / 36 - M_PI_F;
+		k.s0 = octsize * k.s2; //c
+		k.s1 = octsize * k.s1; //r
+		k.s2 = octsize * k.s3; //sigma
+		k.s3 = angle;		   //angle
 		keypoints[gid0] = k;
 		
 		/*
@@ -497,13 +500,14 @@ __kernel void orientation_assignment(
 		*/
 		
 		keypoint k2 = 0.0; k2.s0 = k.s0; k2.s1 = k.s1; k2.s2 = k.s2;
+		k.s0 = debug; //DEBUG
+		keypoints[gid0] = k; //DEBUG
 		for (int i = 0; i < 36; i++) {
-			prev = (i == 0 ? 36 - 1 : i - 1);
-			next = (i == 36 - 1 ? 0 : i + 1);
-			if (hist[i] > hist[prev]  &&  hist[i] > hist[next]  && hist[i] >= 0.8 * maxval && hist[i] != maxval) {
-
+			prev = (i == 0 ? 36 -1 : i - 1);
+			next = (i == 36 -1 ? 0 : i + 1);
+			if (hist[i] > hist[prev]  &&  hist[i] > hist[next] &&  hist[i] >= 0.8 * maxval && hist[i] != maxval) {
 				/* Use parabolic fit to interpolate peak location from 3 samples. Set angle in range -PI to PI. */
-		
+				keypoints[gid0] = 0.0; //DEBUG
 				if (hist[i] < 0.0) 
 					hist[prev] = -hist[prev]; hist[i] = -hist[i]; hist[next] = -hist[next];
 				if (hist[i] >= hist[prev]  &&  hist[i] >= hist[next]) 

@@ -77,7 +77,7 @@ class test_image(unittest.TestCase):
         kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), "image.cl")
         kernel_src = open(kernel_path).read()
         self.program = pyopencl.Program(ctx, kernel_src).build()
-        self.wg = (1, 512)
+        self.wg = (1, 8)
 
         
 
@@ -271,30 +271,47 @@ class test_image(unittest.TestCase):
         
         #orientation_setup :
         keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octsize = orientation_setup()
-        
+        #keypoints is a compacted vector of keypoints
+        keypoints_before_orientation = numpy.copy(keypoints) #important here
         shape = calc_size(keypoints.shape, self.wg)
         gpu_keypoints = pyopencl.array.to_device(queue,keypoints)
         actual_nb_keypoints = numpy.int32(actual_nb_keypoints) #grrr
+        print("Number of keypoints before orientation assignment : %s" %actual_nb_keypoints)
         counter = pyopencl.array.to_device(queue, actual_nb_keypoints)
         gpu_grad = pyopencl.array.to_device(queue, grad)
         gpu_ori = pyopencl.array.to_device(queue, ori)
-        orisigma = numpy.int32(1.5) #SIFT
+        orisigma = numpy.float32(1.5) #SIFT
         grad_height, grad_width = numpy.int32(grad.shape)
                
         t0 = time.time()
         k1 = self.program.orientation_assignment(queue, shape, self.wg, 
         	gpu_keypoints.data, gpu_grad.data, gpu_ori.data, counter.data,
-        	octsize, orisigma, nb_keypoints, grad_width, grad_height)    	
+        	octsize, orisigma, nb_keypoints, actual_nb_keypoints, grad_width, grad_height)    	
         res = gpu_keypoints.get()
+        cnt = counter.get()
         t1 = time.time()
         
-        ref = my_orientation(keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octsize, orisigma)
+        ref,updated_nb_keypoints = my_orientation(keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octsize, orisigma)
                 
         t2 = time.time()
         
-        print ref[0:33]
-
-
+        #print keypoints_before_orientation[0:33]
+        print res[0:33]
+        
+        
+        print("Total keypoints for kernel : %s -- For Python : %s" %(cnt,updated_nb_keypoints))
+       
+        '''
+        res_sort_arg = res[:,0].argsort(axis=0)     
+        res_sort = res[res_sort_arg]
+        ref_sort_arg = ref[:,0].argsort(axis=0)     
+        ref_sort = ref[ref_sort_arg]
+        
+        print res_sort[0:50]
+        print ref_sort[0:50]
+        '''
+        
+        #delta = abs((res_sort - ref_sort)).max()
 
 
 
@@ -303,8 +320,8 @@ def test_suite_image():
     testSuite = unittest.TestSuite()
     #testSuite.addTest(test_image("test_gradient"))
     #testSuite.addTest(test_image("test_local_maxmin"))
-    #testSuite.addTest(test_image("test_interpolation"))
-    testSuite.addTest(test_image("test_orientation"))
+    testSuite.addTest(test_image("test_interpolation"))
+    #testSuite.addTest(test_image("test_orientation"))
     return testSuite
 
 if __name__ == '__main__':
