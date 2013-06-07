@@ -222,7 +222,6 @@ __kernel void local_maxmin(
  * @param keypoints: Pointer to global memory with current keypoints vector. It will be modified with the interpolated points
  * @param actual_nb_keypoints: actual number of keypoints previously found, i.e previous "counter" final value
  * @param peak_thresh: we are not counting the interpolated values if below the threshold (par.PeakThresh = 255.0*0.04/3.0)
- * @param s: the scale in the DoG, i.e the index of the current DoG (this is not the std !)
  * @param InitSigma: float "par.InitSigma" in SIFT (1.6 by default)
  * @param width: integer number of columns of the DoG
  * @param height: integer number of lines of the DoG
@@ -234,7 +233,6 @@ __kernel void interp_keypoint(
 	__global keypoint* keypoints,
 	int actual_nb_keypoints,
 	float peak_thresh,
-	int scale,
 	float InitSigma,
 	int width,
 	int height)
@@ -245,13 +243,15 @@ __kernel void interp_keypoint(
 
 	if (gid0 < actual_nb_keypoints) {
 	
-		int index_dog_prev = (scale-1)*(width*height);
-		int index_dog =scale*(width*height);
-		int index_dog_next =(scale+1)*(width*height);
-		
 		keypoint k = keypoints[gid0];
 		int r = (int) k.s1;
 		int c = (int) k.s2;
+		int scale = (int) k.s3;
+		
+		int index_dog_prev = (scale-1)*(width*height);
+		int index_dog = scale*(width*height);
+		int index_dog_next =(scale+1)*(width*height);
+		
 		
 		//pre-allocating variables before entering into the loop
 		float g0, g1, g2, 
