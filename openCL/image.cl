@@ -393,7 +393,7 @@ TODO:
 -replace "36" by an external paramater ?
 -replace "0.8" by an external parameter ?
 
-*/
+
 void AssignOriHist(
 	__constant keypoint* keypoints,
 	__constant float* angles,
@@ -406,20 +406,20 @@ void AssignOriHist(
 	int grad_height)
 {
 
-
+	int gid0 = (int) get_global_id(0);
 	if (gid0 < actual_nb_keypoints) {
-		keypoint k = keypoints[gid0]
+		keypoint k = keypoints[gid0];
 
 		int	bin, prev, next;
 		float distsq, gval, weight, angle, interp;
 		float hist[36];
 		float radius2, sigma2;
 		int	row = (int) (k.s1 + 0.5),
-			col = (int) (k.s2 + 0.5),
+			col = (int) (k.s2 + 0.5);
 
 
-		/* Look at pixels within 3 sigma around the point and sum their
-		  Gaussian weighted gradient magnitudes into the histogram. */
+		// Look at pixels within 3 sigma around the point and sum their
+		//  Gaussian weighted gradient magnitudes into the histogram. 
 		  
 		float sigma = OriSigma * k.s3;
 		int	radius = (int) (sigma * 3.0);
@@ -440,10 +440,10 @@ void AssignOriHist(
 
 					weight = exp(- distsq / sigma2);
 
-					/* Ori is in range of -PI to PI. */
+					// Ori is in range of -PI to PI. 
 					angle = ori[r*grad_width+c];
 					bin = (int) (36 * (angle + M_PI_F + 0.001) / (2.0 * M_PI_F));
-					assert(bin >= 0 && bin <= 36); //FIXME: no assert in a kernel
+					
 					bin = MIN(bin, 36 - 1);
 					hist[bin] += weight * gval;
 				}
@@ -451,7 +451,7 @@ void AssignOriHist(
 		}
 
 
-	/* Apply smoothing 6 times for accurate Gaussian approximation. */
+	// Apply smoothing 6 times for accurate Gaussian approximation.
 	float prev, temp;
 	for (int i = 0; i < 6; i++) {
 		prev = hist[36 - 1];
@@ -462,41 +462,32 @@ void AssignOriHist(
 		}
 	}
 
-	/* Find maximum value in histogram. */
+	// Find maximum value in histogram. 
 	float maxval = 0.0;
 	for (int i = 0; i < 36; i++)
 		if (hist[i] > maxval) maxval = hist[i];
 
-	/*
-	 For every local peak in histogram, every peak of value >= 80% of maxval generates a new keypoint	
-	*/
+	 //For every local peak in histogram, every peak of value >= 80% of maxval generates a new keypoint	
 
 	for (int i = 0; i < 36; i++) {
 		prev = (i == 0 ? 36 - 1 : i - 1);
 		next = (i == 36 - 1 ? 0 : i + 1);
 		if (hist[i] > hist[prev]  &&  hist[i] > hist[next]  && hist[i] >= 0.8 * maxval) {
 
-			/* Use parabolic fit to interpolate peak location from 3 samples. Set angle in range -PI to PI. */
+			// Use parabolic fit to interpolate peak location from 3 samples. Set angle in range -PI to PI.
 			
 			
 			interp = InterpPeak(hist[prev], hist[i], hist[next]); //TODO
 			
 			
 			angle = 2.0 * M_PI_F * (i + 0.5 + interp) / 36 - M_PI_F;
-			assert(angle >= -M_PI_F  &&  angle <= M_PI_F);
 
-
-
-			/* Create a keypoint with this orientation. */
-			MakeKeypoint(
-				grad, ori, octSize, octScale,
-				octRow, octCol, angle, keys,par);
 		}
 
 	}
 
 }
-
+	*/
 
 
 
