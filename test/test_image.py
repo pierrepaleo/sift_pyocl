@@ -48,6 +48,7 @@ import sys
 import unittest
 from utilstest import UtilsTest, getLogger, ctx
 from test_image_functions import * #for Python implementation of tested functions
+from test_image_setup import *
 import sift
 from sift.utils import calc_size
 logger = getLogger(__file__)
@@ -219,64 +220,28 @@ class test_image(unittest.TestCase):
         Requires the following: "self.keypoints1", "self.actual_nb_keypoints", 	"self.gpu_dog_prev", self.gpu_dog", 			"self.gpu_dog_next", "self.s", "self.width", "self.height", "self.peakthresh"
         """
 
-
-
-        '''
-        WILD COPYPASTE IN ORDER TO GET THE REQUIRED VALUES 
-        ''' 
-        self.border_dist = numpy.int32(5) #SIFT
-        self.peakthresh = numpy.float32(255.0 * 0.04 / 3.0) #SIFT - Take a lower threshold for more keypoints
-        self.EdgeThresh = numpy.float32(0.06) #SIFT
-        self.EdgeThresh0 = numpy.float32(0.08) #SIFT
-        self.octsize = numpy.int32(4) #initially 1, then twiced at each new octave
-        self.nb_keypoints = 10000 #constant size !
-			
-        l = scipy.misc.lena().astype(numpy.float32)#[100:250,100:250] #take a part of the image to fasten the tests
-        self.width = numpy.int32(l.shape[1])
-        self.height = numpy.int32(l.shape[0])
-
-        g = (numpy.zeros(4*self.height*self.width).astype(numpy.float32)).reshape(4,self.height,self.width)
-        sigma=1.6 #par.InitSigma
-        g[0,:,:]= numpy.copy(scipy.ndimage.filters.gaussian_filter(l, sigma, mode="reflect"))
-        for i in range(1,4):
-            sigma = sigma*(2.0**(1.0/5.0)) #SIFT
-            g[i] = numpy.copy(scipy.ndimage.filters.gaussian_filter(l, sigma, mode="reflect"))
-
-        #DOGS pre-allocating      
-        DOGS = numpy.zeros((4,self.height,self.width),dtype=numpy.float32)
-        for s in range(1,4): DOGS[s-1] = g[s]-g[s-1] #DoG[s-1]
-        self.s = numpy.int32(1) #1, 2 or 3... NOT 0 NOR 4 !
-
-        self.gpu_dogs = pyopencl.array.to_device(queue, DOGS)
- 
-        self.nb_keypoints = numpy.int32(self.nb_keypoints)
-        
-        #Assumes that local_maxmin is working so that we can use Python's "my_local_maxmin" instead of the kernel
-        keypoints_prev = my_local_maxmin(DOGS, self.peakthresh,self.border_dist, self.octsize, 
-        	self.EdgeThresh0, self.EdgeThresh,self.nb_keypoints,self.s,self.width,self.height)
-        
-        self.shape = calc_size(keypoints_prev.shape, self.wg)	
-        '''
-        END OF WILD COPYPASTE
-        '''
-
-        self.gpu_keypoints1 = pyopencl.array.to_device(queue,keypoints_prev)
-        self.actual_nb_keypoints = numpy.int32(len((keypoints_prev[:,0])[keypoints_prev[:,1] != -1]))
+        #interpolation_setup :
+        border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, 
+        	nb_keypoints, width, height, DOGS, s, keypoints_prev,blur = interpolation_setup()
+       
+        	
+        shape = calc_size(keypoints_prev.shape, self.wg)
+        gpu_dogs = pyopencl.array.to_device(queue, DOGS)
+        gpu_keypoints1 = pyopencl.array.to_device(queue,keypoints_prev)
+        actual_nb_keypoints = numpy.int32(len((keypoints_prev[:,0])[keypoints_prev[:,1] != -1]))
         InitSigma = numpy.float32(1.6) #warning: it must be the same in my_keypoints_interpolation
         t0 = time.time()
-        k1 = self.program.interp_keypoint(queue, self.shape, self.wg, 
-        	self.gpu_dogs.data, self.gpu_keypoints1.data, self.actual_nb_keypoints, 
-        	self.peakthresh, InitSigma, self.width, self.height)    	    	
-        res = self.gpu_keypoints1.get()
+        k1 = self.program.interp_keypoint(queue, shape, self.wg, 
+        	gpu_dogs.data, gpu_keypoints1.data, actual_nb_keypoints, 
+        	peakthresh, InitSigma, width, height)    	    	
+        res = gpu_keypoints1.get()
 
         t1 = time.time()
-        #ref = numpy.zeros(self.actual_nb_keypoints).astype(numpy.float32)
         ref = numpy.copy(keypoints_prev) #important here
-        for i,k in enumerate(ref[:self.actual_nb_keypoints,:]):
-            ref[i]= my_interp_keypoint(DOGS, self.s, k[1], k[2],5,self.peakthresh,self.width,self.height)
+        for i,k in enumerate(ref[:actual_nb_keypoints,:]):
+            ref[i]= my_interp_keypoint(DOGS, s, k[1], k[2],5,peakthresh,width,height)
                 
         t2 = time.time()
-        
         
         #print("Keypoints before interpolation:")
         #print keypoints_prev[0:32,:]
@@ -291,9 +256,7 @@ class test_image(unittest.TestCase):
         #print("Number of keypoints before interpolation : %s" %(self.actual_nb_keypoints))
         #print("Number of keypoints after interpolation : %s" %(res2.shape[0]))
         
-        
         delta = abs(ref2 - res2).max()
-        #print delta
         self.assert_(delta < 1e-4, "delta=%s" % (delta))
         logger.info("delta=%s" % delta)
         
@@ -302,9 +265,29 @@ class test_image(unittest.TestCase):
             logger.info("Keypoints interpolation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
 
 
-
-
-
+ 
+    def test_orientation(self):
+        '''
+        #tests keypoints orientation assignment kernel
+        '''
+        
+        #orientation_setup :
+        keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octsize = orientation_setup()
+        
+        shape = calc_size(keypoints.shape, self.wg)
+        gpu_keypoints = pyopencl.array.to_device(queue,keypoints)
+        counter = pyopencl.array.to_device(queue, actual_nb_keypoints)
+        orisigma = numpy.int32(1.5) #SIFT
+       
+        t0 = time.time()
+        k1 = self.program.orientation_assignment(queue, shape, self.wg, 
+        	gpu_keypoints, grad, ori, counter, octsize, orisigma, nb_keypoints, grad_width, grad_height)    	
+        res = self.gpu_keypoints1.get()
+        t1 = time.time()
+        
+        ref = my_orientation(keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octsize, orisigma)
+                
+        t2 = time.time()
 
 
 
