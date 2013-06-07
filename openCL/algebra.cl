@@ -68,13 +68,15 @@ __kernel void compact(
 		
 		keypoint k = keypoints[gid0];
 		
-		if (k.s1 != -1.0) { //should also test k.s2, k.s3 ? Coordinates are never negative
+		if (k.s1 != -1) { //Coordinates are never negative
 			
-			k.s0 = k.s2; //col
+			k.s0 = (float) k.s2; //col
 			k.s2 = k.s3; //sigma
-			k.s3 = 0.0f; //angle
+			k.s3 = 0.0; //angle
+			
 			int old = atomic_inc(counter);
-			output[old] = k;
+			if (old < nbkeypoints) output[old] = k;
+			
 		}
 	}
 }

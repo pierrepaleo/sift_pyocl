@@ -68,8 +68,26 @@ def my_combine(mat1,a1,mat2,a2):
     reference linear combination
     """
     return a1*mat1+a2*mat2
-
-
+    
+    
+    
+def my_compact(keypoints,nbkeypoints):
+    '''
+    Reference compacting
+    '''
+    output = -numpy.ones_like(keypoints,dtype=numpy.float32)
+    counter = 0
+    idx = numpy.where(keypoints[:,1]!=-1)[0]
+    length = idx.size
+    output[:length,0] = keypoints[idx,2]
+    output[:length,1] = keypoints[idx,1]
+    output[:length,2] = keypoints[idx,3]
+    output[:length,3] = 0
+#    for i in range(0,nbkeypoints):
+#        if (keypoints[i,1] != -1 and keypoints[i,0] != 0):
+#            output[counter]= keypoints[i,2],keypoints[i,1],keypoints[i,3],0.0
+#            counter+=1
+    return output, counter
 
 
 
@@ -80,7 +98,7 @@ class test_algebra(unittest.TestCase):
         kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), "algebra.cl")
         kernel_src = open(kernel_path).read()
         self.program = pyopencl.Program(ctx, kernel_src).build()
-        self.wg = (2, 256)
+        self.wg = (1, 512)
        
 
     def tearDown(self):
@@ -130,33 +148,37 @@ class test_algebra(unittest.TestCase):
         tests the "compact" kernel
         """
         
-        nbkeypoints = numpy.int32(1000) #constant value
-        keypoints = numpy.random.rand(nbkeypoints,4)
+        nbkeypoints = 1000 #constant value
+        keypoints = numpy.random.rand(nbkeypoints,4).astype(numpy.float32)
         for i in range(0,nbkeypoints):
             if ((numpy.random.rand(1))[0] < 0.75):
                 keypoints[i]=(-1,-1,-1,-1)
         
-        
-        self.width = numpy.int32(keypoints.shape[1])
-    	self.height = numpy.int32(keypoints.shape[0])
-    	
         self.gpu_keypoints = pyopencl.array.to_device(queue, keypoints)
-        self.output = pyopencl.array.empty(queue, keypoints.shape, dtype=numpy.float32, order="C")
-        self.counter = pyopencl.array.zeros(queue, (1,1), dtype=numpy.int32, order="C")
-        self.shape = calc_size(keypoints.shape, self.wg)
-
+        self.output = pyopencl.array.empty(queue, (nbkeypoints,4), dtype=numpy.float32, order="C")
+        self.output.fill(-1.0,queue)
+        self.counter = pyopencl.array.zeros(queue, (1,), dtype=numpy.int32, order="C")
+        wg = max(self.wg),
+        shape = calc_size((keypoints.shape[0],), wg)
+        nbkeypoints = numpy.int32(nbkeypoints)
+        
         t0 = time.time()
-        k1 = self.program.compact(queue, self.shape, self.wg, 
+        k1 = self.program.compact(queue, shape, wg, 
         	self.gpu_keypoints.data, self.output.data, self.counter.data, nbkeypoints)
         res = self.output.get()
+        count = self.counter.get()[0]
         t1 = time.time()
-        #ref = my_combine(self.mat1,self.coeff1,self.mat2,self.coeff2)
+        ref, count_ref = my_compact(keypoints,nbkeypoints)
+       
         t2 = time.time()
-        #delta = abs(ref - res).max()
-        print res
 
-        #self.assert_(delta < 1e-4, "delta=%s" % (delta))
-        #logger.info("delta=%s" % delta)
+        res_sort_arg = res[:,0].argsort(axis=0)     
+        res_sort = res[res_sort_arg]
+        ref_sort_arg = ref[:,0].argsort(axis=0)     
+        ref_sort = ref[ref_sort_arg]
+        delta = abs((res_sort - ref_sort)).max()
+        self.assert_(delta < 1e-5, "delta=%s" % (delta))
+        logger.info("delta=%s" % delta)
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
             logger.info("Compact operation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
