@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import numpy, scipy.misc
 from test_image_functions import *
+from test_algebra import *
 '''
 Unit tests become more and more difficult as we progress in the global SIFT algorithm
 For a better code visibility, the setups required by kernels will be put here
@@ -43,8 +44,7 @@ def interpolation_setup():
     keypoints_prev = my_local_maxmin(DOGS, peakthresh,border_dist, octsize, 
         EdgeThresh0, EdgeThresh,nb_keypoints,s,width,height)
 
-    return border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, 
-    	nb_keypoints, width, height, DOGS, s, keypoints_prev, g[s]
+    return border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, nb_keypoints, width, height, DOGS, s, keypoints_prev, g[s]
     
     
     
@@ -54,16 +54,16 @@ def orientation_setup():
     Provides the values required by "test_orientation"
     Previous step: interpolation - we got a vector of valid keypoints
     '''
+    border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, nb_keypoints, width, height, DOGS, s, keypoints_prev, blur = interpolation_setup()
     
-    border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, 
-        	nb_keypoints, width, height, DOGS, s, actual_nb_keypoints, blur = interpolation_setup()
-        	
-    ref = numpy.copy(keypoints_prev) #important here
-        for i,k in enumerate(ref[:actual_nb_keypoints,:]):
-            ref[i]= my_interp_keypoint(DOGS, s, k[1], k[2],5,peakthresh,width,height)
+    
+    ref = numpy.copy(keypoints_prev)
+    for i,k in enumerate(ref[:nb_keypoints,:]):
+        ref[i]= my_interp_keypoint(DOGS, s, k[1], k[2],5,peakthresh,width,height)
     
     grad, ori = my_gradient(blur) #gradient is applied on blur[s]
-
+    ref, actual_nb_keypoints = my_compact(ref,nb_keypoints)
+    
     return ref, nb_keypoints, actual_nb_keypoints, grad, ori, octsize
     
     

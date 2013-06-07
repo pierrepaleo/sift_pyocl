@@ -374,6 +374,8 @@ __kernel void interp_keypoint(
  *   of the gradient directions in the region.  The histogram is smoothed and the largest peak selected.
  *    The results are in the range of -PI to PI.
  *
+ * Warning: this function requires "keypoints" to be compacted
+ *
  * @param keypoints: Pointer to global memory with current keypoints vector. It will be modified with the interpolated points
  * @param grad: Pointer to global memory with gradient norm previously calculated
  * @param ori: Pointer to global memory with gradient orientation previously calculated
@@ -395,7 +397,7 @@ TODO:
 
 */
 
-void orientation_assignment(
+__kernel void orientation_assignment(
 	__global keypoint* keypoints,
 	__global float* grad, 
 	__global float* ori,
@@ -498,7 +500,7 @@ void orientation_assignment(
 		for (int i = 0; i < 36; i++) {
 			prev = (i == 0 ? 36 - 1 : i - 1);
 			next = (i == 36 - 1 ? 0 : i + 1);
-			if (hist[i] > hist[prev]  &&  hist[i] > hist[next]  && hist[i] >= 0.8 * maxval) {
+			if (hist[i] > hist[prev]  &&  hist[i] > hist[next]  && hist[i] >= 0.8 * maxval && hist[i] != maxval) {
 
 				/* Use parabolic fit to interpolate peak location from 3 samples. Set angle in range -PI to PI. */
 		
@@ -514,7 +516,7 @@ void orientation_assignment(
 					if (old < nb_keypoints) keypoints[old] = k2;
 
 				}
-			} //end "val > 80%*maxval"
+			} //end "val >= 80%*maxval"
 		} //end loop in histogram
 	} //end "in the vector"
 }

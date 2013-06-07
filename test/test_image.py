@@ -221,8 +221,7 @@ class test_image(unittest.TestCase):
         """
 
         #interpolation_setup :
-        border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, 
-        	nb_keypoints, width, height, DOGS, s, keypoints_prev,blur = interpolation_setup()
+        border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, nb_keypoints, width, height, DOGS, s, keypoints_prev,blur = interpolation_setup()
        
         	
         shape = calc_size(keypoints_prev.shape, self.wg)
@@ -254,7 +253,6 @@ class test_image(unittest.TestCase):
         res2 = res[res[:,1]!=-1] 
         ref2 = ref[ref[:,1]!=-1]
         #print("Number of keypoints before interpolation : %s" %(self.actual_nb_keypoints))
-        #print("Number of keypoints after interpolation : %s" %(res2.shape[0]))
         
         delta = abs(ref2 - res2).max()
         self.assert_(delta < 1e-4, "delta=%s" % (delta))
@@ -276,18 +274,25 @@ class test_image(unittest.TestCase):
         
         shape = calc_size(keypoints.shape, self.wg)
         gpu_keypoints = pyopencl.array.to_device(queue,keypoints)
+        actual_nb_keypoints = numpy.int32(actual_nb_keypoints) #grrr
         counter = pyopencl.array.to_device(queue, actual_nb_keypoints)
+        gpu_grad = pyopencl.array.to_device(queue, grad)
+        gpu_ori = pyopencl.array.to_device(queue, ori)
         orisigma = numpy.int32(1.5) #SIFT
-       
+        grad_height, grad_width = numpy.int32(grad.shape)
+               
         t0 = time.time()
         k1 = self.program.orientation_assignment(queue, shape, self.wg, 
-        	gpu_keypoints, grad, ori, counter, octsize, orisigma, nb_keypoints, grad_width, grad_height)    	
-        res = self.gpu_keypoints1.get()
+        	gpu_keypoints.data, gpu_grad.data, gpu_ori.data, counter.data,
+        	octsize, orisigma, nb_keypoints, grad_width, grad_height)    	
+        res = gpu_keypoints.get()
         t1 = time.time()
         
         ref = my_orientation(keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octsize, orisigma)
                 
         t2 = time.time()
+        
+        print ref[0:33]
 
 
 
@@ -296,9 +301,10 @@ class test_image(unittest.TestCase):
 
 def test_suite_image():
     testSuite = unittest.TestSuite()
-    testSuite.addTest(test_image("test_gradient"))
-    testSuite.addTest(test_image("test_local_maxmin"))
-    testSuite.addTest(test_image("test_interpolation"))
+    #testSuite.addTest(test_image("test_gradient"))
+    #testSuite.addTest(test_image("test_local_maxmin"))
+    #testSuite.addTest(test_image("test_interpolation"))
+    testSuite.addTest(test_image("test_orientation"))
     return testSuite
 
 if __name__ == '__main__':
