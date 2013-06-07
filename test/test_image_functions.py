@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 import numpy
+
+
+
 def my_gradient(mat):
     """
     numpy implementation of gradient :
@@ -7,6 +10,10 @@ def my_gradient(mat):
     """
     g = numpy.gradient(mat)
     return numpy.sqrt(g[0]**2+g[1]**2), numpy.arctan2(g[0],g[1]) #image.cl/compute_gradient_orientation() puts a "-" here
+    
+    
+    
+    
     
     
 def my_local_maxmin(DOGS,thresh,border_dist,octsize,EdgeThresh0,EdgeThresh,nb_keypoints,s,dog_width,dog_height):
@@ -79,6 +86,11 @@ def is_maxmin(dog_prev,dog,dog_next,val,i0,j0,octsize,EdgeThresh0,EdgeThresh):
 
 
 
+
+
+
+
+
 def my_interp_keypoint(DOGS, s, r, c,movesRemain,peakthresh,width,height):
     ''''
      A Python implementation of SIFT "InterpKeyPoints"
@@ -126,9 +138,6 @@ def my_interp_keypoint(DOGS, s, r, c,movesRemain,peakthresh,width,height):
     return ki #our interpolated keypoint
 
 
-
-
-
 def fit_quadratic(dog_prev,dog,dog_next, r, c):
     '''
     quadratic interpolation arround the keypoint (s,r,c)
@@ -158,4 +167,221 @@ def fit_quadratic(dog_prev,dog,dog_next, r, c):
     peakval = dog[r,c] + 0.5 * (x[0]*g[0]+x[1]*g[1]+x[2]*g[2])
 	
     return x, peakval
+    
+    
+    
+    
+
+    
+    
+def my_orientation(keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octsize, orisigma):
+    '''
+    Python implementation of orientation assignment
+    '''
+    
+    counter = actual_nb_keypoints
+    hist = numpy.zeros(36,dtype=numpy.float32)
+    rows,cols = grad.shape
+    
+    for index,k in enumerate(keypoints):
+		row = numpy.int32(k[1]+0.5),
+		col = numpy.int32(k[0]+0.5),
+		sigma = orisigma * k[2]
+		radius = numpy.int32(sigma * 3.0)
+		rmin = max(0,row-radius)
+		cmin = max(0,col-radius)
+		rmax = min(row+radius,rows-2)
+		cmax = min(col+radius,cols-2)
+		radius2 = numpy.float32(radius * radius);
+		sigma2 = 2.0*sigma*sigma;
+		
+		for r in range(rmin,rmax+1):
+		    for c in range(cmin,cmax+1):
+				gval = grad[r,c]
+				distsq = (r-k[1])*(r-k[1]) + (c-k[0])*(c-k[0])
+				if (gval > 0.0  and  distsq < radius2 + 0.5):
+					weight = exp(- distsq / sigma2);
+					angle = ori[r,c]
+					mybin = numpy.int32((par.OriBins * (angle + PI + 0.001) / (2.0 * PI)))
+					if (mybin >= 0 and mybin <= 36):
+						mybin = min(mybin, par.OriBins - 1);
+						hist[mybin] += weight * gval;
+
+		for i in range(0,6):
+			SmoothHistogram(hist, 36)
+
+		float maxval = 0.0;
+		int argmax = 0;
+		for i in range(0,36): 
+			if (hist[i] > maxval) { maxval = hist[i]; argmax = i; }
+
+		if argmax == 0: prev = 35
+		else: prev = argmax -1
+		if argmax == 35: next = 0
+		else: next = argmax +1
+		if (maxval < 0.0)
+			hist[prev] = -hist[prev]; maxval = -maxval; hist[next] = -hist[next];
+
+		interp = 0.5 * (hist[prev] - hist[next]) / (hist[prev] - 2.0 * maxval + hist[next]);
+		angle = 2.0 * pi * (argmax + 0.5 + interp) / 36 - pi;
+		k[0] = octsize * k.s0;
+		k[1] = octsize * k.s1; 
+		k[2] = octsize * k.s2;
+		k[3] = angle;
+		keypoints[index] = k;
+		
+		
+		k2 = (k[0],k[1],k[2],0.0)
+		for i in range(1,36):
+			if i == 0: prev = 35
+			else: prev = i-1
+			if i == 35: next = 0
+			else next = i+1
+		
+			if (hist[i] > hist[prev]  and  hist[i] > hist[next]  and hist[i] >= 0.8 * maxval):
+				if (hist[i] < 0.0) 
+					hist[prev] = -hist[prev]; hist[i] = -hist[i]; hist[next] = -hist[next];
+				if (hist[i] >= hist[prev]  and  hist[i] >= hist[next]) 
+		 			interp = 0.5 * (hist[prev] - hist[next]) / (hist[prev] - 2.0 * hist[i] + hist[next]);
+			
+				angle = 2.0 * pi * (i + 0.5 + interp) / 36 - pi;
+				if (angle >= -pi  and  angle <= pi) {
+					k2[3] = angle;
+					if (counter < nb_keypoints):
+						keypoints[counter] = k2;
+						counter+=1
+			
+		#end of additional keypoints creation
+	#end of loop
+	return keypoints, counter
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* Smooth a histogram by using a [1/3 1/3 1/3] kernel.  Assume the histogram
+   is connected in a circular buffer.
+*/
+void SmoothHistogram(float* hist, int bins)
+{
+	float prev, temp;
+
+	prev = hist[bins - 1];
+	for (int i = 0; i < bins; i++) {
+		temp = hist[i];
+		hist[i] = ( prev + hist[i] + hist[(i + 1 == bins) ? 0 : i + 1] ) / 3.0;
+		prev = temp;
+	}
+}
+
+
+/* Return a number in the range [-0.5, 0.5] that represents the
+   location of the peak of a parabola passing through the 3 evenly
+   spaced samples.  The center value is assumed to be greater than or
+   equal to the other values if positive, or less than if negative.
+*/
+float InterpPeak(float a, float b, float c)
+{
+	if (b < 0.0) {
+		a = -a; b = -b; c = -c;
+	}
+	assert(b >= a  and  b >= c);
+	return 0.5 * (a - c) / (a - 2.0 * b + c);
+}
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
 

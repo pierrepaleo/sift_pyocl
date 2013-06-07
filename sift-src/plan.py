@@ -30,7 +30,7 @@ class SiftPlan(object):
 #                    numpy.float64:"double_to_float",
                       }
     sigmaRatio = 2.0 ** (1.0 / par.Scales)
-    PIX_PER_KP = 100 # pre_allocate buffers for keypoints
+    PIX_PER_KP = 50 # pre_allocate buffers for keypoints
 
     def __init__(self, shape=None, dtype=None, devicetype="GPU", template=None, profile=False, device=None, PIX_PER_KP=None):
         """
@@ -114,7 +114,7 @@ class SiftPlan(object):
             nr_dogs = par.Scales + 2
             size = scale[0] * scale[1]
             self.memory += size * (nr_blur + nr_dogs + 1) * size_of_float  # 1 temporary array
-            kpsize = int(size // self.PIX_PER_KP)      # int64 causes problems with pyopencl
+            kpsize = int(self.shape[0] * self.shape[0] // self.PIX_PER_KP)   # Is the number of kp independant of the octave ? int64 causes problems with pyopencl
             self.memory += kpsize * size_of_float * 4  # those are array of float4 to register keypoints
             self.memory += 4 #keypoint index Counter
             self.kpsize.append(kpsize)
@@ -341,13 +341,13 @@ class SiftPlan(object):
             if kp_counter>0.9*self.kpsize[octave]:
                 logger.warning("Keypoint counter overflow risk: counted %s / %s" % (kp_counter, self.kpsize[octave]))
             print("Keypoint counted %s / %s" % (kp_counter, self.kpsize[octave]))
-#            self.programs["image"].interp_keypoint(self.queue, procsize, wgsize,
-#                                          self.buffers[(octave, "DoGs")].data,  #__global float* DOGS,
-#                                          self.buffers[(octave, "Kp")].data,    # __global keypoint* keypoints,
-#                                          kp_counter,                           # int actual_nb_keypoints,
-#                                          numpy.float32(par.PeakThresh),        # float peak_thresh,
-#                                          numpy.float32(par.InitSigma),         # float InitSigma,
-#                                          *self.scales[octave]).wait()                 # int width, int height)
+            self.programs["image"].interp_keypoint(self.queue, procsize, wgsize,
+                                          self.buffers[(octave, "DoGs")].data,  #__global float* DOGS,
+                                          self.buffers[(octave, "Kp")].data,    # __global keypoint* keypoints,
+                                          kp_counter,                           # int actual_nb_keypoints,
+                                          numpy.float32(par.PeakThresh),        # float peak_thresh,
+                                          numpy.float32(par.InitSigma),         # float InitSigma,
+                                          *self.scales[octave]).wait()                 # int width, int height)
             if octave < (self.octave_max - 1):
                  self.programs["preprocess"].shrink(self.queue, self.procsize[octave + 1], self.wgsize[octave + 1],
                                                     self.buffers[(octave, 0, "G")].data, self.buffers[(octave + 1, 0, "G")].data,
