@@ -136,8 +136,8 @@ __kernel void local_maxmin(
 	
 	if ((gid0 < height - border_dist) && (gid1 < width - border_dist) && (gid0 >= border_dist) && (gid1 >= border_dist)) {
 		int index_dog_prev = (scale-1)*(width*height);
-		int index_dog =scale*(width*height);
-		int index_dog_next =(scale+1)*(width*height);
+		int index_dog = scale*(width*height);
+		int index_dog_next = (scale+1)*(width*height);
 				
 		float res = 0.0f;
 		float val = DOGS[index_dog+gid0*width + gid1];
@@ -347,7 +347,7 @@ __kernel void interp_keypoint(
 			ki.s0 = peakval;
 			ki.s1 = k.s1 + solution1;
 			ki.s2 = k.s2 + solution2;
-			ki.s3 = InitSigma * pow(2.0, (((float) scale) + solution0) / 3.0); //3.0 is "par.Scales"
+			ki.s3 = InitSigma * pow(2.0f, (((float) scale) + solution0) / 3.0f); //3.0 is "par.Scales"
 		}
 		else { //the keypoint was not correctly interpolated : we reject it
 			ki.s0 = -1.0f; ki.s1 = -1.0f; ki.s2 = -1.0f; ki.s3 = -1.0f;
