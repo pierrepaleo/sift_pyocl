@@ -178,7 +178,7 @@ class SiftPlan(object):
         """
         Create a buffer of the right size according to the width of the gaussian ...
 
-        
+
         @param  sigma: width of the gaussian, the length of the function will be 8*sigma + 1
 
         Same calculation done on CPU
@@ -238,9 +238,9 @@ class SiftPlan(object):
     def _calc_workgroups(self):
         """
         First try to guess the best workgroup size, then calculate all global worksize
-        
-        Nota: 
-        The workgroup size is limited by the device  
+
+        Nota:
+        The workgroup size is limited by the device
         The workgroup size is limited to the 2**n below then image size (hence changes with octaves)
         The second dimension of the wg size should be large, the first small: i.e. (1,64)
         The processing size should be a multiple of  workgroup size.
@@ -263,7 +263,7 @@ class SiftPlan(object):
     def keypoints(self, image):
         """
         Calculates the keypoints of the image
-        @param image: ndimage of 2D (or 3D if RGB)  
+        @param image: ndimage of 2D (or 3D if RGB)
         """
         total_size = 0
         keypoints = []
@@ -330,14 +330,16 @@ class SiftPlan(object):
                                                  *self.scales[octave])
                 #swap buffers:
                 self.buffers[(octave, "G_1")], self.buffers[(octave, "G_2")] = self.buffers[(octave, "G_2")], self.buffers[(octave, "G_1")]
-                
+
         ########################################################################
         # Calculate Keypoints per octave
         ########################################################################
+        wgsize = (8,)#(max(self.wgsize[octave]),) #TODO: optimize
         kpsize32 = numpy.int32(self.kpsize)
         for octave in range(self.octave_max):
             logger.debug("Calculating keypoints on octave %i" % octave)
             self._reset_keypoints()
+            octsize = numpy.int32(2 ** octave)
             for scale in range(1, par.Scales + 1):
                 print (octave, scale)
                 self.programs["image"].local_maxmin(self.queue, self.procsize[octave], self.wgsize[octave],
@@ -345,7 +347,7 @@ class SiftPlan(object):
                                                     self.buffers["Kp_1"].data,                      #__global keypoint* output,
                                                     numpy.int32(par.BorderDist),                    #int border_dist,
                                                     numpy.float32(par.PeakThresh),                  #float peak_thresh,
-                                                    numpy.int32(2 ** octave),                       #int octsize,
+                                                    octsize,  # int octsize,
                                                     numpy.float32(par.EdgeThresh1),                 #float EdgeThresh0,
                                                     numpy.float32(par.EdgeThresh),                  #float EdgeThresh,
                                                     self.buffers["cnt"].data,                       #__global int* counter,
@@ -353,7 +355,7 @@ class SiftPlan(object):
                                                     numpy.int32(scale),                             #int scale,
                                                     *self.scales[octave])                           #int width, int height)
 
-                wgsize = (8,)#(max(self.wgsize[octave]),) #TODO: optimize
+
                 procsize = calc_size((self.kpsize,), wgsize)
     #           Refine keypoints
                 kp_counter = self.buffers["cnt"].get()[0]
@@ -366,7 +368,7 @@ class SiftPlan(object):
                                               kp_counter,                           # int actual_nb_keypoints,
                                               numpy.float32(par.PeakThresh),        # float peak_thresh,
                                               numpy.float32(par.InitSigma),         # float InitSigma,
-                                              *self.scales[octave]).wait()          # int width, int height)
+                                              *self.scales[octave])                 # int width, int height)
                 self.buffers["cnt"].set(numpy.array([0], dtype=numpy.int32))
                 self.programs["algebra"].compact(self.queue, procsize, wgsize,
                                 self.buffers["Kp_1"].data, # __global keypoint* keypoints,
@@ -376,8 +378,22 @@ class SiftPlan(object):
                                                  )
                 newcnt = self.buffers["cnt"].get()[0]
                 print("After compaction, %i (-%i)" % (newcnt, kp_counter - newcnt))
+
                 #swap keypoints:
                 self.buffers["Kp_1"], self.buffers["Kp_2"] = self.buffers["Kp_2"], self.buffers["Kp_1"]
+
+#           Orientation assignement: 1D kernel, rather heavy kernel
+#            procsize = calc_size((newcnt,), wgsize)
+#            self.programs["image"].orientation_assignment(procsize,wgsize,
+#                                  self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
+#                                                            #__global float* grad,
+#                                                            #__global float* ori,
+#                                     self.buffers["cnt"].data,  # __global int* counter,
+#                                     octsize,               #int octsize,
+#                                     numpy.float32(par.OriSigma),  # float OriSigma, //WARNING: (1.5), it is not "InitSigma (=1.6)"
+#                                     kpsize32,  # int max of nb_keypoints,
+#                                     newcnt,                #int actual_nb_keypoints,
+#                                     self.scales[octave])   #int grad_width, int grad_height)
 #                Calc orientation
 #                compact again ?
 #                generate keypoints ?
@@ -402,7 +418,7 @@ class SiftPlan(object):
     def _gaussian_convolution(self, input_data, output_data, sigma, octave=0):
         """
         Calculate the gaussian convolution with precalculated kernels.
-        
+
         Uses a temporary buffer
         """
         temp_data = self.buffers[(octave, "tmp") ]
