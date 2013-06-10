@@ -109,7 +109,6 @@ def my_interp_keypoint(DOGS, s, r, c,movesRemain,peakthresh,width,height):
     
         x,peakval = fit_quadratic(dog_prev,dog,dog_next, newr, newc)
         
-        
         if (x[1] > 0.6 and newr < height - 3):
             newr+=1
         elif (x[1] < -0.6 and newr > 3):
