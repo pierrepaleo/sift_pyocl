@@ -273,7 +273,9 @@ class test_image(unittest.TestCase):
         keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octsize = orientation_setup()
         #keypoints is a compacted vector of keypoints
         keypoints_before_orientation = numpy.copy(keypoints) #important here
-        shape = calc_size(keypoints.shape, self.wg)
+        wg = max(self.wg),
+        shape = calc_size((keypoints.shape[0],), wg)
+        #shape = calc_size(keypoints.shape, self.wg)
         gpu_keypoints = pyopencl.array.to_device(queue,keypoints)
         actual_nb_keypoints = numpy.int32(actual_nb_keypoints) #grrr
         print("Number of keypoints before orientation assignment : %s" %actual_nb_keypoints)
@@ -284,7 +286,7 @@ class test_image(unittest.TestCase):
         grad_height, grad_width = numpy.int32(grad.shape)
                
         t0 = time.time()
-        k1 = self.program.orientation_assignment(queue, shape, self.wg, 
+        k1 = self.program.orientation_assignment(queue, shape, wg, 
         	gpu_keypoints.data, gpu_grad.data, gpu_ori.data, counter.data,
         	octsize, orisigma, nb_keypoints, actual_nb_keypoints, grad_width, grad_height)    	
         res = gpu_keypoints.get()
@@ -296,23 +298,26 @@ class test_image(unittest.TestCase):
         t2 = time.time()
         
         #print keypoints_before_orientation[0:33]
-        print res[0:33]
-        
+        #print res[0:7]
+        #print " "
+        #print ref[0:7]
         
         print("Total keypoints for kernel : %s -- For Python : %s" %(cnt,updated_nb_keypoints))
        
-        '''
-        res_sort_arg = res[:,0].argsort(axis=0)     
-        res_sort = res[res_sort_arg]
-        ref_sort_arg = ref[:,0].argsort(axis=0)     
-        ref_sort = ref[ref_sort_arg]
-        
-        print res_sort[0:50]
-        print ref_sort[0:50]
-        '''
-        
-        #delta = abs((res_sort - ref_sort)).max()
-
+        #sort to compare added keypoints
+        d1,d2,d3,d4 = keypoints_compare(ref,res)
+        self.assert_(d1 < 1e-4, "delta_cols=%s" % (d1))
+        self.assert_(d2 < 1e-4, "delta_rows=%s" % (d2))
+        self.assert_(d3 < 1e-4, "delta_sigma=%s" % (d3))
+        self.assert_(d4 < 1e-4, "delta_angle=%s" % (d4))
+        logger.info("delta_cols=%s" % d1)
+        logger.info("delta_rows=%s" % d2)
+        logger.info("delta_sigma=%s" % d3)
+        logger.info("delta_angle=%s" % d4)
+        if PROFILE:
+            logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
+            logger.info("Orientation assignment took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+  
 
 
 
@@ -320,8 +325,8 @@ def test_suite_image():
     testSuite = unittest.TestSuite()
     #testSuite.addTest(test_image("test_gradient"))
     #testSuite.addTest(test_image("test_local_maxmin"))
-    testSuite.addTest(test_image("test_interpolation"))
-    #testSuite.addTest(test_image("test_orientation"))
+    #testSuite.addTest(test_image("test_interpolation"))
+    testSuite.addTest(test_image("test_orientation"))
     return testSuite
 
 if __name__ == '__main__':

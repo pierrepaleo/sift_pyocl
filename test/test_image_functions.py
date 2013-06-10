@@ -183,6 +183,7 @@ def my_orientation(keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octs
     hist = numpy.zeros(36,dtype=numpy.float32)
     rows,cols = grad.shape
     for index,k in enumerate(keypoints[0:actual_nb_keypoints]):
+        hist = hist*0 #do not forget this memset at each loop...
         row = numpy.int32(k[1]+0.5),
         col = numpy.int32(k[2]+0.5),
         sigma = orisigma * k[3]
@@ -199,6 +200,7 @@ def my_orientation(keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octs
             for c in range(cmin,cmax+1):
                 gval = grad[r,c]
                 distsq = (r-k[1])*(r-k[1]) + (c-k[2])*(c-k[2])
+                
                 if (gval > 0.0  and  distsq < radius2 + 0.5):
                     weight = numpy.exp(- distsq / sigma2)
                     angle = ori[r,c]
@@ -206,6 +208,7 @@ def my_orientation(keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octs
                     if (mybin >= 0 and mybin <= 36):
                         mybin = min(mybin, 36 - 1)
                         hist[mybin] += weight * gval
+                        
 
         for i in range(0,6):
             hist = smooth_histogram(hist)
@@ -225,22 +228,22 @@ def my_orientation(keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octs
             hist[next] = -hist[next]
 
         interp = 0.5 * (hist[prev] - hist[next]) / (hist[prev] - 2.0 * maxval + hist[next])
-        angle = 2.0 * numpy.pi * (argmax + 0.5 + interp) / 36 - numpy.pi
+        angle = 2.0 * numpy.pi * (argmax + 0.5 + interp) / 36 - numpy.pi        
         k[0] = octsize * k[2]
         k[1] = octsize * k[1]
         k[2] = octsize * k[3]
         k[3] = angle
+        
         keypoints[index] = k 
         
         k2 = numpy.zeros(4,dtype=numpy.float32)
         k2[0] = k[0]; k2[1] = k[1]; k2[2] = k[2]; k2[3] = 0.0
-        for i in range(1,36):
+        for i in range(0,36):
             if i == 0: prev = 35
             else: prev = i-1
             if i == 35: next = 0
             else: next = i+1
-        
-            if (hist[i] > hist[prev]  and  hist[i] > hist[next]  and hist[i] >= 0.8 * maxval and hist[i] != maxval):
+            if (hist[i] > hist[prev]  and  hist[i] > hist[next]  and hist[i] >= 0.8 * maxval and i != argmax):
                 if (hist[i] < 0.0):
                     hist[prev] = -hist[prev]
                     hist[i] = -hist[i]
@@ -272,33 +275,40 @@ def smooth_histogram(hist):
         prev = temp
     return hist
 
+
+
+
+def keypoints_compare(ref,res):
+    '''
+    When using atomic instructions in kernels, the resulting keypoints are not in the same order as Python implementation
+    '''
+    res_c = res[(res[:,0].argsort(axis=0)),0]
+    ref_c = ref[(ref[:,0].argsort(axis=0)),0]
+    res_r = res[(res[:,1].argsort(axis=0)),1]
+    ref_r = ref[(ref[:,1].argsort(axis=0)),1]
+    res_s = res[(res[:,2].argsort(axis=0)),2]
+    ref_s = ref[(ref[:,2].argsort(axis=0)),2]
+    res_angle = res[(res[:,2].argsort(axis=0)),2]
+    ref_angle = ref[(ref[:,2].argsort(axis=0)),2]
+    
+    return abs(res_c - ref_c).max(), abs(res_r - ref_r).max(), abs(res_s - ref_s).max(), abs(res_angle - ref_angle).max()
+ 
+'''    
     
     
+  function KahanSum(input)
+    var sum = 0.0
+    var c = 0.0
+    for i = 1 to input.length do
+        y = input[i] - c  
+        t = sum + y
+        c = (t - sum) - y
+        sum = t
+    return sum  
     
+
     
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+'''   
     
     
     
