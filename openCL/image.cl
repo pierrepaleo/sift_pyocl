@@ -251,8 +251,6 @@ __kernel void interp_keypoint(
 		int index_dog =scale*(width*height);
 		int index_dog_next =(scale+1)*(width*height);
 		
-		
-		
 		//pre-allocating variables before entering into the loop
 		float g0, g1, g2, 
 			H00, H11, H22, H01, H02, H12, H10, H20, H21, 
@@ -312,7 +310,6 @@ __kernel void interp_keypoint(
 			solution1 = -(g0*K10 + g1*K11 + g2*K12)/det; //"offset" in r
 			solution2 = -(g0*K20 + g1*K21 + g2*K22)/det; //"offset" in c
 
-
 			//interpolated DoG magnitude at this peak
 			peakval = DOGS[index_dog+pos] + 0.5 * (solution0*g0+solution1*g1+solution2*g2);
 		
@@ -337,7 +334,7 @@ __kernel void interp_keypoint(
 			else
 				loop = 0;
 				
-		}//end of the big loop
+		}//end of the "keypoints interpolation" big loop
 			
 
 		/* Do not create a keypoint if interpolation still remains far outside expected limits, 
@@ -392,7 +389,6 @@ __kernel void interp_keypoint(
 
 
 /*
-TODO: use less memory
 
 par.OriBins = 36
 par.OriHistThresh = 0.8;
@@ -419,10 +415,8 @@ __kernel void orientation_assignment(
 		keypoint k = keypoints[gid0];
 		int	bin, prev, next;
 		int old;
-		float distsq, gval, weight, angle, interp=0.0;
-		//if compiler is GCC, we can use float hist[36] = {[0 ... 35] = 0.0};
+		float distsq, gval, angle, interp=0.0;
 		float hist[36] = { 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f, 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f, 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f};
-		float radius2, sigma2;
 		int	row = (int) (k.s1 + 0.5),
 			col = (int) (k.s2 + 0.5);
 
@@ -435,23 +429,21 @@ __kernel void orientation_assignment(
 		int cmin = MAX(0,col - radius);
 		int rmax = MIN(row + radius,grad_height - 2);
 		int cmax = MIN(col + radius,grad_width - 2);
-		radius2 = (float)(radius * radius);
-		sigma2 = 2.0f*sigma*sigma;
-		for (int r = rmin; r <= rmax; r++) {
-			for (int c = cmin; c <= cmax; c++) {
+		int i,j,r,c;
+		for (r = rmin; r <= rmax; r++) {
+			for (c = cmin; c <= cmax; c++) {
 
 				gval = grad[r*grad_width+c];
 				distsq = (r-k.s1)*(r-k.s1) + (c-k.s2)*(c-k.s2);
 				
-				if (gval > 0.0f  &&  distsq < radius2 + 0.5f) {
-					weight = exp(- distsq / sigma2);
+				if (gval > 0.0f  &&  distsq < ((float) (radius*radius)) + 0.5f) {
 					/* Ori is in range of -PI to PI. */
 					angle = ori[r*grad_width+c];
 					//FIXME: it should be "35" !
 					bin = (int) (36 * (angle + M_PI_F + 0.001f) / (2.0f * M_PI_F));
 					if (bin >= 0 && bin <= 36) {
 						bin = MIN(bin, 36 - 1);
-						hist[bin] += weight * gval; //FIXME: numerical error accumulation, consider Kahan summation
+						hist[bin] += exp(- distsq / (2.0f*sigma*sigma)) * gval;
 						
 					}
 				}
@@ -460,9 +452,9 @@ __kernel void orientation_assignment(
 
 		/* Apply smoothing 6 times for accurate Gaussian approximation. */
 		float prev2, temp2;
-		for (int j = 0; j < 6; j++) {
+		for (j = 0; j < 6; j++) {
 			prev2 = hist[35];
-			for (int i = 0; i < 36; i++) {
+			for (i = 0; i < 36; i++) {
 				temp2 = hist[i];
 				hist[i] = ( prev2 + hist[i] + hist[(i + 1 == 36) ? 0 : i + 1] ) / 3.0f;
 				prev2 = temp2;
@@ -472,7 +464,7 @@ __kernel void orientation_assignment(
 		/* Find maximum value in histogram. */
 		float maxval = 0.0f;
 		int argmax = 0;
-		for (int i = 0; i < 36; i++)
+		for (i = 0; i < 36; i++)
 			if (hist[i] > maxval) { maxval = hist[i]; argmax = i; }
 
 		/*
@@ -502,7 +494,7 @@ __kernel void orientation_assignment(
 		*/
 		
 		keypoint k2 = 0.0; k2.s0 = k.s0; k2.s1 = k.s1; k2.s2 = k.s2;
-		for (int i = 0; i < 36; i++) {
+		for (i = 0; i < 36; i++) {
 			prev = (i == 0 ? 36 -1 : i - 1);
 			next = (i == 36 -1 ? 0 : i + 1);
 			if (hist[i] > hist[prev]  &&  hist[i] > hist[next] && hist[i] >= 0.8f * maxval && i != argmax) {
