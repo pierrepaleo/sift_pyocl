@@ -247,13 +247,16 @@ class test_preproc(unittest.TestCase):
         """
         Test binning kernel
         """
-        lint = self.input.astype(numpy.float32)
+        lint = numpy.ascontiguousarray(self.input, numpy.float32)
+
         out_shape = tuple((i // j) for i, j in zip(self.input.shape, self.binning))
         t0 = time.time()
         inp_gpu = pyopencl.array.to_device(queue, lint)
         out_gpu = pyopencl.array.empty(queue, out_shape, dtype=numpy.float32, order="C")
         k1 = self.program.bin(queue, calc_size(out_shape, self.wg), self.wg, inp_gpu.data, out_gpu.data,
-                                 numpy.int32(self.binning[1]), numpy.int32(self.binning[0]), numpy.int32(out_shape[1]), numpy.int32(out_shape[0]))
+                                 numpy.int32(self.binning[1]), numpy.int32(self.binning[0]),
+                                 numpy.int32(lint.shape[1]), numpy.int32(lint.shape[0]),
+                                 numpy.int32(out_shape[1]), numpy.int32(out_shape[0]))
         res = out_gpu.get()
         t1 = time.time()
         ref = binning(lint, self.binning) / self.binning[0] / self.binning[1]

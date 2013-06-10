@@ -152,7 +152,7 @@ s64_to_float(	__global long *array_int,
  * @param array_float:  Pointer to global memory with the data in float
  * @param IMAGE_W:		Width of the image
  * @param IMAGE_H: 		Height of the image
- * 
+ *
  * COMMENTED OUT AS THIS RUNS ONLY ON GPU WITH FP64
  */
 //__kernel void
@@ -176,7 +176,7 @@ s64_to_float(	__global long *array_int,
  * @param array_float:  Pointer to global memory with the data in float
  * @param IMAGE_W:		Width of the image
  * @param IMAGE_H: 		Height of the image
- * 
+ *
  * WARNING: still untested (formula is the same as PIL)
  */
 __kernel void
@@ -265,33 +265,46 @@ shrink(const __global 	float 	*image_in,
  * @param image_ou	    Float pointer to global memory storing the small image.
  * @param scale_w: 	Minimum value in the input array
  * @param scale_h: 	Maximum value in the input array
- * @param IMAGE_W:	Width of the output image
+ * @param binned_width:	Width of the output image
  * @param IMAGE_H: 	Height of the output image
  *
+ *Nota: this is a 2D kernel.
 **/
 __kernel void
 bin(		const	__global 	float 	*image_in,
 					__global 	float 	*image_out,
-			const 				int 	scale_w,
-			const 				int 	scale_h,
-			const 				int 	IMAGE_W,
-			const 				int 	IMAGE_H
+			const 				int 	scale_width,
+			const 				int 	scale_heigth,
+			const 				int 	orig_width,
+			const 				int 	orig_heigth,
+			const 				int 	binned_width,
+			const 				int 	binned_heigth
 )
 {
 	int gid0=get_global_id(0), gid1=get_global_id(1);
-	int j,i = gid0 * IMAGE_W + gid1;
-	int w, h;
+	int j,i = gid0 * binned_width + gid1;
+	int w, h, size_w, size_h, big_h, big_w;
 	float data=0.0f;
 	//Global memory guard for padding
-	if(i < IMAGE_W*IMAGE_H)
-	{
-		for (h=0; h<scale_h; h++){
-			for (w=0; w<scale_w; w++){
-				j = (gid0 * scale_h + h) * (IMAGE_W*scale_w) + (gid1*scale_w + w);
-				data += image_in[j];
-			};
-		};
-		image_out[i] = data/scale_w/scale_h;
+	if(i < binned_width*binned_heigth){
+		size_h = 0;
+		for (h=0; h<scale_heigth; h++){
+			big_h = gid0 * scale_heigth + h;
+			if (big_h < orig_heigth){
+				size_h += 1;
+				size_w = 0;
+				for (w=0; w<scale_width; w++){
+					big_w = gid1*scale_width + w;
+					if (big_w < orig_width){
+						//j = (gid0 * scale_heigth + h) * (binned_width*scale_width) + (gid1*scale_width + w);
+						size_w += 1;
+						j = big_h * (binned_width*scale_width) + big_w;
+						data += image_in[j];
+					}//end test in image horiz
+				};//end for horiz
+			}//end test in image vert
+		};//end for vertical
+		image_out[i] = data/size_h/size_w;
 	};//end if in IMAGE
 };//end kernel
 
