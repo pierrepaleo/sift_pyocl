@@ -76,18 +76,13 @@ def my_compact(keypoints,nbkeypoints):
     Reference compacting
     '''
     output = -numpy.ones_like(keypoints,dtype=numpy.float32)
-    counter = 0
     idx = numpy.where(keypoints[:,1]!=-1)[0]
     length = idx.size
-    output[:length,0] = keypoints[idx,2]
+    output[:length,0] = keypoints[idx,0]
     output[:length,1] = keypoints[idx,1]
-    output[:length,2] = keypoints[idx,3]
-    output[:length,3] = 0
-#    for i in range(0,nbkeypoints):
-#        if (keypoints[i,1] != -1 and keypoints[i,0] != 0):
-#            output[counter]= keypoints[i,2],keypoints[i,1],keypoints[i,3],0.0
-#            counter+=1
-    return output, counter
+    output[:length,2] = keypoints[idx,2]
+    output[:length,3] = keypoints[idx,3]
+    return output, length
 
 
 

@@ -69,10 +69,10 @@ __kernel void compact(
 		
 		if (k.s1 != -1) { //Coordinates are never negative
 			
-			//k.s0 = (float) k.s2; //col
-			//k.s2 = k.s3; //sigma
-			//k.s3 = 0.0; //angle
-			
+			/*k.s0 = (float) k.s2; //col
+			k.s2 = k.s3; //sigma
+			k.s3 = 0.0; //angle
+			*/
 			int old = atomic_inc(counter);
 			if (old < nbkeypoints) output[old] = k;
 			
