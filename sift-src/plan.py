@@ -265,7 +265,9 @@ class SiftPlan(object):
         Calculates the keypoints of the image
         @param image: ndimage of 2D (or 3D if RGB)  
         """
-        output = []
+        total_size = 0
+        keypoints = []
+        descriptors = []
         assert image.shape[:2] == self.shape
         assert image.dtype == self.dtype
         t0 = time.time()
@@ -351,7 +353,6 @@ class SiftPlan(object):
                                                     numpy.int32(scale),                             #int scale,
                                                     *self.scales[octave])                           #int width, int height)
 
-#                output.append(self.buffers["Kp_1"].get())
                 wgsize = (8,)#(max(self.wgsize[octave]),) #TODO: optimize
                 procsize = calc_size((self.kpsize,), wgsize)
     #           Refine keypoints
@@ -366,7 +367,6 @@ class SiftPlan(object):
                                               numpy.float32(par.PeakThresh),        # float peak_thresh,
                                               numpy.float32(par.InitSigma),         # float InitSigma,
                                               *self.scales[octave]).wait()          # int width, int height)
-#                output.append(self.buffers["Kp_1"].get())
                 self.buffers["cnt"].set(numpy.array([0], dtype=numpy.int32))
                 self.programs["algebra"].compact(self.queue, procsize, wgsize,
                                 self.buffers["Kp_1"].data, # __global keypoint* keypoints,
@@ -383,12 +383,22 @@ class SiftPlan(object):
 #                generate keypoints ?
 #           transfer to CPU
             kp_counter = self.buffers["cnt"].get()[0]
-            output.append(self.buffers["Kp_1"].get()[:kp_counter])
+            keypoints.append(self.buffers["Kp_1"].get()[:kp_counter])
+            total_size += kp_counter
 
-
+        ########################################################################
+        # Merge keypoints in central memory
+        ########################################################################
+        output = numpy.zeros((total_size, 4), dtype=numpy.float32)
+        last = 0
+        for ds in keypoints:
+            l = ds.shape[0]
+            ds[last:last + l] = ds
+            last += l
         print("Execution time: %.3fs" % (time.time() - t0))
 #        self.count_kp(output)
         return output
+
     def _gaussian_convolution(self, input_data, output_data, sigma, octave=0):
         """
         Calculate the gaussian convolution with precalculated kernels.
