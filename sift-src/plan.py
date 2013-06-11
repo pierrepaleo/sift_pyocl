@@ -311,9 +311,6 @@ class SiftPlan(object):
                                                 self.buffers[(octave, "G_1")].data, self.buffers[(octave + 1, "G_1")].data,
                                                 numpy.int32(2), numpy.int32(2), *self.scales[octave + 1])
 
-        ########################################################################
-        # Calculate gaussian blur and DoG for every octave
-        ########################################################################
 
         for octave in range(self.octave_max):
             prevSigma = par.InitSigma
@@ -321,6 +318,10 @@ class SiftPlan(object):
             for i in range(par.Scales + 2):
                 sigma = prevSigma * math.sqrt(self.sigmaRatio ** 2 - 1.0)
                 logger.debug("blur with sigma %s" % sigma)
+                ########################################################################
+                # Calculate gaussian blur and DoG for every octave
+                ########################################################################
+
                 self._gaussian_convolution(self.buffers[(octave, "G_1")], self.buffers[(octave, "G_2")], sigma, octave)
                 prevSigma *= self.sigmaRatio
                 self.programs["algebra"].combine(self.queue, self.procsize[octave], self.wgsize[octave],
@@ -330,6 +331,17 @@ class SiftPlan(object):
                                                  *self.scales[octave])
                 #swap buffers:
                 self.buffers[(octave, "G_1")], self.buffers[(octave, "G_2")] = self.buffers[(octave, "G_2")], self.buffers[(octave, "G_1")]
+
+                #recycle buffer G_2 and tmp to store ori and grad
+                ori = self.buffers[(octave, "G_2")]
+                grad = self.buffers[(octave, "tmp")]
+                self.programs["image"].compute_gradient_orientation(self.queue, self.procsize[octave], self.wgsize[octave],
+                           self.buffers[(octave, "G_1")].data, #__global float* igray,
+                           grad.data,                          #__global float *grad,
+                           ori.data,                           #__global float *ori,
+                           *self.scales[octave])               #int width,int height
+
+#THIS WHOOL BLOCK needs to be indented ! TODO
 
         ########################################################################
         # Calculate Keypoints per octave
@@ -370,6 +382,19 @@ class SiftPlan(object):
                                               numpy.float32(par.InitSigma),         # float InitSigma,
                                               *self.scales[octave])                 # int width, int height)
                 self.buffers["cnt"].set(numpy.array([0], dtype=numpy.int32))
+#           Orientation assignement: 1D kernel, rather heavy kernel
+                procsize = calc_size((newcnt,), wgsize)
+                self.programs["image"].orientation_assignment(procsize, wgsize,
+                                      self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
+                                                                #__global float* grad,
+                                                                #__global float* ori,
+                                         self.buffers["cnt"].data,  # __global int* counter,
+                                         octsize,               #int octsize,
+                                         numpy.float32(par.OriSigma),  # float OriSigma, //WARNING: (1.5), it is not "InitSigma (=1.6)"
+                                         kpsize32,  # int max of nb_keypoints,
+                                         newcnt,                #int actual_nb_keypoints,
+                                         self.scales[octave])   #int grad_width, int grad_height)
+
                 self.programs["algebra"].compact(self.queue, procsize, wgsize,
                                 self.buffers["Kp_1"].data, # __global keypoint* keypoints,
                                 self.buffers["Kp_2"].data, #__global keypoint* output,
@@ -382,19 +407,6 @@ class SiftPlan(object):
                 #swap keypoints:
                 self.buffers["Kp_1"], self.buffers["Kp_2"] = self.buffers["Kp_2"], self.buffers["Kp_1"]
 
-#           Orientation assignement: 1D kernel, rather heavy kernel
-#            procsize = calc_size((newcnt,), wgsize)
-#            self.programs["image"].orientation_assignment(procsize,wgsize,
-#                                  self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
-#                                                            #__global float* grad,
-#                                                            #__global float* ori,
-#                                     self.buffers["cnt"].data,  # __global int* counter,
-#                                     octsize,               #int octsize,
-#                                     numpy.float32(par.OriSigma),  # float OriSigma, //WARNING: (1.5), it is not "InitSigma (=1.6)"
-#                                     kpsize32,  # int max of nb_keypoints,
-#                                     newcnt,                #int actual_nb_keypoints,
-#                                     self.scales[octave])   #int grad_width, int grad_height)
-#                Calc orientation
 #                compact again ?
 #                generate keypoints ?
 #           transfer to CPU

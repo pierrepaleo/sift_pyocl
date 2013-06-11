@@ -41,7 +41,7 @@ typedef float4 keypoint;
 
 
 __kernel void compute_gradient_orientation(
-	__global float* igray, // __attribute__((max_constant_size(MAX_CONST_SIZE))),
+	__global float* igray, 
 	__global float *grad,
 	__global float *ori,
 	int width,
