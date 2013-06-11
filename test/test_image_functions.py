@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 import numpy
-
+def normalize_image(img):
+    maxi = numpy.float32(img.max())
+    mini = numpy.float32(img.min())
+    return numpy.ascontiguousarray(numpy.float32(255) * (img - mini) / (maxi - mini), dtype=numpy.float32)
 
 
 def my_gradient(mat):

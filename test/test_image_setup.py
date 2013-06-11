@@ -15,20 +15,39 @@ def local_maxmin_setup():
     octsize = numpy.int32(1) #initially 1, then twiced at each new octave
     nb_keypoints = 1000 #constant size !
 		
-    l = scipy.misc.lena().astype(numpy.float32)#[100:250,100:250] #use a part of the image to fasten tests
+    l2 = scipy.misc.lena().astype(numpy.float32)#[100:250,100:250] #use a part of the image to fasten tests
+    l = normalize_image(l2) #do not forget to normalize the image if you want to compare with sift.cpp
     width = numpy.int32(l.shape[1])
     height = numpy.int32(l.shape[0])
+    
+    #Blurs and DoGs pre-allocating      
+    g = (numpy.zeros(6*height*width).astype(numpy.float32)).reshape(6,height,width) #vector of 6 blurs
+    DOGS = numpy.zeros((5,height,width),dtype=numpy.float32) #vector of 5 DoGs
+    g[0,:,:] = numpy.copy(l)
+    '''
+    sift.cpp pre-process
+    '''
+    doubleimsize = 0 #par.DoubleImSize = 0 by default
+    initsigma = 1.6
+    if (doubleimsize): cursigma = 1.0
+    else: cursigma = 0.5
+    #Convolving initial image to achieve std = initsigma = 1.6
+    if (initsigma > cursigma):
+        sigma = numpy.sqrt(initsigma**2-cursigma**2)
+        g[0,:,:]= numpy.copy(scipy.ndimage.filters.gaussian_filter(l, sigma, mode="reflect"))
 
-    g = (numpy.zeros(5*height*width).astype(numpy.float32)).reshape(5,height,width) #vector of 5 images
-    sigma=1.6 #par.InitSigma
-    g[0,:,:]= numpy.copy(scipy.ndimage.filters.gaussian_filter(l, sigma, mode="reflect"))
+    '''
+    Blurs and DoGs
+    '''
+    sigmaratio = 2**(1/3.0) #sift.cpp
+    #sift.cpp : for a given "i", we have : increase = initsigma*(sigmaratio)^(i-1)*sqrt(sigmaratio**2 -1)
     for i in range(1,5):
-       sigma = sigma*(2.0**(1.0/5.0)) #SIFT
-       g[i] = numpy.copy(scipy.ndimage.filters.gaussian_filter(l, sigma, mode="reflect"))
-
-    #DOGS pre-allocating      
-    DOGS = numpy.zeros((4,height,width),dtype=numpy.float32)
-    for s in range(1,4): DOGS[s-1] = g[s]-g[s-1] #DoG[s-1]
+        sigma = initsigma*(sigmaratio)**(i-1.0)*numpy.sqrt(sigmaratio**2 -1.0) #sift.cpp "increase" 
+        g[i] = numpy.copy(scipy.ndimage.filters.gaussian_filter(g[i-1], sigma, mode="reflect")) #blur[i]
+    print("Printing blur 2 :")
+    print g[2,0:10,0:10]
+    
+    for s in range(1,5): DOGS[s-1] = g[s]-g[s-1] #DoG[s-1]
         
     return border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, nb_keypoints, width, height, DOGS, g
 

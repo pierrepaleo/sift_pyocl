@@ -173,7 +173,7 @@ class test_image(unittest.TestCase):
         if (PRINT_KEYPOINTS):
             print("keypoints after 2 steps of refinement: %s" %(self.actual_nb_keypoints))
             #print("For ref: %s" %(ref_peaks[ref_peaks!=-1].shape))
-            print res[0:self.actual_nb_keypoints]#[0:74]
+            #print res[0:self.actual_nb_keypoints]#[0:74]
             #print ref[0:32]
         
         self.assert_(delta_peaks < 1e-4, "delta_peaks=%s" % (delta_peaks))
@@ -313,8 +313,8 @@ def test_suite_image():
     testSuite = unittest.TestSuite()
     #testSuite.addTest(test_image("test_gradient"))
     testSuite.addTest(test_image("test_local_maxmin"))
-    testSuite.addTest(test_image("test_interpolation"))
-    testSuite.addTest(test_image("test_orientation"))
+    #testSuite.addTest(test_image("test_interpolation"))
+    #testSuite.addTest(test_image("test_orientation"))
     return testSuite
 
 if __name__ == '__main__':
