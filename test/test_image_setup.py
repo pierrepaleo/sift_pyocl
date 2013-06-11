@@ -12,7 +12,7 @@ def local_maxmin_setup():
     peakthresh = numpy.float32(255.0 * 0.04 / 3.0) #SIFT uses 255.0 * 0.04 / 3.0
     EdgeThresh = numpy.float32(0.06) #SIFT
     EdgeThresh0 = numpy.float32(0.08) #SIFT
-    octsize = numpy.int32(1) #initially 1, then twiced at each new octave
+    octsize = numpy.int32(1) #initially 1, then twiced at each new octave. If we want to test for octsize 2,4..., we need a resample function
     nb_keypoints = 1000 #constant size !
 		
     l2 = scipy.misc.lena().astype(numpy.float32)#[100:250,100:250] #use a part of the image to fasten tests
@@ -44,11 +44,9 @@ def local_maxmin_setup():
     for i in range(1,5):
         sigma = initsigma*(sigmaratio)**(i-1.0)*numpy.sqrt(sigmaratio**2 -1.0) #sift.cpp "increase" 
         g[i] = numpy.copy(scipy.ndimage.filters.gaussian_filter(g[i-1], sigma, mode="reflect")) #blur[i]
-    print("Printing blur 2 :")
-    print g[2,0:10,0:10]
-    
-    for s in range(1,5): DOGS[s-1] = g[s]-g[s-1] #DoG[s-1]
-        
+   
+    for s in range(1,5): DOGS[s-1] = -(g[s]-g[s-1]) #DoG[s-1]
+     
     return border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, nb_keypoints, width, height, DOGS, g
 
 

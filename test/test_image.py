@@ -133,8 +133,7 @@ class test_image(unittest.TestCase):
         """
         #local_maxmin_setup :
         border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, nb_keypoints, width, height, DOGS, g = local_maxmin_setup()
-  
-        self.s = numpy.int32(1) #0, 1, 2 or 3... 1 here
+        self.s = numpy.int32(2) #1, 2, 3 ... not 4 nor 0.
         self.gpu_dogs = pyopencl.array.to_device(queue, DOGS)
         self.output = pyopencl.array.empty(queue, (nb_keypoints,4), dtype=numpy.float32, order="C")
         self.output.fill(-1.0,queue) #memset for invalid keypoints
@@ -171,9 +170,9 @@ class test_image(unittest.TestCase):
         delta_c = abs(ref_c - res_c).max()
 
         if (PRINT_KEYPOINTS):
-            print("keypoints after 2 steps of refinement: %s" %(self.actual_nb_keypoints))
+            print("keypoints after 2 steps of refinement: (s= %s, octsize=%s) %s" %(self.s,octsize,self.actual_nb_keypoints))
             #print("For ref: %s" %(ref_peaks[ref_peaks!=-1].shape))
-            #print res[0:self.actual_nb_keypoints]#[0:74]
+            print res[0:self.actual_nb_keypoints]#[0:74]
             #print ref[0:32]
         
         self.assert_(delta_peaks < 1e-4, "delta_peaks=%s" % (delta_peaks))
@@ -230,9 +229,9 @@ class test_image(unittest.TestCase):
         
         if (PRINT_KEYPOINTS):
             print("Keypoints before interpolation: %s" %(actual_nb_keypoints))
-            print keypoints_prev[0:10,:]
+            #print keypoints_prev[0:10,:]
             print("Keypoints after interpolation : %s" %(res2.shape[0]))
-            print res[0:10,:]
+            print res[0:actual_nb_keypoints]#[0:10,:]
             #print("Ref:")
             #print ref[0:32,:]
         
@@ -312,8 +311,8 @@ class test_image(unittest.TestCase):
 def test_suite_image():
     testSuite = unittest.TestSuite()
     #testSuite.addTest(test_image("test_gradient"))
-    testSuite.addTest(test_image("test_local_maxmin"))
-    #testSuite.addTest(test_image("test_interpolation"))
+    #testSuite.addTest(test_image("test_local_maxmin"))
+    testSuite.addTest(test_image("test_interpolation"))
     #testSuite.addTest(test_image("test_orientation"))
     return testSuite
 
