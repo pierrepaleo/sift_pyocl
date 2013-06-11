@@ -29,7 +29,7 @@ typedef float4 keypoint;
  * \brief Gradient of a grayscale image
  *
  * The gradient is computed using central differences in the interior and first differences at the boundaries.
- * NOTE: In "sift.cpp", the gradient magnitude is not divided by 2. 
+ * NOTE: In "sift.cpp", the gradient magnitude is not divided by 2.
  * To be coherent with Python's gradient, we shall divide by 2 and use a threshold twice smaller.
  *
  * @param igray: Pointer to global memory with the input data of the grayscale image
@@ -42,7 +42,7 @@ typedef float4 keypoint;
 
 
 __kernel void compute_gradient_orientation(
-	__global float* igray, 
+	__global float* igray,
 	__global float *grad,
 	__global float *ori,
 	int width,
@@ -217,10 +217,10 @@ __kernel void local_maxmin(
  * \brief From the (temporary) keypoints, create a vector of interpolated keypoints
  * 			(this is the last step of keypoints refinement)
  *  	 Note that we take the value (-1,-1,-1) for invalid keypoints. This creates "holes" in the vector.
- * 
+ *
  * @param DOGS: Pointer to global memory with ALL the coutiguously pre-allocated Differences of Gaussians
  * @param keypoints: Pointer to global memory with current keypoints vector. It will be modified with the interpolated points
- * @param actual_nb_keypoints: actual number of keypoints previously found, i.e previous "counter" final value
+ * @param end_keypoint: actual number of keypoints previously found, i.e previous "counter" final value
  * @param peak_thresh: we are not counting the interpolated values if below the threshold (par.PeakThresh = 255.0*0.04/3.0)
  * @param InitSigma: float "par.InitSigma" in SIFT (1.6 by default)
  * @param width: integer number of columns of the DoG
@@ -231,7 +231,8 @@ __kernel void local_maxmin(
 __kernel void interp_keypoint(
 	__global float* DOGS,
 	__global keypoint* keypoints,
-	int actual_nb_keypoints,
+	int start_keypoint,
+	int end_keypoint,
 	float peak_thresh,
 	float InitSigma,
 	int width,
@@ -241,7 +242,7 @@ __kernel void interp_keypoint(
 	//int gid1 = (int) get_global_id(1);
 	int gid0 = (int) get_global_id(0);
 
-	if (gid0 < actual_nb_keypoints) {
+	if ((gid0 >= start_keypoint) && (gid0 < end_keypoint)) {
 		keypoint k = keypoints[gid0];
 		int r = (int) k.s1;
 		int c = (int) k.s2;
@@ -250,18 +251,18 @@ __kernel void interp_keypoint(
 			int index_dog_prev = (scale-1)*(width*height);
 			int index_dog =scale*(width*height);
 			int index_dog_next =(scale+1)*(width*height);
-		
+
 			//pre-allocating variables before entering into the loop
-			float g0, g1, g2, 
-				H00, H11, H22, H01, H02, H12, H10, H20, H21, 
+			float g0, g1, g2,
+				H00, H11, H22, H01, H02, H12, H10, H20, H21,
 				K00, K11, K22, K01, K02, K12, K10, K20, K21,
 				solution0, solution1, solution2, det, peakval;
 			int pos = r*width+c;
 			int loop = 1, movesRemain = 5;
 			int newr = r, newc = c;
-		
+
 			//this loop replaces the recursive "InterpKeyPoint"
-			while (loop == 1) { 
+			while (loop == 1) {
 
 				pos = newr*width+newc;
 
@@ -274,21 +275,21 @@ __kernel void interp_keypoint(
 				H00 = DOGS[index_dog_prev+pos]   - 2.0 * DOGS[index_dog+pos] + DOGS[index_dog_next+pos];
 				H11 = DOGS[index_dog+(newr-1)*width+newc] - 2.0 * DOGS[index_dog+pos] + DOGS[index_dog+(newr+1)*width+newc];
 				H22 = DOGS[index_dog+pos-1] - 2.0 * DOGS[index_dog+pos] + DOGS[index_dog+pos+1];
-			
+
 				H01 = ( (DOGS[index_dog_next+(newr+1)*width+newc] - DOGS[index_dog_next+(newr-1)*width+newc])
 						- (DOGS[index_dog_prev+(newr+1)*width+newc] - DOGS[index_dog_prev+(newr-1)*width+newc])) / 4.0;
-						
+
 				H02 = ( (DOGS[index_dog_next+pos+1] - DOGS[index_dog_next+pos-1])
 						-(DOGS[index_dog_prev+pos+1] - DOGS[index_dog_prev+pos-1])) / 4.0;
-						
+
 				H12 = ( (DOGS[index_dog+(newr+1)*width+newc+1] - DOGS[index_dog+(newr+1)*width+newc-1])
 						- (DOGS[index_dog+(newr-1)*width+newc+1] - DOGS[index_dog+(newr-1)*width+newc-1])) / 4.0;
-									
+
 				H10 = H01; H20 = H02; H21 = H12;
 
 
 				//inversion of the Hessian	: det*K = H^(-1)
-			
+
 				det = -(H02*H11*H20) + H01*H12*H20 + H02*H10*H21 - H00*H12*H21 - H01*H10*H22 + H00*H11*H22;
 
 				K00 = H11*H22 - H12*H21;
@@ -302,8 +303,8 @@ __kernel void interp_keypoint(
 				K22 = H00*H11 - H01*H10;
 
 				/*
-					x = -H^(-1)*g 
-				 As the Taylor Serie is calcualted around the current keypoint, 
+					x = -H^(-1)*g
+				 As the Taylor Serie is calcualted around the current keypoint,
 				 the position of the true extremum x_opt is exactly the "offset" between x and x_opt ("x" is the origin)
 				*/
 				solution0 = -(g0*K00 + g1*K01 + g2*K02)/det; //"offset" in sigma
@@ -312,8 +313,8 @@ __kernel void interp_keypoint(
 
 				//interpolated DoG magnitude at this peak
 				peakval = DOGS[index_dog+pos] + 0.5 * (solution0*g0+solution1*g1+solution2*g2);
-		
-		
+
+
 			/* Move to an adjacent (row,col) location if quadratic interpolation is larger than 0.6 units in some direction. 				The movesRemain counter allows only a fixed number of moves to prevent possibility of infinite loops.
 			*/
 
@@ -333,11 +334,11 @@ __kernel void interp_keypoint(
 					movesRemain--;
 				else
 					loop = 0;
-				
-			}//end of the "keypoints interpolation" big loop
-			
 
-			/* Do not create a keypoint if interpolation still remains far outside expected limits, 
+			}//end of the "keypoints interpolation" big loop
+
+
+			/* Do not create a keypoint if interpolation still remains far outside expected limits,
 				or if magnitude of peak value is below threshold (i.e., contrast is too low).
 			*/
 			keypoint ki = 0.0; //float4
@@ -350,14 +351,14 @@ __kernel void interp_keypoint(
 			else { //the keypoint was not correctly interpolated : we reject it
 				ki.s0 = -1.0f; ki.s1 = -1.0f; ki.s2 = -1.0f; ki.s3 = -1.0f;
 			}
-		
-			keypoints[gid0]=ki;	
-	
+
+			keypoints[gid0]=ki;
+
 		/*
 			Better return here and compute histogram in another kernel
 		*/
 		}
-	
+
 	}
 }
 
@@ -373,7 +374,7 @@ __kernel void interp_keypoint(
  *   of the gradient directions in the region.  The histogram is smoothed and the largest peak selected.
  *    The results are in the range of -PI to PI.
  *
- * Warning: 
+ * Warning:
  * 			-At this stage, a keypoint is: (peak,r,c,sigma)
  			 After this function, it will be (c,r,sigma,angle)
  			-The workgroup size have to be "small" in order to achieve "hist[36]"
@@ -417,7 +418,7 @@ __kernel void orientation_assignment(
 
 	if (keypoints_start <= gid0 && gid0 < keypoints_end) { //do not use *counter, for it will be modified below
 		keypoint k = keypoints[gid0];
-		if (k.s1 != -1.0f) { //if the keypoint is valid 
+		if (k.s1 != -1.0f) { //if the keypoint is valid
 			int	bin, prev, next;
 			int old;
 			float distsq, gval, angle, interp=0.0;
@@ -427,7 +428,7 @@ __kernel void orientation_assignment(
 
 			/* Look at pixels within 3 sigma around the point and sum their
 			  Gaussian weighted gradient magnitudes into the histogram. */
-			  
+
 			float sigma = OriSigma * k.s3;
 			int	radius = (int) (sigma * 3.0);
 			int rmin = MAX(0,row - radius);
@@ -440,7 +441,7 @@ __kernel void orientation_assignment(
 
 					gval = grad[r*grad_width+c];
 					distsq = (r-k.s1)*(r-k.s1) + (c-k.s2)*(c-k.s2);
-				
+
 					if (gval > 0.0f  &&  distsq < ((float) (radius*radius)) + 0.5f) {
 						/* Ori is in range of -PI to PI. */
 						angle = ori[r*grad_width+c];
@@ -448,7 +449,7 @@ __kernel void orientation_assignment(
 						if (bin >= 0 && bin <= 36) {
 							bin = MIN(bin, 35);
 							hist[bin] += exp(- distsq / (2.0f*sigma*sigma)) * gval;
-						
+
 						}
 					}
 				}
@@ -464,7 +465,7 @@ __kernel void orientation_assignment(
 					prev2 = temp2;
 				}
 			}
-		    
+
 			/* Find maximum value in histogram. */
 			float maxval = 0.0f;
 			int argmax = 0;
@@ -484,21 +485,21 @@ __kernel void orientation_assignment(
 			}
 			interp = 0.5f * (hist[prev] - hist[next]) / (hist[prev] - 2.0f * maxval + hist[next]);
 			angle = 2.0f * M_PI_F * (argmax + 0.5f + interp) / 36 - M_PI_F;
-		
-		
+
+
 			k.s0 = k.s2; //c
 			k.s1 = k.s1; //r
 			k.s2 = k.s3; //sigma
 			k.s3 = angle;		   //angle
-		
+
 			keypoints[gid0] = k;
-		
+
 			/*
 				An orientation is now assigned to our current keypoint.
 				We can create new keypoints of same (x,y,sigma) but a different angle.
-			 	For every local peak in histogram, every peak of value >= 80% of maxval generates a new keypoint	
+			 	For every local peak in histogram, every peak of value >= 80% of maxval generates a new keypoint
 			*/
-		
+
 			keypoint k2 = 0.0; k2.s0 = k.s0; k2.s1 = k.s1; k2.s2 = k.s2;
 			for (i = 0; i < 36; i++) {
 				prev = (i == 0 ? 36 -1 : i - 1);
@@ -508,9 +509,9 @@ __kernel void orientation_assignment(
 					if (hist[i] < 0.0f) {
 						hist[prev] = -hist[prev]; hist[i] = -hist[i]; hist[next] = -hist[next];
 					}
-					if (hist[i] >= hist[prev]  &&  hist[i] >= hist[next]) 
+					if (hist[i] >= hist[prev]  &&  hist[i] >= hist[next])
 			 			interp = 0.5f * (hist[prev] - hist[next]) / (hist[prev] - 2.0f * hist[i] + hist[next]);
-			
+
 					angle = 2.0f * M_PI_F * (i + 0.5f + interp) / 36 - M_PI_F;
 					if (angle >= -M_PI_F  &&  angle <= M_PI_F) {
 						k2.s3 = angle;

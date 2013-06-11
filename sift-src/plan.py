@@ -2,7 +2,7 @@
 """
 Contains a class for creating a plan, allocating arrays, compiling kernels and other things like that
 """
-import time, math, os, logging
+import time, math, os, logging, sys
 import gc
 import numpy
 import pyopencl, pyopencl.array
@@ -30,9 +30,9 @@ class SiftPlan(object):
 #                    numpy.float64:"double_to_float",
                       }
     sigmaRatio = 2.0 ** (1.0 / par.Scales)
-    PIX_PER_KP = 10 # pre_allocate buffers for keypoints
+    PIX_PER_KP = 10  # pre_allocate buffers for keypoints
 
-    def __init__(self, shape=None, dtype=None, devicetype="GPU", template=None, profile=False, device=None, PIX_PER_KP=None):
+    def __init__(self, shape=None, dtype=None, devicetype="GPU", template=None, profile=False, device=None, PIX_PER_KP=None, max_workgroup_size=sys.maxint):
         """
         Contructor of the class
         """
@@ -52,7 +52,8 @@ class SiftPlan(object):
         if PIX_PER_KP :
             self.PIX_PER_KP = int(PIX_PER_KP)
         self.profile = bool(profile)
-        self.scales = [] #in XY order
+        self.max_workgroup_size = max_workgroup_size
+        self.scales = []  # in XY order
         self.procsize = []
         self.wgsize = []
         self.kpsize = None
@@ -75,6 +76,7 @@ class SiftPlan(object):
         self._calc_workgroups()
         self._compile_kernels()
         self._allocate_buffers()
+        self.debug = []
 
     def __del__(self):
         """
@@ -104,19 +106,19 @@ class SiftPlan(object):
         self.memory = 75 * 2 ** 20
         size_of_float = numpy.dtype(numpy.float32).itemsize
         size_of_input = numpy.dtype(self.dtype).itemsize
-        #raw images:
+        # raw images:
         size = self.shape[0] * self.shape[1]
-        self.memory += size * (size_of_float + size_of_input) #raw_float + initial_image
+        self.memory += size * (size_of_float + size_of_input)  # raw_float + initial_image
         if self.RGB:
-            self.memory += 2 * size * (size_of_input) # one of three was already counted
+            self.memory += 2 * size * (size_of_input)  # one of three was already counted
         for scale in self.scales:
-            nr_blur = 3 #one input, one output and one tmp
+            nr_blur = 3  # one input, one output and one tmp
             nr_dogs = par.Scales + 2
             size = scale[0] * scale[1]
             self.memory += size * (nr_blur + nr_dogs) * size_of_float
-        self.kpsize = int(self.shape[0] * self.shape[1] // self.PIX_PER_KP)   # Is the number of kp independant of the octave ? int64 causes problems with pyopencl
-        self.memory += self.kpsize * size_of_float * 4 * 2 # those are array of float4 to register keypoints, we need two of them
-        self.memory += 4 #keypoint index Counter
+        self.kpsize = int(self.shape[0] * self.shape[1] // self.PIX_PER_KP)  # Is the number of kp independant of the octave ? int64 causes problems with pyopencl
+        self.memory += self.kpsize * size_of_float * 4 * 2  # those are array of float4 to register keypoints, we need two of them
+        self.memory += 4  # keypoint index Counter
 
 
         ########################################################################
@@ -192,14 +194,14 @@ class SiftPlan(object):
         gaussian_gpu = pyopencl.array.empty(self.queue, size, dtype=numpy.float32, order="C")
 #       Norming the gaussian takes three OCL kernel launch (gaussian, calc_sum and norm) -
         self.programs["preprocess"].gaussian(self.queue, (size,), (1,),
-                                            gaussian_gpu.data,         #__global     float     *data,
-                                            numpy.float32(sigma),      #const        float     sigma,
-                                            numpy.int32(size))         #const        int     SIZE
+                                            gaussian_gpu.data,  # __global     float     *data,
+                                            numpy.float32(sigma),  # const        float     sigma,
+                                            numpy.int32(size))  # const        int     SIZE
         sum_data = pyopencl.array.sum(gaussian_gpu, dtype=numpy.float32, queue=self.queue).get()
         self.programs["preprocess"].divide_cst(self.queue, (size,), (1,),
-                                              gaussian_gpu.data,         #__global     float     *data,
-                                              sum_data,                  #const        float     sigma,
-                                              numpy.int32(size))         #const        int     SIZE
+                                              gaussian_gpu.data,  # __global     float     *data,
+                                              sum_data,  # const        float     sigma,
+                                              numpy.int32(size))  # const        int     SIZE
 
         self.buffers[name] = gaussian_gpu
 
@@ -248,11 +250,12 @@ class SiftPlan(object):
         device = self.ctx.devices[0]
         max_work_group_size = device.max_work_group_size
         max_work_item_sizes = device.max_work_item_sizes
-        #we recalculate the shapes ...
+        # we recalculate the shapes ...
         shape = self.shape
         min_size = 2 * par.BorderDist + 2
+        self.max_workgroup_size = min(self.max_workgroup_size, max_work_item_sizes[1])
         while min(shape) > min_size:
-            wg = (1, min(2 ** int(math.log(shape[1]) / math.log(2)), max_work_item_sizes[1]))
+            wg = (1, min(2 ** int(math.log(shape[1]) / math.log(2)), self.max_workgroup_size))
             self.wgsize.append(wg)
             self.procsize.append(calc_size(shape, wg))
             shape = tuple(i // 2 for i in shape)
@@ -313,7 +316,6 @@ class SiftPlan(object):
 
         for octave in range(self.octave_max):
             kp = self.one_octave(octave)
-            print kp
             if kp.shape[0] > 0:
                 keypoints.append(kp)
                 total_size += kp.shape[0]
@@ -323,14 +325,12 @@ class SiftPlan(object):
         ########################################################################
         output = numpy.zeros((total_size, 4), dtype=numpy.float32)
         last = 0
-        print keypoints
         for ds in keypoints:
             l = ds.shape[0]
             if l > 0:
-                print ds.shape, output.shape
                 output[last:last + l] = ds
                 last += l
-        print("Execution time: %.3fs" % (time.time() - t0))
+        logger.info("Execution time: %.3fs" % (time.time() - t0))
 #        self.count_kp(output)
         return output
 
@@ -354,15 +354,15 @@ class SiftPlan(object):
     def one_octave(self, octave):
         """
         does all scales within an octave
-        @param 
+        @param
         """
         prevSigma = par.InitSigma
-        logger.debug("Calculating octave %i" % octave)
-        wgsize = (8,)#(max(self.wgsize[octave]),) #TODO: optimize
+        logger.info("Calculating octave %i" % octave)
+        wgsize = (8,)  # (max(self.wgsize[octave]),) #TODO: optimize
         kpsize32 = numpy.int32(self.kpsize)
         self._reset_keypoints()
         octsize = numpy.int32(2 ** octave)
-        last_start = 0
+        last_start = numpy.int32(0)
         for scale in range(par.Scales + 2):
             sigma = prevSigma * math.sqrt(self.sigmaRatio ** 2 - 1.0)
             logger.debug("Octave %i scale %sblur with sigma %s" % (octave, scale, sigma))
@@ -373,93 +373,102 @@ class SiftPlan(object):
 
             self._gaussian_convolution(self.buffers[(octave, "G_1")], self.buffers[(octave, "G_2")], sigma, octave)
             prevSigma *= self.sigmaRatio
-            self.programs["algebra"].combine(self.queue, self.procsize[octave], self.wgsize[octave],
+            evt = self.programs["algebra"].combine(self.queue, self.procsize[octave], self.wgsize[octave],
                                              self.buffers[(octave, "G_2")].data, numpy.float32(-1.0),
                                              self.buffers[(octave, "G_1")].data, numpy.float32(+1.0),
                                              self.buffers[(octave, "DoGs")].data, numpy.int32(scale),
                                              *self.scales[octave])
-            #swap buffers:
+            evt.wait()
+            # swap buffers:
             self.buffers[(octave, "G_1")], self.buffers[(octave, "G_2")] = self.buffers[(octave, "G_2")], self.buffers[(octave, "G_1")]
 
-            #recycle buffer G_2 and tmp to store ori and grad
+            # recycle buffer G_2 and tmp to store ori and grad
             ori = self.buffers[(octave, "G_2")]
             grad = self.buffers[(octave, "tmp")]
-            self.programs["image"].compute_gradient_orientation(self.queue, self.procsize[octave], self.wgsize[octave],
-                       self.buffers[(octave, "G_1")].data, #__global float* igray,
-                       grad.data,                          #__global float *grad,
-                       ori.data,                           #__global float *ori,
-                       *self.scales[octave])               #int width,int height
+            evt = self.programs["image"].compute_gradient_orientation(self.queue, self.procsize[octave], self.wgsize[octave],
+                               self.buffers[(octave, "G_1")].data,  # __global float* igray,
+                               grad.data,  # __global float *grad,
+                               ori.data,  # __global float *ori,
+                               *self.scales[octave])  # int width,int height
+            evt.wait()
 #           if scale is not the first or the last
             if 0 < scale < (par.Scales + 1):
-                self.programs["image"].local_maxmin(self.queue, self.procsize[octave], self.wgsize[octave],
-                                                self.buffers[(octave, "DoGs")].data,#__global float* DOGS,
-                                                self.buffers["Kp_1"].data,          #__global keypoint* output,
-                                                numpy.int32(par.BorderDist),        #int border_dist,
-                                                numpy.float32(par.PeakThresh),      #float peak_thresh,
-                                                octsize,                            # int octsize,
-                                                numpy.float32(par.EdgeThresh1),     #float EdgeThresh0,
-                                                numpy.float32(par.EdgeThresh),      #float EdgeThresh,
-                                                self.buffers["cnt"].data,           #__global int* counter,
-                                                kpsize32,                           #int nb_keypoints,
-                                                numpy.int32(scale),                 #int scale,
-                                                *self.scales[octave])               #int width, int height)
-
+#                logger.info("Before local_maxmin, cnt is %s %s %s" % (self.buffers["cnt"].get()[0], self.procsize[octave], self.wgsize[octave]))
+                evt = self.programs["image"].local_maxmin(self.queue, self.procsize[octave], self.wgsize[octave],
+                                                self.buffers[(octave, "DoGs")].data,  # __global float* DOGS,
+                                                self.buffers["Kp_1"].data,  # __global keypoint* output,
+                                                numpy.int32(par.BorderDist),  # int border_dist,
+                                                numpy.float32(par.PeakThresh),  # float peak_thresh,
+                                                octsize,  # int octsize,
+                                                numpy.float32(par.EdgeThresh1),  # float EdgeThresh0,
+                                                numpy.float32(par.EdgeThresh),  # float EdgeThresh,
+                                                self.buffers["cnt"].data,  # __global int* counter,
+                                                kpsize32,  # int nb_keypoints,
+                                                numpy.int32(scale),  # int scale,
+                                                *self.scales[octave])  # int width, int height)
+                evt.wait()
+#                self.debug_holes("After local_maxmin %s %s" % (octave, scale))
                 procsize = calc_size((self.kpsize,), wgsize)
     #           Refine keypoints
                 kp_counter = self.buffers["cnt"].get()[0]
                 self.programs["image"].interp_keypoint(self.queue, procsize, wgsize,
-                                              self.buffers[(octave, "DoGs")].data,  #__global float* DOGS,
-                                              self.buffers["Kp_1"].data,            # __global keypoint* keypoints,
-                                              kp_counter,                           # int actual_nb_keypoints,
-                                              numpy.float32(par.PeakThresh),        # float peak_thresh,
-                                              numpy.float32(par.InitSigma),         # float InitSigma,
-                                              *self.scales[octave])                 # int width, int height)
+                                              self.buffers[(octave, "DoGs")].data,  # __global float* DOGS,
+                                              self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
+                                              last_start,  # int start_keypoint,
+                                              kp_counter,  # int end_keypoint,
+                                              numpy.float32(par.PeakThresh),  # float peak_thresh,
+                                              numpy.float32(par.InitSigma),  # float InitSigma,
+                                              *self.scales[octave])  # int width, int height)
+#                self.debug_holes("After interp_keypoint %s %s" % (octave, scale))
                 newcnt = self.compact(last_start)
-
+#                self.debug_holes("After compact %s %s" % (octave, scale))
     #           Orientation assignement: 1D kernel, rather heavy kernel
                 procsize = calc_size((int(newcnt),), wgsize)
                 self.programs["image"].orientation_assignment(self.queue, procsize, wgsize,
                                       self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
-                                      grad.data,                  #__global float* grad,
-                                      ori.data,                   #__global float* ori,
-                                      self.buffers["cnt"].data,   # __global int* counter,
-                                      octsize,                    #int octsize,
-                                      numpy.float32(par.OriSigma),# float OriSigma, //WARNING: (1.5), it is not "InitSigma (=1.6)"
-                                      kpsize32,                   #int max of nb_keypoints,
-                                      numpy.int32(last_start),    #int keypoints_start,
-                                      newcnt,                     #int keypoints_end,
-                                      *self.scales[octave])        #int grad_width, int grad_height)
+                                      grad.data,  # __global float* grad,
+                                      ori.data,  # __global float* ori,
+                                      self.buffers["cnt"].data,  # __global int* counter,
+                                      octsize,  # int octsize,
+                                      numpy.float32(par.OriSigma),  # float OriSigma, //WARNING: (1.5), it is not "InitSigma (=1.6)"
+                                      kpsize32,  # int max of nb_keypoints,
+                                      numpy.int32(last_start),  # int keypoints_start,
+                                      newcnt,  # int keypoints_end,
+                                      *self.scales[octave])  # int grad_width, int grad_height)
+#                self.debug_holes("After orientation %s %s" % (octave, scale))
                 last_start = self.buffers["cnt"].get()[0]
-
+                self.debug.append(self.buffers["Kp_1"].get())
 
         return self.buffers["Kp_1"].get()[:last_start]
 
-    def compact(self, start=0):
+    def compact(self, start=numpy.int32(0)):
         """
-        compact the vector of keypoints starting from start 
+        compact the vector of keypoints starting from start
         """
-        wgsize = (8,)#(max(self.wgsize[0]),) #TODO: optimize
+        wgsize = (8,)  # (max(self.wgsize[0]),) #TODO: optimize
         kpsize32 = numpy.int32(self.kpsize)
-        kp_counter = int(self.buffers["cnt"].get()[0])
-        procsize = calc_size((kp_counter,), wgsize)
+        kp_counter = self.buffers["cnt"].get()[0]
+        procsize = calc_size((self.kpsize,), wgsize)
 
         if kp_counter > 0.9 * self.kpsize:
                logger.warning("Keypoint counter overflow risk: counted %s / %s" % (kp_counter, self.kpsize))
-        logger.info("Keypoint counted %s / %s" % (kp_counter, self.kpsize))
+        logger.info("Compact %s -> %s / %s" % (start, kp_counter, self.kpsize))
         self.buffers["cnt"].set(numpy.array([start], dtype=numpy.int32))
-        print start, numpy.int32(start), kpsize32
         evt = self.programs["algebra"].compact(self.queue, procsize, wgsize,
-                        self.buffers["Kp_1"].data, # __global keypoint* keypoints,
-                        self.buffers["Kp_2"].data, #__global keypoint* output,
-                        self.buffers["cnt"].data,  #__global int* counter,
-                        numpy.int32(start),        #int start,
-                        kpsize32)                  #int nbkeypoints
+                        self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
+                        self.buffers["Kp_2"].data,  # __global keypoint* output,
+                        self.buffers["cnt"].data,  # __global int* counter,
+                        start,  # int start,
+                        kp_counter)  # int nbkeypoints
+        evt.wait()
         newcnt = self.buffers["cnt"].get()[0]
-        logger.debug("After compaction, %i (-%i)" % (newcnt, kp_counter - newcnt))
+        logger.info("After compaction, %i (-%i)" % (newcnt, kp_counter - newcnt))
         if self.profile:
             logger.info("Compaction kernel with %s / %s took: %.3f ms" % (procsize, wgsize, 1e6 * (evt.profile.end - evt.profile.start)))
-        #swap keypoints:
+        # swap keypoints:
         self.buffers["Kp_1"], self.buffers["Kp_2"] = self.buffers["Kp_2"], self.buffers["Kp_1"]
+        self.buffers["Kp_2"].fill(-1, self.queue)
+#        self.debug.append(self.buffers["Kp_1"].get())
         return newcnt
 
 
@@ -476,10 +485,12 @@ class SiftPlan(object):
 #            octave /= 2
             sum = (data[:, 1] != -1.0).sum()
             kpt += sum
-            print("octave %i kp count %i/%i size %s ratio:%s" % (octave, sum, self.kpsize, self.scales[octave], 1000.0 * sum / self.scales[octave][1] / self.scales[octave][0]))
-        print("Found total %i guess %s pixels per keypoint" % (kpt, self.shape[0] * self.shape[1] / kpt))
+            logger.info("octave %i kp count %i/%i size %s ratio:%s" % (octave, sum, self.kpsize, self.scales[octave], 1000.0 * sum / self.scales[octave][1] / self.scales[octave][0]))
+        logger.info("Found total %i guess %s pixels per keypoint" % (kpt, self.shape[0] * self.shape[1] / kpt))
+    def debug_holes(self, label=""):
+        logger.info("%s %s" % (label, numpy.where(self.buffers["Kp_1"].get()[:, 1] == -1)[0]))
 if __name__ == "__main__":
-    #Prepare debugging
+    # Prepare debugging
     import scipy.misc
     lena = scipy.lena()
     s = SiftPlan(template=lena)
