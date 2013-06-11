@@ -9,10 +9,10 @@ For a better code visibility, the setups required by kernels will be put here
 
 def local_maxmin_setup():
     border_dist = numpy.int32(5) #SIFT
-    peakthresh = numpy.float32(0.9) #(255.0 * 0.04 / 3.0) #SIFT
+    peakthresh = numpy.float32(255.0 * 0.04 / 3.0) #SIFT uses 255.0 * 0.04 / 3.0
     EdgeThresh = numpy.float32(0.06) #SIFT
     EdgeThresh0 = numpy.float32(0.08) #SIFT
-    octsize = numpy.int32(2) #initially 1, then twiced at each new octave
+    octsize = numpy.int32(1) #initially 1, then twiced at each new octave
     nb_keypoints = 1000 #constant size !
 		
     l = scipy.misc.lena().astype(numpy.float32)#[100:250,100:250] #use a part of the image to fasten tests
@@ -47,10 +47,10 @@ def interpolation_setup():
     nb_keypoints = numpy.int32(nb_keypoints)
 
     #Assumes that local_maxmin is working so that we can use Python's "my_local_maxmin" instead of the kernel
-    keypoints_prev = my_local_maxmin(DOGS, peakthresh,border_dist, octsize, 
+    keypoints_prev, actual_nb_keypoints = my_local_maxmin(DOGS, peakthresh,border_dist, octsize, 
         EdgeThresh0, EdgeThresh,nb_keypoints,s,width,height)
 
-    return border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, nb_keypoints, width, height, DOGS, s, keypoints_prev, g[s]
+    return border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, nb_keypoints, actual_nb_keypoints, width, height, DOGS, s, keypoints_prev, g[s]
     
     
     
@@ -60,20 +60,18 @@ def orientation_setup():
     Provides the values required by "test_orientation"
     Previous step: interpolation - we got a vector of valid keypoints
     '''
-    border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, nb_keypoints, width, height, DOGS, s, keypoints_prev, blur = interpolation_setup()
+    border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, nb_keypoints, actual_nb_keypoints, width, height, DOGS, s, keypoints_prev, blur = interpolation_setup()
     
-    actual_nb_keypoints = numpy.int32(len((keypoints_prev[:,0])[keypoints_prev[:,1] != -1]))
+    #actual_nb_keypoints = numpy.int32(len((keypoints_prev[:,0])[keypoints_prev[:,1] != -1]))
     ref = numpy.copy(keypoints_prev)
+    #There are actually less than "actual_nb_keypoints" keypoints ("holes" in the vector), but we can use it as a boundary
     for i,k in enumerate(ref[:actual_nb_keypoints,:]):
         ref[i]= my_interp_keypoint(DOGS, s, k[1], k[2],5,peakthresh,width,height)
     
-    #print("ref ! after my_interpolation")
-    #print ref[-100:]
     grad, ori = my_gradient(blur) #gradient is applied on blur[s]
-    ref, actual_nb_keypoints = my_compact(ref,nb_keypoints)
+   # ref, actual_nb_keypoints = my_compact(ref,nb_keypoints)
     
 
     return ref, nb_keypoints, actual_nb_keypoints, grad, ori, octsize
-    
     
     

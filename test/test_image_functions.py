@@ -39,7 +39,7 @@ def my_local_maxmin(DOGS,thresh,border_dist,octsize,EdgeThresh0,EdgeThresh,nb_ke
                     output[counter,2]=j
                     output[counter,3]=numpy.float32(s)
                     counter+=1              
-    return output
+    return output, counter
     
     
 def is_maxmin(dog_prev,dog,dog_next,val,i0,j0,octsize,EdgeThresh0,EdgeThresh):
@@ -98,6 +98,7 @@ def my_interp_keypoint(DOGS, s, r, c,movesRemain,peakthresh,width,height):
      WARNING: replace "1.6" by "InitSigma" if InitSigma has not its default value 
      The recursive calls were replaced by a loop.
     '''
+    if (r == -1): return (-1,-1,-1,-1)
     dog_prev = DOGS[s-1]
     dog = DOGS[s]
     dog_next = DOGS[s+1]
@@ -173,91 +174,89 @@ def fit_quadratic(dog_prev,dog,dog_next, r, c):
 
     
     
-def my_orientation(keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octsize, orisigma):
+def my_orientation(keypoints, nb_keypoints, keypoints_start, keypoints_end, grad, ori, octsize, orisigma):
     '''
     Python implementation of orientation assignment
     '''
     
-    counter = actual_nb_keypoints
+    counter = keypoints_end #actual_nb_keypoints
     hist = numpy.zeros(36,dtype=numpy.float32)
     rows,cols = grad.shape
-    for index,k in enumerate(keypoints[0:actual_nb_keypoints]):
-        hist = hist*0 #do not forget this memset at each loop...
-        row = numpy.int32(k[1]+0.5),
-        col = numpy.int32(k[2]+0.5),
-        sigma = orisigma * k[3]
-        radius = numpy.int32(sigma * 3.0)
-        rmin = max(0,row-radius)
-        cmin = max(0,col-radius)
-        rmax = min(row+radius,rows-2)
-        cmax = min(col+radius,cols-2)
-        radius2 = numpy.float32(radius * radius)
-        sigma2 = 2.0*sigma*sigma
-        #print rmin, rmax, cmin, cmax
-        
-        for r in range(rmin,rmax+1):
-            for c in range(cmin,cmax+1):
-                gval = grad[r,c]
-                distsq = (r-k[1])*(r-k[1]) + (c-k[2])*(c-k[2])
+    for index,k in enumerate(keypoints[keypoints_start:keypoints_end]):
+        if (k[1] != -1.0):
+            hist = hist*0 #do not forget this memset at each loop...
+            row = numpy.int32(k[1]+0.5)
+            col = numpy.int32(k[2]+0.5)
+            sigma = orisigma * k[3]
+            radius = numpy.int32(sigma * 3.0)
+            rmin = max(0,row-radius)
+            cmin = max(0,col-radius)
+            rmax = min(row+radius,rows-2)
+            cmax = min(col+radius,cols-2)
+            radius2 = numpy.float32(radius * radius)
+            sigma2 = 2.0*sigma*sigma
+            #print rmin, rmax, cmin, cmax
+            
+            for r in range(rmin,rmax+1):
+                for c in range(cmin,cmax+1):
+                    gval = grad[r,c]
+                    distsq = (r-k[1])*(r-k[1]) + (c-k[2])*(c-k[2])
+                    
+                    if (gval > 0.0  and  distsq < radius2 + 0.5):
+                        weight = numpy.exp(- distsq / sigma2)
+                        angle = ori[r,c]
+                        mybin = numpy.int32((36 * (angle + numpy.pi + 0.001) / (2.0 * numpy.pi)))
+                        if (mybin >= 0 and mybin <= 36):
+                            mybin = min(mybin, 36 - 1)
+                            hist[mybin] += weight * gval
+
+            for i in range(0,6):
+                hist = smooth_histogram(hist)
                 
-                if (gval > 0.0  and  distsq < radius2 + 0.5):
-                    weight = numpy.exp(- distsq / sigma2)
-                    angle = ori[r,c]
-                    mybin = numpy.int32((36 * (angle + numpy.pi + 0.001) / (2.0 * numpy.pi)))
-                    if (mybin >= 0 and mybin <= 36):
-                        mybin = min(mybin, 36 - 1)
-                        hist[mybin] += weight * gval
-                        
+            maxval = hist.max()
+            argmax = hist.argmax()
 
-        for i in range(0,6):
-            hist = smooth_histogram(hist)
-            
-            
+            if argmax == 0: prev = 35
+            else: prev = argmax -1
+            if argmax == 35: next = 0
+            else: next = argmax +1
+            if (maxval < 0.0):
+                hist[prev] = -hist[prev] 
+                maxval = -maxval
+                hist[next] = -hist[next]
 
-        maxval = hist.max()
-        argmax = hist.argmax()
-
-        if argmax == 0: prev = 35
-        else: prev = argmax -1
-        if argmax == 35: next = 0
-        else: next = argmax +1
-        if (maxval < 0.0):
-            hist[prev] = -hist[prev] 
-            maxval = -maxval
-            hist[next] = -hist[next]
-
-        interp = 0.5 * (hist[prev] - hist[next]) / (hist[prev] - 2.0 * maxval + hist[next])
-        angle = 2.0 * numpy.pi * (argmax + 0.5 + interp) / 36 - numpy.pi        
-        k[0] = octsize * k[2]
-        k[1] = octsize * k[1]
-        k[2] = octsize * k[3]
-        k[3] = angle
-        
-        keypoints[index] = k 
-        
-        k2 = numpy.zeros(4,dtype=numpy.float32)
-        k2[0] = k[0]; k2[1] = k[1]; k2[2] = k[2]; k2[3] = 0.0
-        for i in range(0,36):
-            if i == 0: prev = 35
-            else: prev = i-1
-            if i == 35: next = 0
-            else: next = i+1
-            if (hist[i] > hist[prev]  and  hist[i] > hist[next]  and hist[i] >= 0.8 * maxval and i != argmax):
-                if (hist[i] < 0.0):
-                    hist[prev] = -hist[prev]
-                    hist[i] = -hist[i]
-                    hist[next] = -hist[next]
-                if (hist[i] >= hist[prev]  and  hist[i] >= hist[next]): 
-                     interp = 0.5 * (hist[prev] - hist[next]) / (hist[prev] - 2.0 * hist[i] + hist[next])
+            interp = 0.5 * (hist[prev] - hist[next]) / (hist[prev] - 2.0 * maxval + hist[next])
+            angle = 2.0 * numpy.pi * (argmax + 0.5 + interp) / 36 - numpy.pi        
+            k[0] = k[2]
+            k[1] = k[1]
+            k[2] = k[3]
+            k[3] = angle
+            keypoints[index] = k 
             
-                angle = 2.0 * numpy.pi * (i + 0.5 + interp) / 36 - numpy.pi
-                if (angle >= -numpy.pi  and  angle <= numpy.pi):
-                    k2[3] = angle
-                    if (counter < nb_keypoints):
-                        keypoints[counter] = k2
-                        counter+=1
-            
-        #end of additional keypoints creation
+            k2 = numpy.zeros(4,dtype=numpy.float32)
+            k2[0] = k[0]; k2[1] = k[1]; k2[2] = k[2]; k2[3] = 0.0
+            for i in range(0,36):
+                if i == 0: prev = 35
+                else: prev = i-1
+                if i == 35: next = 0
+                else: next = i+1
+                if (hist[i] > hist[prev]  and  hist[i] > hist[next]  and hist[i] >= 0.8 * maxval and i != argmax):
+                    if (hist[i] < 0.0):
+                        hist[prev] = -hist[prev]
+                        hist[i] = -hist[i]
+                        hist[next] = -hist[next]
+                    if (hist[i] >= hist[prev]  and  hist[i] >= hist[next]): 
+                         interp = 0.5 * (hist[prev] - hist[next]) / (hist[prev] - 2.0 * hist[i] + hist[next])
+                
+                    angle = 2.0 * numpy.pi * (i + 0.5 + interp) / 36 - numpy.pi
+                    if (angle >= -numpy.pi  and  angle <= numpy.pi):
+                        k2[3] = angle
+                        if (counter < nb_keypoints):
+                            keypoints[counter] = k2
+                            counter+=1
+                
+            #end of additional keypoints creation
+        #end of "if valid keypoint"
     #end of loop
     return keypoints, counter
 
