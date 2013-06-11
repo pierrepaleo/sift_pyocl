@@ -133,8 +133,7 @@ class test_image(unittest.TestCase):
         """
         #local_maxmin_setup :
         border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, nb_keypoints, width, height, DOGS, g = local_maxmin_setup()
-  
-        self.s = numpy.int32(1) #0, 1, 2 or 3... 1 here
+        self.s = numpy.int32(2) #1, 2, 3 ... not 4 nor 0.
         self.gpu_dogs = pyopencl.array.to_device(queue, DOGS)
         self.output = pyopencl.array.empty(queue, (nb_keypoints,4), dtype=numpy.float32, order="C")
         self.output.fill(-1.0,queue) #memset for invalid keypoints
@@ -153,7 +152,7 @@ class test_image(unittest.TestCase):
         self.actual_nb_keypoints = self.counter.get()[0] #for further use
       
         t1 = time.time()
-        ref = my_local_maxmin(DOGS,peakthresh,border_dist, octsize, 
+        ref, actual_nb_keypoints2 = my_local_maxmin(DOGS,peakthresh,border_dist, octsize, 
         	EdgeThresh0, EdgeThresh,nb_keypoints,self.s,width,height)
         t2 = time.time()
         
@@ -171,9 +170,9 @@ class test_image(unittest.TestCase):
         delta_c = abs(ref_c - res_c).max()
 
         if (PRINT_KEYPOINTS):
-            print("keypoints after 2 steps of refinement: %s" %(self.actual_nb_keypoints))
+            print("keypoints after 2 steps of refinement: (s= %s, octsize=%s) %s" %(self.s,octsize,self.actual_nb_keypoints))
             #print("For ref: %s" %(ref_peaks[ref_peaks!=-1].shape))
-            print res[0:10]
+            print res[0:self.actual_nb_keypoints]#[0:74]
             #print ref[0:32]
         
         self.assert_(delta_peaks < 1e-4, "delta_peaks=%s" % (delta_peaks))
@@ -199,13 +198,15 @@ class test_image(unittest.TestCase):
         """
 
         #interpolation_setup :
-        border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, nb_keypoints, width, height, DOGS, s, keypoints_prev,blur = interpolation_setup()
+        border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, nb_keypoints, actual_nb_keypoints, width, height, DOGS, s, keypoints_prev,blur = interpolation_setup()
        
-        	
+        #actual_nb_keypoints is the number of keypoints returned by "local_maxmin". 
+        #After the interpolation, it will be reduced, but we can still use it as a boundary.
         shape = calc_size(keypoints_prev.shape, self.wg)
         gpu_dogs = pyopencl.array.to_device(queue, DOGS)
         gpu_keypoints1 = pyopencl.array.to_device(queue,keypoints_prev)
-        actual_nb_keypoints = numpy.int32(len((keypoints_prev[:,0])[keypoints_prev[:,1] != -1]))
+        #actual_nb_keypoints = numpy.int32(len((keypoints_prev[:,0])[keypoints_prev[:,1] != -1]))
+        actual_nb_keypoints = numpy.int32(actual_nb_keypoints)
         InitSigma = numpy.float32(1.6) #warning: it must be the same in my_keypoints_interpolation
         t0 = time.time()
         k1 = self.program.interp_keypoint(queue, shape, self.wg, 
@@ -228,9 +229,9 @@ class test_image(unittest.TestCase):
         
         if (PRINT_KEYPOINTS):
             print("Keypoints before interpolation: %s" %(actual_nb_keypoints))
-            print keypoints_prev[0:10,:]
+            #print keypoints_prev[0:10,:]
             print("Keypoints after interpolation : %s" %(res2.shape[0]))
-            print res[0:10,:]
+            print res[0:actual_nb_keypoints]#[0:10,:]
             #print("Ref:")
             #print ref[0:32,:]
         
@@ -252,29 +253,32 @@ class test_image(unittest.TestCase):
         
         #orientation_setup :
         keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octsize = orientation_setup()
-        #keypoints is a compacted vector of keypoints
+        #keypoints is a compacted vector of keypoints #not anymore !
         keypoints_before_orientation = numpy.copy(keypoints) #important here
         wg = max(self.wg),
         shape = calc_size((keypoints.shape[0],), wg)
         #shape = calc_size(keypoints.shape, self.wg)
         gpu_keypoints = pyopencl.array.to_device(queue,keypoints)
-        actual_nb_keypoints = numpy.int32(actual_nb_keypoints) #grrr
-        print("Number of keypoints before orientation assignment : %s" %actual_nb_keypoints)
-        counter = pyopencl.array.to_device(queue, actual_nb_keypoints)
+        actual_nb_keypoints = numpy.int32(actual_nb_keypoints)
+        print("Max. number of keypoints before orientation assignment : %s" %actual_nb_keypoints)
+
         gpu_grad = pyopencl.array.to_device(queue, grad)
         gpu_ori = pyopencl.array.to_device(queue, ori)
         orisigma = numpy.float32(1.5) #SIFT
         grad_height, grad_width = numpy.int32(grad.shape)
-               
+        keypoints_start = numpy.int32(0)
+        keypoints_end = numpy.int32(actual_nb_keypoints)
+        counter = pyopencl.array.to_device(queue, keypoints_end) #actual_nb_keypoints)
+        
         t0 = time.time()
         k1 = self.program.orientation_assignment(queue, shape, wg, 
         	gpu_keypoints.data, gpu_grad.data, gpu_ori.data, counter.data,
-        	octsize, orisigma, nb_keypoints, actual_nb_keypoints, grad_width, grad_height)    	
+        	octsize, orisigma, nb_keypoints, keypoints_start, keypoints_end, grad_width, grad_height)    	
         res = gpu_keypoints.get()
         cnt = counter.get()
         t1 = time.time()
         
-        ref,updated_nb_keypoints = my_orientation(keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octsize, orisigma)
+        ref,updated_nb_keypoints = my_orientation(keypoints, nb_keypoints, keypoints_start, keypoints_end, grad, ori, octsize, orisigma)
                 
         t2 = time.time()
         
@@ -307,9 +311,9 @@ class test_image(unittest.TestCase):
 def test_suite_image():
     testSuite = unittest.TestSuite()
     #testSuite.addTest(test_image("test_gradient"))
-    testSuite.addTest(test_image("test_local_maxmin"))
+    #testSuite.addTest(test_image("test_local_maxmin"))
     testSuite.addTest(test_image("test_interpolation"))
-    testSuite.addTest(test_image("test_orientation"))
+    #testSuite.addTest(test_image("test_orientation"))
     return testSuite
 
 if __name__ == '__main__':

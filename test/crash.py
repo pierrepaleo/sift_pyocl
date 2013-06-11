@@ -1,5 +1,6 @@
 import sys, os
 sys.path.insert(0, os.path.abspath("build/lib.linux-x86_64-2.6"))
+sys.path.insert(0, os.path.abspath("build/lib.linux-x86_64-2.7"))
 import sift
 import numpy
 import scipy.misc
