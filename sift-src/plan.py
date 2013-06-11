@@ -313,18 +313,23 @@ class SiftPlan(object):
 
         for octave in range(self.octave_max):
             kp = self.one_octave(octave)
-            self.keypoints.append(kp)
-            total_size += kp.shape[0]
+            print kp
+            if kp.shape[0] > 0:
+                keypoints.append(kp)
+                total_size += kp.shape[0]
 
         ########################################################################
         # Merge keypoints in central memory
         ########################################################################
         output = numpy.zeros((total_size, 4), dtype=numpy.float32)
         last = 0
+        print keypoints
         for ds in keypoints:
             l = ds.shape[0]
-            ds[last:last + l] = ds
-            last += l
+            if l > 0:
+                print ds.shape, output.shape
+                output[last:last + l] = ds
+                last += l
         print("Execution time: %.3fs" % (time.time() - t0))
 #        self.count_kp(output)
         return output
@@ -409,20 +414,21 @@ class SiftPlan(object):
                                               numpy.float32(par.PeakThresh),        # float peak_thresh,
                                               numpy.float32(par.InitSigma),         # float InitSigma,
                                               *self.scales[octave])                 # int width, int height)
-                self.compact(last_start)
+                newcnt = self.compact(last_start)
 
     #           Orientation assignement: 1D kernel, rather heavy kernel
-                procsize = calc_size((newcnt,), wgsize)
-                self.programs["image"].orientation_assignment(procsize, wgsize,
+                procsize = calc_size((int(newcnt),), wgsize)
+                self.programs["image"].orientation_assignment(self.queue, procsize, wgsize,
                                       self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
-                                      grad.data,                          #__global float* grad,
-                                      ori.data,                          #__global float* ori,
-                                      self.buffers["cnt"].data,  # __global int* counter,
-                                      octsize,               #int octsize,
-                                      numpy.float32(par.OriSigma),  # float OriSigma, //WARNING: (1.5), it is not "InitSigma (=1.6)"
-                                      kpsize32,  # int max of nb_keypoints,
-                                      newcnt,                #int actual_nb_keypoints,
-                                      self.scales[octave])   #int grad_width, int grad_height)
+                                      grad.data,                  #__global float* grad,
+                                      ori.data,                   #__global float* ori,
+                                      self.buffers["cnt"].data,   # __global int* counter,
+                                      octsize,                    #int octsize,
+                                      numpy.float32(par.OriSigma),# float OriSigma, //WARNING: (1.5), it is not "InitSigma (=1.6)"
+                                      kpsize32,                   #int max of nb_keypoints,
+                                      numpy.int32(last_start),    #int keypoints_start,
+                                      newcnt,                     #int keypoints_end,
+                                      *self.scales[octave])        #int grad_width, int grad_height)
                 last_start = self.buffers["cnt"].get()[0]
 
 
@@ -432,18 +438,21 @@ class SiftPlan(object):
         """
         compact the vector of keypoints starting from start 
         """
-        wgsize = (max(self.wgsize[0]),) #TODO: optimize
+        wgsize = (8,)#(max(self.wgsize[0]),) #TODO: optimize
         kpsize32 = numpy.int32(self.kpsize)
-        procsize = calc_size((newcnt,), wgsize)
-        kp_counter = self.buffers["cnt"].get()[0]
+        kp_counter = int(self.buffers["cnt"].get()[0])
+        procsize = calc_size((kp_counter,), wgsize)
+
         if kp_counter > 0.9 * self.kpsize:
                logger.warning("Keypoint counter overflow risk: counted %s / %s" % (kp_counter, self.kpsize))
         logger.info("Keypoint counted %s / %s" % (kp_counter, self.kpsize))
-        self.buffers["cnt"].set(numpy.array([start], dtype=numpy.int32)) #?
+        self.buffers["cnt"].set(numpy.array([start], dtype=numpy.int32))
+        print start, numpy.int32(start), kpsize32
         evt = self.programs["algebra"].compact(self.queue, procsize, wgsize,
                         self.buffers["Kp_1"].data, # __global keypoint* keypoints,
                         self.buffers["Kp_2"].data, #__global keypoint* output,
                         self.buffers["cnt"].data,  #__global int* counter,
+                        numpy.int32(start),        #int start,
                         kpsize32)                  #int nbkeypoints
         newcnt = self.buffers["cnt"].get()[0]
         logger.debug("After compaction, %i (-%i)" % (newcnt, kp_counter - newcnt))

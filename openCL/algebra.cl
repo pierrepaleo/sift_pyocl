@@ -49,6 +49,7 @@ __kernel void combine(
  * @param keypoints: Pointer to global memory with the keypoints
  * @param output: Pointer to global memory with the output
  * @param counter: Pointer to global memory with the shared counter in the output
+ * @param start: start compaction at this index. counter should be equal to start at the begining.
  * @param nbkeypoints: max number of keypoints
  *
  */
@@ -59,11 +60,12 @@ __kernel void compact(
 	__global keypoint* keypoints,
 	__global keypoint* output,
 	__global int* counter,
+	int start,
 	int nbkeypoints)
 {	
 	
 	int gid0 = (int) get_global_id(0);
-	if (gid0 < nbkeypoints) {
+	if ((gid0>=start) && (gid0 < nbkeypoints)) {
 		
 		keypoint k = keypoints[gid0];
 		
