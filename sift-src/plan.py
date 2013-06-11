@@ -311,108 +311,10 @@ class SiftPlan(object):
                                                 self.buffers[(octave, "G_1")].data, self.buffers[(octave + 1, "G_1")].data,
                                                 numpy.int32(2), numpy.int32(2), *self.scales[octave + 1])
 
-
         for octave in range(self.octave_max):
-            prevSigma = par.InitSigma
-            logger.debug("Calculating DoGs on octave %i" % octave)
-            for i in range(par.Scales + 2):
-                sigma = prevSigma * math.sqrt(self.sigmaRatio ** 2 - 1.0)
-                logger.debug("blur with sigma %s" % sigma)
-                ########################################################################
-                # Calculate gaussian blur and DoG for every octave
-                ########################################################################
-
-                self._gaussian_convolution(self.buffers[(octave, "G_1")], self.buffers[(octave, "G_2")], sigma, octave)
-                prevSigma *= self.sigmaRatio
-                self.programs["algebra"].combine(self.queue, self.procsize[octave], self.wgsize[octave],
-                                                 self.buffers[(octave, "G_2")].data, numpy.float32(1.0),
-                                                 self.buffers[(octave, "G_1")].data, numpy.float32(-1.0),
-                                                 self.buffers[(octave, "DoGs")].data, numpy.int32(i),
-                                                 *self.scales[octave])
-                #swap buffers:
-                self.buffers[(octave, "G_1")], self.buffers[(octave, "G_2")] = self.buffers[(octave, "G_2")], self.buffers[(octave, "G_1")]
-
-                #recycle buffer G_2 and tmp to store ori and grad
-                ori = self.buffers[(octave, "G_2")]
-                grad = self.buffers[(octave, "tmp")]
-                self.programs["image"].compute_gradient_orientation(self.queue, self.procsize[octave], self.wgsize[octave],
-                           self.buffers[(octave, "G_1")].data, #__global float* igray,
-                           grad.data,                          #__global float *grad,
-                           ori.data,                           #__global float *ori,
-                           *self.scales[octave])               #int width,int height
-
-#THIS WHOOL BLOCK needs to be indented ! TODO
-
-        ########################################################################
-        # Calculate Keypoints per octave
-        ########################################################################
-        wgsize = (8,)#(max(self.wgsize[octave]),) #TODO: optimize
-        kpsize32 = numpy.int32(self.kpsize)
-        for octave in range(self.octave_max):
-            logger.debug("Calculating keypoints on octave %i" % octave)
-            self._reset_keypoints()
-            octsize = numpy.int32(2 ** octave)
-            for scale in range(1, par.Scales + 1):
-                print (octave, scale)
-                self.programs["image"].local_maxmin(self.queue, self.procsize[octave], self.wgsize[octave],
-                                                    self.buffers[(octave, "DoGs")].data,            #__global float* DOGS,
-                                                    self.buffers["Kp_1"].data,                      #__global keypoint* output,
-                                                    numpy.int32(par.BorderDist),                    #int border_dist,
-                                                    numpy.float32(par.PeakThresh),                  #float peak_thresh,
-                                                    octsize,  # int octsize,
-                                                    numpy.float32(par.EdgeThresh1),                 #float EdgeThresh0,
-                                                    numpy.float32(par.EdgeThresh),                  #float EdgeThresh,
-                                                    self.buffers["cnt"].data,                       #__global int* counter,
-                                                    kpsize32,                                       #int nb_keypoints,
-                                                    numpy.int32(scale),                             #int scale,
-                                                    *self.scales[octave])                           #int width, int height)
-
-
-                procsize = calc_size((self.kpsize,), wgsize)
-    #           Refine keypoints
-                kp_counter = self.buffers["cnt"].get()[0]
-                if kp_counter > 0.9 * self.kpsize:
-                    logger.warning("Keypoint counter overflow risk: counted %s / %s" % (kp_counter, self.kpsize))
-                print("Keypoint counted %s / %s" % (kp_counter, self.kpsize))
-                self.programs["image"].interp_keypoint(self.queue, procsize, wgsize,
-                                              self.buffers[(octave, "DoGs")].data,  #__global float* DOGS,
-                                              self.buffers["Kp_1"].data,            # __global keypoint* keypoints,
-                                              kp_counter,                           # int actual_nb_keypoints,
-                                              numpy.float32(par.PeakThresh),        # float peak_thresh,
-                                              numpy.float32(par.InitSigma),         # float InitSigma,
-                                              *self.scales[octave])                 # int width, int height)
-                self.buffers["cnt"].set(numpy.array([0], dtype=numpy.int32))
-#           Orientation assignement: 1D kernel, rather heavy kernel
-                procsize = calc_size((newcnt,), wgsize)
-                self.programs["image"].orientation_assignment(procsize, wgsize,
-                                      self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
-                                                                #__global float* grad,
-                                                                #__global float* ori,
-                                         self.buffers["cnt"].data,  # __global int* counter,
-                                         octsize,               #int octsize,
-                                         numpy.float32(par.OriSigma),  # float OriSigma, //WARNING: (1.5), it is not "InitSigma (=1.6)"
-                                         kpsize32,  # int max of nb_keypoints,
-                                         newcnt,                #int actual_nb_keypoints,
-                                         self.scales[octave])   #int grad_width, int grad_height)
-
-                self.programs["algebra"].compact(self.queue, procsize, wgsize,
-                                self.buffers["Kp_1"].data, # __global keypoint* keypoints,
-                                self.buffers["Kp_2"].data, #__global keypoint* output,
-                                self.buffers["cnt"].data,  #__global int* counter,
-                                kpsize32                   #int nbkeypoints
-                                                 )
-                newcnt = self.buffers["cnt"].get()[0]
-                print("After compaction, %i (-%i)" % (newcnt, kp_counter - newcnt))
-
-                #swap keypoints:
-                self.buffers["Kp_1"], self.buffers["Kp_2"] = self.buffers["Kp_2"], self.buffers["Kp_1"]
-
-#                compact again ?
-#                generate keypoints ?
-#           transfer to CPU
-            kp_counter = self.buffers["cnt"].get()[0]
-            keypoints.append(self.buffers["Kp_1"].get()[:kp_counter])
-            total_size += kp_counter
+            kp = self.one_octave(octave)
+            self.keypoints.append(kp)
+            total_size += kp.shape[0]
 
         ########################################################################
         # Merge keypoints in central memory
@@ -444,12 +346,120 @@ class SiftPlan(object):
             logger.info("Blur sigma %s octave %s took %.3fms + %.3fms" % (sigma, octave, 1e-6 * (k1.profile.end - k1.profile.start),
                                                                                           1e-6 * (k2.profile.end - k2.profile.start)))
 
+    def one_octave(self, octave):
+        """
+        does all scales within an octave
+        @param 
+        """
+        prevSigma = par.InitSigma
+        logger.debug("Calculating octave %i" % octave)
+        wgsize = (8,)#(max(self.wgsize[octave]),) #TODO: optimize
+        kpsize32 = numpy.int32(self.kpsize)
+        self._reset_keypoints()
+        octsize = numpy.int32(2 ** octave)
+        last_start = 0
+        for scale in range(par.Scales + 2):
+            sigma = prevSigma * math.sqrt(self.sigmaRatio ** 2 - 1.0)
+            logger.debug("Octave %i scale %sblur with sigma %s" % (octave, scale, sigma))
+
+            ########################################################################
+            # Calculate gaussian blur and DoG
+            ########################################################################
+
+            self._gaussian_convolution(self.buffers[(octave, "G_1")], self.buffers[(octave, "G_2")], sigma, octave)
+            prevSigma *= self.sigmaRatio
+            self.programs["algebra"].combine(self.queue, self.procsize[octave], self.wgsize[octave],
+                                             self.buffers[(octave, "G_2")].data, numpy.float32(-1.0),
+                                             self.buffers[(octave, "G_1")].data, numpy.float32(+1.0),
+                                             self.buffers[(octave, "DoGs")].data, numpy.int32(scale),
+                                             *self.scales[octave])
+            #swap buffers:
+            self.buffers[(octave, "G_1")], self.buffers[(octave, "G_2")] = self.buffers[(octave, "G_2")], self.buffers[(octave, "G_1")]
+
+            #recycle buffer G_2 and tmp to store ori and grad
+            ori = self.buffers[(octave, "G_2")]
+            grad = self.buffers[(octave, "tmp")]
+            self.programs["image"].compute_gradient_orientation(self.queue, self.procsize[octave], self.wgsize[octave],
+                       self.buffers[(octave, "G_1")].data, #__global float* igray,
+                       grad.data,                          #__global float *grad,
+                       ori.data,                           #__global float *ori,
+                       *self.scales[octave])               #int width,int height
+#           if scale is not the first or the last
+            if 0 < scale < (par.Scales + 1):
+                self.programs["image"].local_maxmin(self.queue, self.procsize[octave], self.wgsize[octave],
+                                                self.buffers[(octave, "DoGs")].data,#__global float* DOGS,
+                                                self.buffers["Kp_1"].data,          #__global keypoint* output,
+                                                numpy.int32(par.BorderDist),        #int border_dist,
+                                                numpy.float32(par.PeakThresh),      #float peak_thresh,
+                                                octsize,                            # int octsize,
+                                                numpy.float32(par.EdgeThresh1),     #float EdgeThresh0,
+                                                numpy.float32(par.EdgeThresh),      #float EdgeThresh,
+                                                self.buffers["cnt"].data,           #__global int* counter,
+                                                kpsize32,                           #int nb_keypoints,
+                                                numpy.int32(scale),                 #int scale,
+                                                *self.scales[octave])               #int width, int height)
+
+                procsize = calc_size((self.kpsize,), wgsize)
+    #           Refine keypoints
+                kp_counter = self.buffers["cnt"].get()[0]
+                self.programs["image"].interp_keypoint(self.queue, procsize, wgsize,
+                                              self.buffers[(octave, "DoGs")].data,  #__global float* DOGS,
+                                              self.buffers["Kp_1"].data,            # __global keypoint* keypoints,
+                                              kp_counter,                           # int actual_nb_keypoints,
+                                              numpy.float32(par.PeakThresh),        # float peak_thresh,
+                                              numpy.float32(par.InitSigma),         # float InitSigma,
+                                              *self.scales[octave])                 # int width, int height)
+                self.compact(last_start)
+
+    #           Orientation assignement: 1D kernel, rather heavy kernel
+                procsize = calc_size((newcnt,), wgsize)
+                self.programs["image"].orientation_assignment(procsize, wgsize,
+                                      self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
+                                      grad.data,                          #__global float* grad,
+                                      ori.data,                          #__global float* ori,
+                                      self.buffers["cnt"].data,  # __global int* counter,
+                                      octsize,               #int octsize,
+                                      numpy.float32(par.OriSigma),  # float OriSigma, //WARNING: (1.5), it is not "InitSigma (=1.6)"
+                                      kpsize32,  # int max of nb_keypoints,
+                                      newcnt,                #int actual_nb_keypoints,
+                                      self.scales[octave])   #int grad_width, int grad_height)
+                last_start = self.buffers["cnt"].get()[0]
+
+
+        return self.buffers["Kp_1"].get()[:last_start]
+
+    def compact(self, start=0):
+        """
+        compact the vector of keypoints starting from start 
+        """
+        wgsize = (max(self.wgsize[0]),) #TODO: optimize
+        kpsize32 = numpy.int32(self.kpsize)
+        procsize = calc_size((newcnt,), wgsize)
+        kp_counter = self.buffers["cnt"].get()[0]
+        if kp_counter > 0.9 * self.kpsize:
+               logger.warning("Keypoint counter overflow risk: counted %s / %s" % (kp_counter, self.kpsize))
+        logger.info("Keypoint counted %s / %s" % (kp_counter, self.kpsize))
+        self.buffers["cnt"].set(numpy.array([start], dtype=numpy.int32)) #?
+        evt = self.programs["algebra"].compact(self.queue, procsize, wgsize,
+                        self.buffers["Kp_1"].data, # __global keypoint* keypoints,
+                        self.buffers["Kp_2"].data, #__global keypoint* output,
+                        self.buffers["cnt"].data,  #__global int* counter,
+                        kpsize32)                  #int nbkeypoints
+        newcnt = self.buffers["cnt"].get()[0]
+        logger.debug("After compaction, %i (-%i)" % (newcnt, kp_counter - newcnt))
+        if self.profile:
+            logger.info("Compaction kernel with %s / %s took: %.3f ms" % (procsize, wgsize, 1e6 * (evt.profile.end - evt.profile.start)))
+        #swap keypoints:
+        self.buffers["Kp_1"], self.buffers["Kp_2"] = self.buffers["Kp_2"], self.buffers["Kp_1"]
+        return newcnt
+
+
     def _reset_keypoints(self):
         self.buffers["Kp_1"].fill(-1, self.queue)
         self.buffers["Kp_2"].fill(-1, self.queue)
         self.buffers["cnt"].fill(0, self.queue)
 
-    def count_kp(self,output):
+    def count_kp(self, output):
         kpt = 0
         for octave, data in enumerate(output):
 #            if octave % 2 == 0:
