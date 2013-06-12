@@ -7,7 +7,7 @@ import numpy
 import scipy.misc
 import pylab
 lena = scipy.misc.lena()
-s = sift.SiftPlan(template=lena, profile=False, devicetype="GPU", max_workgroup_size=8)
+s = sift.SiftPlan(template=lena, profile=True, devicetype="GPU", max_workgroup_size=8)
 kp = s.keypoints(lena)
 fig = pylab.figure()
 sp1 = fig.add_subplot(1, 2, 1)

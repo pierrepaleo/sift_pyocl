@@ -59,6 +59,8 @@
 
 #define GROUP_SIZE BLOCK_SIZE
 
+	#define MAX_CONST_SIZE 16384
+
 
 /**
  * \brief Cast values of an array of uint8 into a float output array.
@@ -207,10 +209,10 @@ rgb_to_float(	__global unsigned char *array_int,
  *
 **/
 __kernel void
-normalizes(		__global 	float 	*image,
-			const			float	min_in,
-			const 			float 	max_in,
-			const			float	max_out,
+normalizes(	__global	 	float 	*image,
+			__constant 		float * min_in __attribute__((max_constant_size(MAX_CONST_SIZE))),
+			__constant 		float * max_in __attribute__((max_constant_size(MAX_CONST_SIZE))),
+			__constant 		float * max_out __attribute__((max_constant_size(MAX_CONST_SIZE))),
 			const 			int IMAGE_W,
 			const 			int IMAGE_H
 )
@@ -221,7 +223,7 @@ normalizes(		__global 	float 	*image,
 	if(i < IMAGE_W*IMAGE_H)
 	{
 		data = image[i];
-		image[i] = max_out*(data-min_in)/(max_in-min_in);
+		image[i] = max_out[0]*(data-min_in[0])/(max_in[0]-min_in[0]);
 	};//end if in IMAGE
 };//end kernel
 
@@ -343,13 +345,13 @@ gaussian(			__global 	float 	*data,
 **/
 
 __kernel void
-divide_cst(			__global 	float 	*data,
-			const 				float 	value,
-			const 				int 	SIZE
+divide_cst(	__global 	float 	*data,
+			__global	float 	*value,
+			const 		int 	SIZE
 )
 {
 	int gid=get_global_id(0);
 	if(gid < SIZE){
-        data[gid] = data[gid] / value;
+        data[gid] = data[gid] / value[0];
 	}
 }
