@@ -1,6 +1,44 @@
+#!/usr/bin/env python
+# -*- coding: utf8 -*-
+#
+#    Project: Sift implementation in Python + OpenCL
+#             https://github.com/kif/sift_pyocl
+#
 
 """
 Contains a class for creating a plan, allocating arrays, compiling kernels and other things like that
+"""
+
+from __future__ import division
+
+__authors__ = ["Jérôme Kieffer"]
+__contact__ = "jerome.kieffer@esrf.eu"
+__license__ = "BSD"
+__copyright__ = "European Synchrotron Radiation Facility, Grenoble, France"
+__date__ = "2013-06-12"
+__status__ = "beta"
+__license__ = """
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
 """
 import time, math, os, logging, sys
 import gc
@@ -53,6 +91,7 @@ class SiftPlan(object):
             self.PIX_PER_KP = int(PIX_PER_KP)
         self.profile = bool(profile)
         self.max_workgroup_size = max_workgroup_size
+        self.twofivefive = None
         self.events = []
         self.scales = []  # in XY order
         self.procsize = []
@@ -159,11 +198,11 @@ class SiftPlan(object):
             self.buffers[(octave, "ori") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
             for scale in range(par.Scales + 3):
                 self.buffers[(octave, scale) ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
-#            self.buffers[(octave, "G_1") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
-#            self.buffers[(octave, "G_2") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
             self.buffers[(octave, "DoGs") ] = pyopencl.array.empty(self.queue, (par.Scales + 2, shape[0], shape[1]),
                                                                    dtype=numpy.float32, order="C")
             shape = (shape[0] // 2, shape[1] // 2)
+        self.twofivefive = pyopencl.array.to_device(self.queue, numpy.array([255], dtype=numpy.float32))
+
         for buffer in self.buffers.values():
             buffer.fill(0)
         ########################################################################
@@ -202,13 +241,13 @@ class SiftPlan(object):
                                             gaussian_gpu.data,  # __global     float     *data,
                                             numpy.float32(sigma),  # const        float     sigma,
                                             numpy.int32(size))  # const        int     SIZE
-        if self.profile:self.events.append(evt)
+        if self.profile: self.events.append(("gaussian %s" % sigma, evt))
         sum_data = pyopencl.array.sum(gaussian_gpu, dtype=numpy.float32, queue=self.queue)
         evt = self.programs["preprocess"].divide_cst(self.queue, (size,), (1,),
                                               gaussian_gpu.data,  # __global     float     *data,
                                               sum_data.data,  # const        float     sigma,
                                               numpy.int32(size))  # const        int     SIZE
-        if self.profile:self.events.append(evt)
+        if self.profile: self.events.append(("divide_cst", evt))
         self.buffers[name] = gaussian_gpu
 
 
@@ -283,30 +322,29 @@ class SiftPlan(object):
 
         if self.dtype == numpy.float32:
             evt = pyopencl.enqueue_copy(self.queue, self.buffers[(0, 0)].data, image)
-            if self.profile:self.events.append(evt)
+            if self.profile:self.events.append(("copy", evt))
         elif (image.ndim == 3) and (self.dtype == numpy.uint8) and (self.RGB):
             evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
-            if self.profile:self.events.append(evt)
+            if self.profile:self.events.append(("copy", evt))
             evt = self.programs["preprocess"].rgb_to_float(self.queue, self.procsize[0], self.wgsize[0],
                                                          self.buffers["raw"].data, self.buffers[(0, 0) ].data, *self.scales[0])
-            if self.profile:self.events.append(evt)
+            if self.profile:self.events.append(("RGB->float", evt))
 
         elif self.dtype in self.converter:
             program = self.programs["preprocess"].__getattr__(self.converter[self.dtype])
             evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
-            if self.profile:self.events.append(evt)
+            if self.profile:self.events.append(("copy", evt))
             evt = program(self.queue, self.procsize[0], self.wgsize[0],
                     self.buffers["raw"].data, self.buffers[(0, 0)].data, *self.scales[0])
-            if self.profile:self.events.append(evt)
+            if self.profile:self.events.append(("convert ->float", evt))
         else:
             raise RuntimeError("invalid input format error")
-        twofivefive = pyopencl.array.to_device(self.queue, numpy.array([255], dtype=numpy.float32))
         min_data = pyopencl.array.min(self.buffers[(0, 0)], self.queue)
         max_data = pyopencl.array.max(self.buffers[(0, 0)], self.queue)
         evt = self.programs["preprocess"].normalizes(self.queue, self.procsize[0], self.wgsize[0],
                                                self.buffers[(0, 0)].data,
-                                               min_data.data, max_data.data, twofivefive.data, *self.scales[0])
-        if self.profile:self.events.append(evt)
+                                               min_data.data, max_data.data, self.twofivefive.data, *self.scales[0])
+        if self.profile:self.events.append(("normalize", evt))
 
         octSize = 1.0
         curSigma = 1.0 if par.DoubleImSize else 0.5
@@ -325,7 +363,7 @@ class SiftPlan(object):
              evt = self.programs["preprocess"].shrink(self.queue, self.procsize[octave + 1], self.wgsize[octave + 1],
                                                 self.buffers[(octave, 0)].data, self.buffers[(octave + 1, 0)].data,
                                                 numpy.int32(2), numpy.int32(2), *self.scales[octave + 1])
-             if self.profile:self.events.append(evt)
+             if self.profile:self.events.append(("shrink %s->%s" % (self.scales[octave], self.scales[octave + 1]), evt))
         for octave in range(self.octave_max):
             kp = self.one_octave(octave)
             print("in octave %i found %i kp" % (octave, kp.shape[0]))
@@ -361,11 +399,9 @@ class SiftPlan(object):
                                 input_data.data, temp_data.data, gaussian.data, numpy.int32(gaussian.size), *self.scales[octave])
         k2 = self.programs["convolution"].vertical_convolution(self.queue, self.procsize[octave], self.wgsize[octave],
                                 temp_data.data, output_data.data, gaussian.data, numpy.int32(gaussian.size), *self.scales[octave])
-        self.events += [k1, k2]
+
         if self.profile:
-            k2.wait()
-            logger.info("Blur sigma %s octave %s took %.3fms + %.3fms" % (sigma, octave, 1e-6 * (k1.profile.end - k1.profile.start),
-                                                                                          1e-6 * (k2.profile.end - k2.profile.start)))
+            self.events += [("Blur sigma %s octave %s" % (sigma, octave), k1), ("Blur sigma %s octave %s" % (sigma, octave), k2)]
 
     def one_octave(self, octave):
         """
@@ -394,7 +430,7 @@ class SiftPlan(object):
                                              self.buffers[(octave, scale)].data, numpy.float32(+1.0),
                                              self.buffers[(octave, "DoGs")].data, numpy.int32(scale),
                                              *self.scales[octave])
-            if self.profile:self.events.append(evt)
+            if self.profile:self.events.append(("DoG %s %s" % (octave, scale), evt))
         for scale in range(1, par.Scales + 1):
                 print("Before local_maxmin, cnt is %s %s %s" % (self.buffers["cnt"].get()[0], self.procsize[octave], self.wgsize[octave]))
                 evt = self.programs["image"].local_maxmin(self.queue, self.procsize[octave], self.wgsize[octave],
@@ -409,7 +445,7 @@ class SiftPlan(object):
                                                 kpsize32,  # int nb_keypoints,
                                                 numpy.int32(scale),  # int scale,
                                                 *self.scales[octave])  # int width, int height)
-                if self.profile:self.events.append(evt)
+                if self.profile:self.events.append(("local_maxmin %s %s" % (octave, scale), evt))
 #                self.debug_holes("After local_maxmin %s %s" % (octave, scale))
                 procsize = calc_size((self.kpsize,), wgsize)
     #           Refine keypoints
@@ -422,7 +458,7 @@ class SiftPlan(object):
                                               numpy.float32(par.PeakThresh),  # float peak_thresh,
                                               numpy.float32(par.InitSigma),  # float InitSigma,
                                               *self.scales[octave])  # int width, int height)
-                if self.profile:self.events.append(evt)
+                if self.profile:self.events.append(("interp_keypoint %s %s" % (octave, scale), evt))
 #                self.debug_holes("After interp_keypoint %s %s" % (octave, scale))
                 newcnt = self.compact(last_start)
 #                self.debug_holes("After compact %s %s" % (octave, scale))
@@ -435,22 +471,24 @@ class SiftPlan(object):
                                    grad.data,  # __global float *grad,
                                    ori.data,  # __global float *ori,
                                    *self.scales[octave])  # int width,int height
-                if self.profile:self.events.append(evt)
+                if self.profile:self.events.append(("compute_gradient_orientation %s %s" % (octave, scale), evt))
 
     #           Orientation assignement: 1D kernel, rather heavy kernel
-                procsize = calc_size((int(newcnt),), wgsize)
-                evt = self.programs["image"].orientation_assignment(self.queue, procsize, wgsize,
-                                      self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
-                                      grad.data,  # __global float* grad,
-                                      ori.data,  # __global float* ori,
-                                      self.buffers["cnt"].data,  # __global int* counter,
-                                      octsize,  # int octsize,
-                                      numpy.float32(par.OriSigma),  # float OriSigma, //WARNING: (1.5), it is not "InitSigma (=1.6)"
-                                      kpsize32,  # int max of nb_keypoints,
-                                      numpy.int32(last_start),  # int keypoints_start,
-                                      newcnt,  # int keypoints_end,
-                                      *self.scales[octave])  # int grad_width, int grad_height)
-                if self.profile:self.events.append(evt)
+                if newcnt:  # launch kernel only if needed
+                    procsize = calc_size((int(newcnt),), wgsize)
+                    print procsize, wgsize
+                    evt = self.programs["image"].orientation_assignment(self.queue, procsize, wgsize,
+                                          self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
+                                          grad.data,  # __global float* grad,
+                                          ori.data,  # __global float* ori,
+                                          self.buffers["cnt"].data,  # __global int* counter,
+                                          octsize,  # int octsize,
+                                          numpy.float32(par.OriSigma),  # float OriSigma, //WARNING: (1.5), it is not "InitSigma (=1.6)"
+                                          kpsize32,  # int max of nb_keypoints,
+                                          numpy.int32(last_start),  # int keypoints_start,
+                                          newcnt,  # int keypoints_end,
+                                          *self.scales[octave])  # int grad_width, int grad_height)
+                    if self.profile:self.events.append(("orientation_assignment %s %s" % (octave, scale), evt))
 #                self.debug_holes("After orientation %s %s" % (octave, scale))
                 last_start = self.buffers["cnt"].get()[0]
         return self.buffers["Kp_1"].get()[:last_start]
@@ -458,7 +496,7 @@ class SiftPlan(object):
     def compact(self, start=numpy.int32(0)):
         """
         Compact the vector of keypoints starting from start
-        
+
         @param start: start compacting at this adress. Before just copy
         @type start: numpy.int32
         """
@@ -477,11 +515,9 @@ class SiftPlan(object):
                         self.buffers["cnt"].data,  # __global int* counter,
                         start,  # int start,
                         kp_counter)  # int nbkeypoints
-        if self.profile:self.events.append(evt)
+        if self.profile:self.events.append(("compact",evt))
         newcnt = self.buffers["cnt"].get()[0]
         print("After compaction, %i (-%i)" % (newcnt, kp_counter - newcnt))
-        if self.profile:
-            logger.info("Compaction kernel with %s / %s took: %.3f ms" % (procsize, wgsize, 1e6 * (evt.profile.end - evt.profile.start)))
         # swap keypoints:
         self.buffers["Kp_1"], self.buffers["Kp_2"] = self.buffers["Kp_2"], self.buffers["Kp_1"]
         self.buffers["Kp_2"].fill(-1, self.queue)
@@ -496,13 +532,22 @@ class SiftPlan(object):
     def count_kp(self, output):
         kpt = 0
         for octave, data in enumerate(output):
-            if output.shape[0]>0:
+            if output.shape[0] > 0:
                 sum = (data[:, 1] != -1.0).sum()
                 kpt += sum
                 print("octave %i kp count %i/%i size %s ratio:%s" % (octave, sum, self.kpsize, self.scales[octave], 1000.0 * sum / self.scales[octave][1] / self.scales[octave][0]))
         print("Found total %i guess %s pixels per keypoint" % (kpt, self.shape[0] * self.shape[1] / kpt))
     def debug_holes(self, label=""):
         print("%s %s" % (label, numpy.where(self.buffers["Kp_1"].get()[:, 1] == -1)[0]))
+    def log_profile(self):
+        t=0
+        if self.profile:
+            for e in self.events:
+                if "__len__" in dir(e) and len(e)>=2:
+                    et = 1e-6 * (e[1].profile.end - e[1].profile.start)
+                    print("%50s:\t%.3fms" % (e[0], et))
+                    t+=et
+        print("Total execution time %.3fms"%t)
 if __name__ == "__main__":
     # Prepare debugging
     import scipy.misc

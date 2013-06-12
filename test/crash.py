@@ -9,6 +9,7 @@ import pylab
 lena = scipy.misc.lena()
 s = sift.SiftPlan(template=lena, profile=True, devicetype="GPU", max_workgroup_size=8)
 kp = s.keypoints(lena)
+s.log_profile()
 fig = pylab.figure()
 sp1 = fig.add_subplot(1, 2, 1)
 im = sp1.imshow(lena, cmap="gray")
