@@ -487,9 +487,9 @@ __kernel void orientation_assignment(
 			angle = 2.0f * M_PI_F * (argmax + 0.5f + interp) / 36 - M_PI_F;
 
 
-			k.s0 = k.s2; //c
-			k.s1 = k.s1; //r
-			k.s2 = k.s3; //sigma
+			k.s0 = k.s2*octsize; //c
+			k.s1 = k.s1*octsize; //r
+			k.s2 = k.s3*octsize; //sigma
 			k.s3 = angle;		   //angle
 
 			keypoints[gid0] = k;
