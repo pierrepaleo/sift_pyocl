@@ -5,6 +5,10 @@ def normalize_image(img):
     mini = numpy.float32(img.min())
     return numpy.ascontiguousarray(numpy.float32(255) * (img - mini) / (maxi - mini), dtype=numpy.float32)
 
+def shrink(img, xs, ys):
+    return img[0::ys, 0::xs]
+
+
 
 def my_gradient(mat):
     """

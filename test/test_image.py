@@ -132,8 +132,8 @@ class test_image(unittest.TestCase):
         tests the local maximum/minimum detection kernel
         """
         #local_maxmin_setup :
-        border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, nb_keypoints, width, height, DOGS, g = local_maxmin_setup()
-        self.s = numpy.int32(2) #1, 2, 3 ... not 4 nor 0.
+        border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, s, nb_keypoints, width, height, DOGS, g = local_maxmin_setup()
+        self.s = numpy.int32(s) #1, 2, 3 ... not 4 nor 0.
         self.gpu_dogs = pyopencl.array.to_device(queue, DOGS)
         self.output = pyopencl.array.empty(queue, (nb_keypoints,4), dtype=numpy.float32, order="C")
         self.output.fill(-1.0,queue) #memset for invalid keypoints
@@ -228,9 +228,9 @@ class test_image(unittest.TestCase):
 
         
         if (PRINT_KEYPOINTS):
-            print("Keypoints before interpolation: %s" %(actual_nb_keypoints))
+            print("[s=%s]Keypoints before interpolation: %s" %(s,actual_nb_keypoints))
             #print keypoints_prev[0:10,:]
-            print("Keypoints after interpolation : %s" %(res2.shape[0]))
+            print("[s=%s]Keypoints after interpolation : %s" %(s,res2.shape[0]))
             print res[0:actual_nb_keypoints]#[0:10,:]
             #print("Ref:")
             #print ref[0:32,:]
@@ -285,7 +285,7 @@ class test_image(unittest.TestCase):
         #print keypoints_before_orientation[0:33]
         if (PRINT_KEYPOINTS):
             print("Keypoints after orientation assignment :")
-            print res[0:10]
+            print res[0:actual_nb_keypoints]#[0:10]
             #print " "
             #print ref[0:7]
         
@@ -312,8 +312,8 @@ def test_suite_image():
     testSuite = unittest.TestSuite()
     #testSuite.addTest(test_image("test_gradient"))
     #testSuite.addTest(test_image("test_local_maxmin"))
-    testSuite.addTest(test_image("test_interpolation"))
-    #testSuite.addTest(test_image("test_orientation"))
+    #testSuite.addTest(test_image("test_interpolation"))
+    testSuite.addTest(test_image("test_orientation"))
     return testSuite
 
 if __name__ == '__main__':
