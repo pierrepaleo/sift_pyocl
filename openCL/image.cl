@@ -544,10 +544,10 @@ TODO:
 
 */
 __kernel void descriptor(
-	__global keypoint* key,
+	__global keypoint* keypoints,
 	__global unsigned char *descriptors,
-	__global grad, 
-	__global orim,
+	__global float* grad, 
+	__global float* orim,
 	int actual_nb_keypoints,
 	int grad_width,
 	int grad_height)
@@ -593,9 +593,9 @@ __kernel void descriptor(
 					 weight on index[1] (e.g., when rpos is 0 and 4 is 3. */
 					 
 
-					/* Test whether this sample falls within boundary of index patch. */
+					/* Test whether this sample falls within boundary of index patch. */ //FIXME: cast to int for comparison
 					if (rx > -1.0f && rx < 4.0f && cx > -1.0f && cx < 4.0f
-						 && r >= 0  && r < grad_height && c >= 0 && c < grad_width) {
+						 && (irow +i) >= 0  && (irow +i) < grad_height && (icol+j) >= 0 && (icol+j) < grad_width) {
 	//AddSample(...irow + i, icol + j,...);
 	//AddSample(...float r, float c,...)		
 
@@ -604,7 +604,7 @@ __kernel void descriptor(
 						float mag = grad[(int)(icol+j) + (int)(irow+i)*grad_width] * exp(- ((rx - 1.5f) * (rx - 1.5f) + (cx - 1.5f) * (cx - 1.5f)) / (8.0f));
 
 						/* Subtract keypoint orientation to give ori relative to keypoint. */
-						float ori = orim((int)(icol+j),(int)(irow+i)) -  k.s3;
+						float ori = orim[(int)(icol+j)+(int)(irow+i)*grad_width] -  k.s3;
 
 						/* Put orientation in range [0, 2*PI]. */
 						while (ori > 2.0f*M_PI_F) ori -= 2.0f*M_PI_F;
@@ -614,7 +614,7 @@ __kernel void descriptor(
 	  					 this image sample.  The location of the sample in the index is (rx,cx). */
 						int	orr, rindex, cindex, oindex;
 						float	rweight, cweight;
-						float  *ivec;
+						int cur_ivec;
 
 						float oval = 8 * ori / (2.0f*M_PI_F);
 
@@ -640,12 +640,12 @@ __kernel void descriptor(
 										if (cindex >=0 && cindex < 4) {
 											cweight = rweight * ((c == 0) ? 1.0f - cfrac : cfrac);
 											//ivec = index[rindex][cindex]; //then ivec[oindex] = ...
-											cur_ivec = rindex*4 + cindex
+											cur_ivec = rindex*4 + cindex;
 											for (orr = 0; orr < 2; orr++) {
 												oindex = oi + orr;
 												if (oindex >= 8)  /* Orientation wraps around at PI. */
 													oindex = 0;
-												index[cur_ivec*8+oindex] += cweight * ((orr == 0) ? 1.0f - ofrac : ofrac);
+												descriptors[cur_ivec*8+oindex] += cweight * ((orr == 0) ? 1.0f - ofrac : ofrac);
 											}
 										} //end "valid cindex"
 									}
@@ -658,12 +658,12 @@ __kernel void descriptor(
 
 
 			/* Unwrap the 3D index values into 1D vec. */
-			int v = 0;
+		/*	int v = 0;
 			for (int i = 0; i < 4; i++)
 				for (int j = 0; j < 4; j++)
 					for (int k = 0; k < 8; k++)
 						key.vec[v++] = index[i][j][k];
-						
+			*/			
 		} //end "valid keypoint"
 	} //end "in the keypoints"
 }

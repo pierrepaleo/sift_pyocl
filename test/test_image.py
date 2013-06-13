@@ -322,6 +322,8 @@ class test_image(unittest.TestCase):
         shape = calc_size((keypoints.shape[0],), wg)
         gpu_keypoints = pyopencl.array.to_device(queue,keypoints)
         #TODO: replace this by "keypoints_start", "keypoints_end"
+        print type(actual_nb_keypoints)
+        #TODO: actual_nb_keypoints seems to be a "numpy.int64", it should be "int"
         gpu_descriptors = pyopencl.array.empty(queue, (actual_nb_keypoints,128), dtype=numpy.float32, order="C")
         actual_nb_keypoints = numpy.int32(actual_nb_keypoints)
         gpu_grad = pyopencl.array.to_device(queue, grad)
@@ -334,31 +336,32 @@ class test_image(unittest.TestCase):
         t0 = time.time()
         k1 = self.program.descriptor(queue, shape, wg, 
             gpu_keypoints.data, gpu_descriptors.data, gpu_grad.data ,gpu_ori.data,
-            actual_nb_keypoints, grad_width grad_height)    	
+            actual_nb_keypoints, grad_width, grad_height)    	
         res = gpu_descriptors.get()
-        cnt = counter.get()
         t1 = time.time()
         
-        ref,updated_nb_keypoints = my_orientation(keypoints, nb_keypoints, keypoints_start, keypoints_end, grad, ori, octsize, orisigma)
+        #TODO: ref
                 
         t2 = time.time()
         
         #print keypoints_before_orientation[0:33]
-        if (PRINT_KEYPOINTS):
+       # if (PRINT_KEYPOINTS):
             #TODO
         
-        ''' TODO
-        #sort to compare added keypoints
-        d1,d2,d3,d4 = keypoints_compare(ref,res)
-        self.assert_(d1 < 1e-4, "delta_cols=%s" % (d1))
-        self.assert_(d2 < 1e-4, "delta_rows=%s" % (d2))
-        self.assert_(d3 < 1e-4, "delta_sigma=%s" % (d3))
-        self.assert_(d4 < 1e-4, "delta_angle=%s" % (d4))
-        logger.info("delta_cols=%s" % d1)
-        logger.info("delta_rows=%s" % d2)
-        logger.info("delta_sigma=%s" % d3)
-        logger.info("delta_angle=%s" % d4)
-        '''
+         
+#        TODO
+#        #sort to compare added keypoints
+#        d1,d2,d3,d4 = keypoints_compare(ref,res)
+#        self.assert_(d1 < 1e-4, "delta_cols=%s" % (d1))
+#        self.assert_(d2 < 1e-4, "delta_rows=%s" % (d2))
+#        self.assert_(d3 < 1e-4, "delta_sigma=%s" % (d3))
+#        self.assert_(d4 < 1e-4, "delta_angle=%s" % (d4))
+#        logger.info("delta_cols=%s" % d1)
+#        logger.info("delta_rows=%s" % d2)
+#        logger.info("delta_sigma=%s" % d3)
+#        logger.info("delta_angle=%s" % d4)
+        
+        
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
             logger.info("Descriptors computation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
