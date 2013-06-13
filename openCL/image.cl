@@ -217,6 +217,7 @@ __kernel void local_maxmin(
  * \brief From the (temporary) keypoints, create a vector of interpolated keypoints 
  * 			(this is the last step of keypoints refinement)
  *  	 Note that we take the value (-1,-1,-1) for invalid keypoints. This creates "holes" in the vector.
+    NOTE: the keypoints vector is not compacted yet
  * 
  * @param DOGS: Pointer to global memory with ALL the coutiguously pre-allocated Differences of Gaussians
  * @param keypoints: Pointer to global memory with current keypoints vector. It will be modified with the interpolated points
@@ -377,7 +378,6 @@ __kernel void interp_keypoint(
  * 			-At this stage, a keypoint is: (peak,r,c,sigma)
  			 After this function, it will be (c,r,sigma,angle)
  			-The workgroup size have to be "small" in order to achieve "hist[36]"
- 			-At this stage, the keypoints are not "compacted" yet ; there are still (-1,-1,-1,-1)
  *
  * @param keypoints: Pointer to global memory with current keypoints vector. It will be modified with the interpolated points
  * @param grad: Pointer to global memory with gradient norm previously calculated
@@ -527,12 +527,146 @@ __kernel void orientation_assignment(
 
 
 
+/*
+   
+
+WARNING: scale, row and col must not have been multiplied by octsize/octscale here !
+
+par.MagFactor = 3 //"1.5 sigma"
+OriSize  = 8 //number of bins in the local histogram
+4  = 4 //square root of the number of subregions
+par.IndexSigma  = 1.0
+
+TODO:
+-(c,r,sigma) are not (?) multiplied by octsize yet. It can be done in this kernel.
+-memory optimization
+-replace "1/M_PI_F" by "M_1_PI_F" ?
+
+*/
+__kernel void descriptor(
+	__global keypoint* key,
+	__global unsigned char *descriptors,
+	__global grad, 
+	__global orim,
+	int actual_nb_keypoints,
+	int grad_width,
+	int grad_height)
+{
 
 
+	int gid0 = (int) get_global_id(0);
+	if (gid0 < actual_nb_keypoints) {
+	
+		keypoint k = keypoints[gid0];
+		if (k.s1 != -1.0f) {
+
+	
+		/* Add features to vec obtained from sampling the grad and ori images
+		   for a particular scale.  Location of key is (scale,row,col) with respect
+		   to images at this scale.  We examine each pixel within a circular
+		   region containing the keypoint, and distribute the gradient for that
+		   pixel into the appropriate bins of the index array.
+		*/
+
+			float rpos, cpos, rx, cx;
+
+			int	irow = (int) (k.s1 + 0.5f), icol = (int) (k.s0 + 0.5f);
+			float sine = sin(k.s3), cosine = cos(k.s3);
+
+			/* The spacing of index samples in terms of pixels at this scale. */
+			float spacing = k.s2 * 3;
+
+			/* Radius of index sample region must extend to diagonal corner of
+			index patch plus half sample for interpolation. */
+			int iradius = (int) ((1.414f * spacing * (4 + 1) / 2.0f) + 0.5f);
+
+			/* Examine all points from the gradient image that could lie within the index square. */
+			for (int i = -iradius; i <= iradius; i++) {
+				for (int j = -iradius; j <= iradius; j++) {
+
+					/* Makes a rotation of -angle to achieve invariance to rotation */
+					 rx = ((cosine * i - sine * j) - (k.s1 - irow)) / spacing + 1.5f; //rpos
+					 cx = ((sine * i + cosine * j) - (k.s0 - icol)) / spacing + 1.5f; //cpos
+
+					 /* Compute location of sample in terms of real-valued index array
+					 coordinates.  Subtract 0.5 so that rx of 1.0 means to put full
+					 weight on index[1] (e.g., when rpos is 0 and 4 is 3. */
+					 
+
+					/* Test whether this sample falls within boundary of index patch. */
+					if (rx > -1.0f && rx < 4.0f && cx > -1.0f && cx < 4.0f
+						 && r >= 0  && r < grad_height && c >= 0 && c < grad_width) {
+	//AddSample(...irow + i, icol + j,...);
+	//AddSample(...float r, float c,...)		
+
+						/* Compute Gaussian weight for sample, as function of radial distance
+				 		  from center.  Sigma is relative to half-width of index. */
+						float mag = grad[(int)(icol+j) + (int)(irow+i)*grad_width] * exp(- ((rx - 1.5f) * (rx - 1.5f) + (cx - 1.5f) * (cx - 1.5f)) / (8.0f));
+
+						/* Subtract keypoint orientation to give ori relative to keypoint. */
+						float ori = orim((int)(icol+j),(int)(irow+i)) -  k.s3;
+
+						/* Put orientation in range [0, 2*PI]. */
+						while (ori > 2.0f*M_PI_F) ori -= 2.0f*M_PI_F;
+						while (ori < 0.0f) ori += 2.0f*M_PI_F;
+					
+						/* Increment the appropriate locations in the index to incorporate
+	  					 this image sample.  The location of the sample in the index is (rx,cx). */
+						int	orr, rindex, cindex, oindex;
+						float	rweight, cweight;
+						float  *ivec;
+
+						float oval = 8 * ori / (2.0f*M_PI_F);
+
+						int	ri = (int)((rx >= 0.0f) ? rx : rx - 1.0f),
+							ci = (int)((cx >= 0.0f) ? cx : cx - 1.0f), 
+							oi = (int)((oval >= 0.0f) ? oval : oval - 1.0f); 
+
+						float rfrac = rx - ri,			/* Fractional part of location. */
+							cfrac = cx - ci,
+							ofrac = oval - oi;
+						if (ri >= -1  &&  ri < 4  && oi >=  0  &&  oi <= 8  && rfrac >= 0.0f  &&  rfrac <= 1.0f) { 
+
+						/* Put appropriate fraction in each of 8 buckets around this point
+							in the (row,col,ori) dimensions.  This loop is written for
+							efficiency, as it is the inner loop of key sampling. */
+							for (int r = 0; r < 2; r++) {
+								rindex = ri + r;
+								if (rindex >=0 && rindex < 4) {
+									rweight = mag * ((r == 0) ? 1.0f - rfrac : rfrac);
+
+									for (int c = 0; c < 2; c++) {
+										cindex = ci + c;
+										if (cindex >=0 && cindex < 4) {
+											cweight = rweight * ((c == 0) ? 1.0f - cfrac : cfrac);
+											//ivec = index[rindex][cindex]; //then ivec[oindex] = ...
+											cur_ivec = rindex*4 + cindex
+											for (orr = 0; orr < 2; orr++) {
+												oindex = oi + orr;
+												if (oindex >= 8)  /* Orientation wraps around at PI. */
+													oindex = 0;
+												index[cur_ivec*8+oindex] += cweight * ((orr == 0) ? 1.0f - ofrac : ofrac);
+											}
+										} //end "valid cindex"
+									}
+								} //end "valid rindex"
+							}
+						}
+					} //end "sample in boundaries"
+				} //end "j loop"
+			} //end "i loop"
 
 
-
-
+			/* Unwrap the 3D index values into 1D vec. */
+			int v = 0;
+			for (int i = 0; i < 4; i++)
+				for (int j = 0; j < 4; j++)
+					for (int k = 0; k < 8; k++)
+						key.vec[v++] = index[i][j][k];
+						
+		} //end "valid keypoint"
+	} //end "in the keypoints"
+}
 
 
 

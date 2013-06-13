@@ -26,7 +26,7 @@ def local_maxmin_setup():
     peakthresh = numpy.float32(255.0 * 0.04 / 3.0) #SIFT uses 255.0 * 0.04 / 3.0
     EdgeThresh = numpy.float32(0.06) #SIFT
     EdgeThresh0 = numpy.float32(0.08) #SIFT
-    octsize = numpy.int32(1) #initially 1, then twiced at each new octave
+    octsize = numpy.int32(4) #initially 1, then twiced at each new octave
     scale = numpy.int32(3)
     nb_keypoints = 1000 #constant size !
         
@@ -115,8 +115,25 @@ def orientation_setup():
     
     grad, ori = my_gradient(blur) #gradient is applied on blur[s]
    # ref, actual_nb_keypoints = my_compact(ref,nb_keypoints)
-    
 
     return ref, nb_keypoints, actual_nb_keypoints, grad, ori, octsize
+    
+    
+    
+def descriptor_setup():    
+    '''
+    Provides the values required by "test_descriptor"
+    Previous step: orientation - we got a vector of keypoints with an orientation, and several additional keypoints
+    '''
+    keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octsize = orientation_setup()
+    orisigma = numpy.float32(1.5) #SIFT
+    keypoints_start = numpy.int32(0)
+    keypoints_end = numpy.int32(actual_nb_keypoints)
+    ref,updated_nb_keypoints = my_orientation(keypoints, nb_keypoints, keypoints_start, keypoints_end, grad, ori, octsize, orisigma)
+    
+    return ref, nb_keypoints, updated_nb_keypoints, grad, ori
+    
+    
+    
     
     
