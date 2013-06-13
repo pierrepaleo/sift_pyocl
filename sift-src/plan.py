@@ -46,9 +46,9 @@ import numpy
 import pyopencl, pyopencl.array
 from .param import par
 from .opencl import ocl
-from .utils import calc_size, kernel_size
+from .utils import calc_size, kernel_size, sizeof
 logger = logging.getLogger("sift.plan")
-
+import pyopencl.mem_flags as MF 
 
 class SiftPlan(object):
     """
@@ -91,7 +91,6 @@ class SiftPlan(object):
             self.PIX_PER_KP = int(PIX_PER_KP)
         self.profile = bool(profile)
         self.max_workgroup_size = max_workgroup_size
-        self.twofivefive = None
         self.events = []
         self.scales = []  # in XY order
         self.procsize = []
@@ -185,26 +184,28 @@ class SiftPlan(object):
         if self.dtype != numpy.float32:
             if self.RGB:
                 rgbshape = self.shape[0], self.shape[1], 3
-                self.buffers["raw"] = pyopencl.array.empty(self.queue, rgbshape, dtype=self.dtype, order="C")
+                self.buffers["raw"] = pyopencl.Buffer(self.ctx, MF.READ_ONLY, sizeof(rgbshape, dtype=self.dtype))
             else:
-                self.buffers["raw"] = pyopencl.array.empty(self.queue, shape, dtype=self.dtype, order="C")
-#        self.buffers["input"] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C") #no more used
-        self.buffers[ "Kp_1" ] = pyopencl.array.empty(self.queue, (self.kpsize, 4), dtype=numpy.float32, order="C")
-        self.buffers[ "Kp_2" ] = pyopencl.array.empty(self.queue, (self.kpsize, 4), dtype=numpy.float32, order="C")
-        self.buffers["cnt" ] = pyopencl.array.empty(self.queue, (1,), dtype=numpy.int32, order="C")
+                self.buffers["raw"] = pyopencl.Buffer(self.ctx, MF.READ_ONLY, sizeof(shape, dtype=self.dtype))
+        self.buffers[ "Kp_1" ] = pyopencl.Buffer(self.ctx, MF.READ_WRITE ,sizeof((self.kpsize, 4), dtype=numpy.float32))
+        self.buffers[ "Kp_2" ] = pyopencl.Buffer(self.ctx, MF.READ_WRITE ,sizeof((self.kpsize, 4), dtype=numpy.float32))
+        self.buffers["cnt" ] = pyopencl.Buffer(self.ctx, MF.READ_WRITE, sizeof(1, dtype=numpy.int32))
 
         for octave in range(self.octave_max):
-            self.buffers[(octave, "tmp") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
-            self.buffers[(octave, "ori") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
+            self.buffers[(octave, "tmp") ] = pyopencl.Buffer(self.ctx, MF.READ_WRITE, sizeof(shape, dtype=numpy.float32))
+            self.buffers[(octave, "ori") ] = pyopencl.Buffer(self.ctx, MF.READ_WRITE, sizeof(shape, dtype=numpy.float32))
             for scale in range(par.Scales + 3):
-                self.buffers[(octave, scale) ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32, order="C")
-            self.buffers[(octave, "DoGs") ] = pyopencl.array.empty(self.queue, (par.Scales + 2, shape[0], shape[1]),
-                                                                   dtype=numpy.float32, order="C")
+                self.buffers[(octave, scale) ] = pyopencl.Buffer(self.ctx, MF.READ_WRITE, sizeof(shape, dtype=numpy.float32))
+            self.buffers[(octave, "DoGs") ] = pyopencl.Buffer(self.ctx, MF.READ_WRITE , 
+                                                              sizeof((par.Scales + 2, shape[0], shape[1]), dtype=numpy.float32))
             shape = (shape[0] // 2, shape[1] // 2)
-        self.twofivefive = pyopencl.array.to_device(self.queue, numpy.array([255], dtype=numpy.float32))
+        self.buffers["min"] = pyopencl.Buffer(self.ctx, MF.READ_WRITE, sizeof(shape, dtype=numpy.float32))
+        self.buffers["max"] = pyopencl.Buffer(self.ctx, MF.READ_WRITE, sizeof(shape, dtype=numpy.float32))
+        self.buffers["255"] = pyopencl.Buffer(self.ctx, MF.COPY_HOST_PTR |MF.READ_ONLY , 
+                                              hostbuf=numpy.array([255.0],dtype=numpy.int32))
 
-        for buffer in self.buffers.values():
-            buffer.fill(0)
+#        for buffer in self.buffers.values():
+#            buffer.fill(0)
         ########################################################################
         # Allocate space for gaussian kernels
         ########################################################################
@@ -235,16 +236,21 @@ class SiftPlan(object):
         name = "gaussian_%s" % sigma
         size = kernel_size(sigma, True)
         logger.debug("Allocating %s float for blur sigma: %s" % (size, sigma))
-        gaussian_gpu = pyopencl.array.empty(self.queue, size, dtype=numpy.float32, order="C")
+        gaussian_gpu = pyopencl.Buffer(self.ctx, MF.READ_WRITE , sizeof(size, dtype=numpy.float32))
 #       Norming the gaussian takes three OCL kernel launch (gaussian, calc_sum and norm) -
         evt = self.programs["preprocess"].gaussian(self.queue, (size,), (1,),
-                                            gaussian_gpu.data,  # __global     float     *data,
+                                            gaussian_gpu,  # __global     float     *data,
                                             numpy.float32(sigma),  # const        float     sigma,
                                             numpy.int32(size))  # const        int     SIZE
         if self.profile: self.events.append(("gaussian %s" % sigma, evt))
+
+        ########################################################################
+        # TODO: replace with explicit parallel reduciton
+        ########################################################################
+
         sum_data = pyopencl.array.sum(gaussian_gpu, dtype=numpy.float32, queue=self.queue)
         evt = self.programs["preprocess"].divide_cst(self.queue, (size,), (1,),
-                                              gaussian_gpu.data,  # __global     float     *data,
+                                              gaussian_gpu,  # __global     float     *data,
                                               sum_data.data,  # const        float     sigma,
                                               numpy.int32(size))  # const        int     SIZE
         if self.profile: self.events.append(("divide_cst", evt))
@@ -343,8 +349,9 @@ class SiftPlan(object):
         max_data = pyopencl.array.max(self.buffers[(0, 0)], self.queue)
         evt = self.programs["preprocess"].normalizes(self.queue, self.procsize[0], self.wgsize[0],
                                                self.buffers[(0, 0)].data,
-                                               min_data.data, max_data.data, self.twofivefive.data, *self.scales[0])
+                                               min_data.data, max_data.data, self.buffers["255"].data, *self.scales[0])
         if self.profile:self.events.append(("normalize", evt))
+
 
         octSize = 1.0
         curSigma = 1.0 if par.DoubleImSize else 0.5
@@ -357,7 +364,7 @@ class SiftPlan(object):
 #            pyopencl.enqueue_copy(self.queue, dest=self.buffers[(0, "G_1")].data, src=self.buffers["input"].data)
 
         ########################################################################
-        # Rescale all images to populate all octaves
+        # Rescale all images to populate all octaves TODO: scale G3 -> G'0
         ########################################################################
         for octave in range(self.octave_max - 1):
              evt = self.programs["preprocess"].shrink(self.queue, self.procsize[octave + 1], self.wgsize[octave + 1],
@@ -547,7 +554,8 @@ class SiftPlan(object):
                     et = 1e-6 * (e[1].profile.end - e[1].profile.start)
                     print("%50s:\t%.3fms" % (e[0], et))
                     t+=et
-        print("Total execution time %.3fms"%t)
+        print("_"*80)
+        print("%50s:\t%.3fms" % ("Total execution time", t))
 if __name__ == "__main__":
     # Prepare debugging
     import scipy.misc
