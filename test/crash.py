@@ -7,7 +7,7 @@ import numpy
 import scipy.misc
 import pylab
 lena = scipy.misc.lena()
-s = sift.SiftPlan(template=lena, profile=True, device=(0, 1), max_workgroup_size=8)
+s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=8)
 kp = s.keypoints(lena)
 s.log_profile()
 fig = pylab.figure()
@@ -76,7 +76,7 @@ for p0 in range(kp.shape[0]):
     d = ((kpi - ref[best_id]) ** 2).sum()
     if d > 1:
         print kpi, (kpi - ref[best_id]).astype(int)
-    
+
     sp1.annotate("", xy=kpi[:2], xytext=ref[best_id][:2], color="green",
                      arrowprops=dict(facecolor='green', edgecolor='green', width=1),)
 
