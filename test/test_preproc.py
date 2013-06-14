@@ -72,6 +72,14 @@ def normalize(img, max_out=255):
 
 def shrink(img, xs, ys):
     return img[0::ys, 0::xs]
+def shrink_cython(img, xs, ys):
+    try:
+        import feature
+    except:
+        return img[0::ys, 0::xs]
+    else:
+        return feature.shrink(img, xs)
+
 
 def binning(input_img, binsize):
     """
@@ -111,6 +119,8 @@ class test_preproc(unittest.TestCase):
         self.wg = (2, 256)
         self.shape = calc_size(self.input.shape, self.wg)
         self.binning = (4, 2) # Nota if wg < ouptup size weired results are expected !
+        self.binning = (2, 2)
+        self.twofivefive = pyopencl.array.to_device(queue, numpy.array([255], numpy.float32))
 
     def tearDown(self):
         self.input = None
@@ -124,10 +134,10 @@ class test_preproc(unittest.TestCase):
         t0 = time.time()
         au8 = pyopencl.array.to_device(queue, lint)
         k1 = self.program.u8_to_float(queue, self.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
-        min_data = pyopencl.array.min(self.gpudata, queue).get()
-        max_data = pyopencl.array.max(self.gpudata, queue).get()
-        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255), self.IMAGE_W, self.IMAGE_H)
-#        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, min_data, max_data, numpy.float32(255))
+        min_data = pyopencl.array.min(self.gpudata, queue)
+        max_data = pyopencl.array.max(self.gpudata, queue)
+        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, min_data.data, max_data.data, self.twofivefive.data, self.IMAGE_W, self.IMAGE_H)
+#        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, min_data, max_data, self.twofivefive.data)
         res = self.gpudata.get()
         t1 = time.time()
         ref = normalize(lint)
@@ -147,9 +157,9 @@ class test_preproc(unittest.TestCase):
         t0 = time.time()
         au8 = pyopencl.array.to_device(queue, lint)
         k1 = self.program.u16_to_float(queue, self.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
-        min_data = pyopencl.array.min(self.gpudata, queue).get()
-        max_data = pyopencl.array.max(self.gpudata, queue).get()
-        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255), self.IMAGE_W, self.IMAGE_H)
+        min_data = pyopencl.array.min(self.gpudata, queue)
+        max_data = pyopencl.array.max(self.gpudata, queue)
+        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, min_data.data, max_data.data, self.twofivefive.data, self.IMAGE_W, self.IMAGE_H)
         k2.wait()
         res = self.gpudata.get()
         t1 = time.time()
@@ -170,9 +180,9 @@ class test_preproc(unittest.TestCase):
         t0 = time.time()
         au8 = pyopencl.array.to_device(queue, lint)
         k1 = self.program.s32_to_float(queue, self.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
-        min_data = pyopencl.array.min(self.gpudata, queue).get()
-        max_data = pyopencl.array.max(self.gpudata, queue).get()
-        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255), self.IMAGE_W, self.IMAGE_H)
+        min_data = pyopencl.array.min(self.gpudata, queue)
+        max_data = pyopencl.array.max(self.gpudata, queue)
+        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, min_data.data, max_data.data, self.twofivefive.data, self.IMAGE_W, self.IMAGE_H)
         res = self.gpudata.get()
         t1 = time.time()
         ref = normalize(lint)
@@ -192,9 +202,9 @@ class test_preproc(unittest.TestCase):
         t0 = time.time()
         au8 = pyopencl.array.to_device(queue, lint)
         k1 = self.program.s64_to_float(queue, self.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
-        min_data = pyopencl.array.min(self.gpudata, queue).get()
-        max_data = pyopencl.array.max(self.gpudata, queue).get()
-        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, numpy.float32(min_data), numpy.float32(max_data), numpy.float32(255), self.IMAGE_W, self.IMAGE_H)
+        min_data = pyopencl.array.min(self.gpudata, queue)
+        max_data = pyopencl.array.max(self.gpudata, queue)
+        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, min_data.data, max_data.data, self.twofivefive.data, self.IMAGE_W, self.IMAGE_H)
         res = self.gpudata.get()
         t1 = time.time()
         ref = normalize(lint)
@@ -219,7 +229,7 @@ class test_preproc(unittest.TestCase):
                                  numpy.int32(self.binning[1]), numpy.int32(self.binning[0]), numpy.int32(out_shape[1]), numpy.int32(out_shape[0]))
         res = out_gpu.get()
         t1 = time.time()
-        ref = shrink(lint, xs=self.binning[1], ys=self.binning[0])
+        ref = shrink_cython(lint, xs=self.binning[1], ys=self.binning[0])
         t2 = time.time()
         delta = abs(ref - res).max()
         if PROFILE:
