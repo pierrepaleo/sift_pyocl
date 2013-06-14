@@ -582,8 +582,9 @@ __kernel void descriptor(
 			int iradius = (int) ((1.414f * spacing * (4 + 1) / 2.0f) + 0.5f);
 
 			/* Examine all points from the gradient image that could lie within the index square. */
-			for (int i = -iradius; i <= iradius; i++) {
-				for (int j = -iradius; j <= iradius; j++) {
+			int i,j;
+			for (i = -iradius; i <= iradius; i++) {
+				for (j = -iradius; j <= iradius; j++) {
 
 					/* Makes a rotation of -angle to achieve invariance to rotation */
 					 rx = ((cosine * i - sine * j) - (k.s1 - irow)) / spacing + 1.5f; //rpos
@@ -668,8 +669,8 @@ __kernel void descriptor(
 			 In this kernel :
 			  (u. char) descriptor	--> threshold to (20% * 2) of 255, i.e v[i] >= 51*2 becomes 103
 			*/
-			for (i=0; i < 128; i++) 
-				if (descriptors[i] >= 103) descriptors[i] = (unsigned char) 103;
+			//for (i=0; i < 128; i++) 
+			//	if (descriptors[i] >= 103) descriptors[i] = (unsigned char) 103;
 			
 			
 		} //end "valid keypoint"

@@ -294,66 +294,66 @@ def my_descriptor(keypoints, grad, orim, keypoints_start, keypoints_end):
     '''
     #a descriptor is a 128-vector (4,4,8) ; we need keypoints_end-keypoints_start+1  descriptors
     descriptors = numpy.zeros((keypoints_end-keypoints_start+1,4,4,8),dtype=numpy.float32)
-    for index,k in enumerate(keypoints[keypoints_start:keypoints:end]):
-    if (k[1] != -1.0):
-        irow, icol = int(k[1] + 0.5), int(k[0] + 0.5)
-        sine, cosine = sin(k[3]), cos(k[3])
-        spacing = k[2] * 3
-        iradius = int((1.414 * spacing * (5) / 2.0) + 0.5)
-        for i in range(-iradius,iradius+1):
-            for j in range(-iradius,iradius+1):
-                (rx, cx) = (numpy.dot(numpy.array([[cosine,-sine],[sine,cosine]]),numpy.array([i,j]))
-                            -numpy.array([k[1]-irow,k[0]-icol]))/spacing + 1.5
-                    
-                if (rx > -1.0 and rx < 4.0 and cx > -1.0 and cx < 4.0
-                     and (irow +i) >= 0  and (irow +i) < grad.shape[0] and (icol+j) >= 0 && (icol+j) < grad.shape[1]):
+    for index,k in enumerate(keypoints[keypoints_start:keypoints_end]):
+        if (k[1] != -1.0):
+            irow, icol = int(k[1] + 0.5), int(k[0] + 0.5)
+            sine, cosine = numpy.sin(k[3]), numpy.cos(k[3])
+            spacing = k[2] * 3
+            iradius = int((1.414 * spacing * (5) / 2.0) + 0.5)
+            for i in range(-iradius,iradius+1):
+                for j in range(-iradius,iradius+1):
+                    (rx, cx) = (numpy.dot(numpy.array([[cosine,-sine],[sine,cosine]]),numpy.array([i,j]))
+                                -numpy.array([k[1]-irow,k[0]-icol]))/spacing + 1.5
+                        
+                    if (rx > -1.0 and rx < 4.0 and cx > -1.0 and cx < 4.0
+                         and (irow +i) >= 0  and (irow +i) < grad.shape[0] and (icol+j) >= 0 and (icol+j) < grad.shape[1]):
 
-                    mag = grad[int(irow+i),int(icol+j)] * numpy.exp(- ((rx - 1.5)**2 + (cx - 1.5)**2) / 8.0)
-                    ori = orim[int(irow+i),int(icol+j)] -  k[3]
+                        mag = grad[int(irow+i),int(icol+j)] * numpy.exp(- ((rx - 1.5)**2 + (cx - 1.5)**2) / 8.0)
+                        ori = orim[int(irow+i),int(icol+j)] -  k[3]
 
-                    while (ori > 2.0*numpy.pi) ori -= 2.0*numpy.pi
-                    while (ori < 0.0) ori += 2.0*numpy.pi
-                
-                    oval = 8 * ori / (2.0*numpy.pi)
+                        while (ori > 2.0*numpy.pi): ori -= 2.0*numpy.pi
+                        while (ori < 0.0): ori += 2.0*numpy.pi
                     
-                    ri = int(rx if (rx >= 0.0) else rx-1.0)
-                    ci = int(cx if (cx >= 0.0) else cx -1.0)
-                    oi = int(oval if (oval >= 0.0) else oval - 1.0)
-                    rfrac, cfrac, ofrac = rx - ri,  cx - ci, oval - oi            
-                    
-                    if (ri >= -1  and  ri < 4  and oi >=  0  and  oi <= 8  and rfrac >= 0.0f and rfrac <= 1.0f):
-                        for r in range(0,2):
-                            rindex = ri + r
-                            if (rindex >=0 and rindex < 4):
-                                rweight = mag * (1.0 -rfrac if (r == 0) else rfrac)
-                                for c in range(0,2):
-                                    cindex = ci + c
-                                    if (cindex >=0 and cindex < 4):
-                                        cweight = rweight * (1.0 - cfrac if (c == 0) else cfrac)
-                                        for orr in range(0,2):
-                                            oindex = oi + orr
-                                            if (oindex >= 8): oindex = 0
-                                            descriptors[rindex][cindex][oindex] += 
-                                                cweight * (1.0 - ofrac if (orr == 0) else ofrac)
-                                    # end "valid cindex"
-                            # end "valid rindex"
-                # end "sample in boundaries"
-            # end "j loop"
-        # end "i loop"
-        #unwrap and normalize the 128-vector
-        descriptors = normalize(descriptors.reshape(keypoints_end-keypoints_start+1,128))
-        #threshold to 0.2 like in sift.cpp
-        
-        idx = descriptors > 0.2
-        descriptors[idx] = 0.2
-        #if values were actually threshold, we have to normalize again
-        if (idx.shape[0] != 0): descriptors = normalize[descriptors]
-        
-        #cast to "unsigned char"
-        descriptors = 512*descriptors
-        #for i in range(0,128): descriptors[i] = min(255,descriptors[i])
-        
-        return descriptors
+                        oval = 8 * ori / (2.0*numpy.pi)
+                        
+                        ri = int(rx if (rx >= 0.0) else rx-1.0)
+                        ci = int(cx if (cx >= 0.0) else cx -1.0)
+                        oi = int(oval if (oval >= 0.0) else oval - 1.0)
+                        rfrac, cfrac, ofrac = rx - ri,  cx - ci, oval - oi            
+                        
+                        if (ri >= -1  and  ri < 4  and oi >=  0  and  oi <= 8  and rfrac >= 0.0 and rfrac <= 1.0):
+                            for r in range(0,2):
+                                rindex = ri + r
+                                if (rindex >=0 and rindex < 4):
+                                    rweight = mag * (1.0 -rfrac if (r == 0) else rfrac)
+                                    for c in range(0,2):
+                                        cindex = ci + c
+                                        if (cindex >=0 and cindex < 4):
+                                            cweight = rweight * (1.0 - cfrac if (c == 0) else cfrac)
+                                            for orr in range(0,2):
+                                                oindex = oi + orr
+                                                if (oindex >= 8): oindex = 0
+                                                descriptors[index][rindex][cindex][oindex] += cweight * (1.0 - ofrac if (orr == 0) else ofrac)
+                                        # end "valid cindex"
+                                # end "valid rindex"
+                    # end "sample in boundaries"
+                # end "j loop"
+            # end "i loop"
+            
+            #unwrap and normalize the 128-vector
+            descriptors = normalize(descriptors.reshape(keypoints_end-keypoints_start+1,128))
+            
+            #threshold to 0.2 like in sift.cpp
+            idx = descriptors > 0.2
+            descriptors[idx] = 0.2
+            #if values were actually threshold, we have to normalize again
+            if (idx.shape[0] != 0): descriptors = normalize(descriptors)
+            
+            #cast to "unsigned char"
+            descriptors = numpy.int32(512*descriptors)
+            #for i in range(0,128): descriptors[i] = min(255,descriptors[i])
+            
+            return descriptors
 
     # end "valid keypoint"
 

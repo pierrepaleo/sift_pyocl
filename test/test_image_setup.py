@@ -27,7 +27,7 @@ def local_maxmin_setup():
     EdgeThresh = numpy.float32(0.06) #SIFT
     EdgeThresh0 = numpy.float32(0.08) #SIFT
     octsize = numpy.int32(4) #initially 1, then twiced at each new octave
-    scale = numpy.int32(3)
+    scale = numpy.int32(1)
     nb_keypoints = 1000 #constant size !
         
     l2 = scipy.misc.lena().astype(numpy.float32)#[100:250,100:250] #use a part of the image to fasten tests
@@ -128,7 +128,7 @@ def descriptor_setup():
     keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octsize = orientation_setup()
     orisigma = numpy.float32(1.5) #SIFT
     keypoints_start = numpy.int32(0)
-    keypoints_end = numpy.int32(actual_nb_keypoints)
+    keypoints_end = actual_nb_keypoints #numpy.int32(actual_nb_keypoints)
     ref,updated_nb_keypoints = my_orientation(keypoints, nb_keypoints, keypoints_start, keypoints_end, grad, ori, octsize, orisigma)
     
     return ref, nb_keypoints, updated_nb_keypoints, grad, ori

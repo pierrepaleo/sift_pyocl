@@ -322,9 +322,7 @@ class test_image(unittest.TestCase):
         shape = calc_size((keypoints.shape[0],), wg)
         gpu_keypoints = pyopencl.array.to_device(queue,keypoints)
         #TODO: replace this by "keypoints_start", "keypoints_end"
-        print type(actual_nb_keypoints)
-        #TODO: actual_nb_keypoints seems to be a "numpy.int64", it should be "int"
-        gpu_descriptors = pyopencl.array.empty(queue, (actual_nb_keypoints,128), dtype=numpy.float32, order="C")
+        gpu_descriptors = pyopencl.array.empty(queue, (actual_nb_keypoints,128), dtype=numpy.uint8, order="C")
         actual_nb_keypoints = numpy.int32(actual_nb_keypoints)
         gpu_grad = pyopencl.array.to_device(queue, grad)
         gpu_ori = pyopencl.array.to_device(queue, ori)
@@ -340,7 +338,10 @@ class test_image(unittest.TestCase):
         res = gpu_descriptors.get()
         t1 = time.time()
         
-        #TODO: ref
+        ref = my_descriptor(keypoints, grad, ori, 0, actual_nb_keypoints)
+        
+        print res[0]
+        print ref[0]
                 
         t2 = time.time()
         
