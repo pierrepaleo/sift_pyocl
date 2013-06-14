@@ -1,7 +1,9 @@
 import sys, os
 from math import sin, cos
-sys.path.insert(0, os.path.abspath("build/lib.linux-x86_64-2.6"))
-sys.path.insert(0, os.path.abspath("build/lib.linux-x86_64-2.7"))
+here = os.path.dirname(os.path.abspath(__file__))
+there = os.path.join(here,"..","build")
+lib = [os.path.abspath(os.path.join(there,i)) for i in os.listdir(there) if "lib" in i][0]
+sys.path.insert(0, lib)
 import sift
 import numpy
 import scipy.misc
