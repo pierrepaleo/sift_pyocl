@@ -539,6 +539,7 @@ par.IndexSigma  = 1.0
 
 TODO:
 -(c,r,sigma) are not (?) multiplied by octsize yet. It can be done in this kernel.
+-Check if the "normalization" (at the end of the kernel) is suitable 
 -memory optimization
 -replace "1/M_PI_F" by "M_1_PI_F" ?
 
@@ -568,7 +569,7 @@ __kernel void descriptor(
 		   pixel into the appropriate bins of the index array.
 		*/
 
-			float rpos, cpos, rx, cx;
+			float rx, cx;
 
 			int	irow = (int) (k.s1 + 0.5f), icol = (int) (k.s0 + 0.5f);
 			float sine = sin(k.s3), cosine = cos(k.s3);
@@ -645,7 +646,9 @@ __kernel void descriptor(
 												oindex = oi + orr;
 												if (oindex >= 8)  /* Orientation wraps around at PI. */
 													oindex = 0;
-												descriptors[cur_ivec*8+oindex] += cweight * ((orr == 0) ? 1.0f - ofrac : ofrac);
+												//the cast to (unsigned char) is done here, we do not have the choice unless creating a temporary 128-float vector, which would be dramatic for memory
+												descriptors[cur_ivec*8+oindex] +=
+												 (unsigned char) (cweight * ((orr == 0) ? 1.0f - ofrac : ofrac));
 											}
 										} //end "valid cindex"
 									}
@@ -655,15 +658,20 @@ __kernel void descriptor(
 					} //end "sample in boundaries"
 				} //end "j loop"
 			} //end "i loop"
-
-
-			/* Unwrap the 3D index values into 1D vec. */
-		/*	int v = 0;
-			for (int i = 0; i < 4; i++)
-				for (int j = 0; j < 4; j++)
-					for (int k = 0; k < 8; k++)
-						key.vec[v++] = index[i][j][k];
-			*/			
+			
+			
+			/* 
+			 In sift.cpp :
+			  (float) descriptor	--> normalization (v = v/norm(v))
+			  						--> threshold to 0.2, i.e v[i] >= 0.2 becomes 0.2
+									--> cast to (unsigned char) : v[i] = MIN(255,512*v[i])  
+			 In this kernel :
+			  (u. char) descriptor	--> threshold to (20% * 2) of 255, i.e v[i] >= 51*2 becomes 103
+			*/
+			for (i=0; i < 128; i++) 
+				if (descriptors[i] >= 103) descriptors[i] = (unsigned char) 103;
+			
+			
 		} //end "valid keypoint"
 	} //end "in the keypoints"
 }
