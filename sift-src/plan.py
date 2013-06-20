@@ -60,7 +60,7 @@ class SiftPlan(object):
     kp is a nx132 array. the second dimension is composed of x,y, scale and angle as well as 128 floats describing the keypoint
 
     """
-    kernels = ["convolution", "preprocess", "algebra", "image"]
+    kernels = ["convolution", "preprocess", "algebra", "image", "gaussian"]
     converter = {numpy.dtype(numpy.uint8):"u8_to_float",
                  numpy.dtype(numpy.uint16):"u16_to_float",
                  numpy.dtype(numpy.int32):"s32_to_float",
@@ -233,24 +233,21 @@ class SiftPlan(object):
         """
         name = "gaussian_%s" % sigma
         size = kernel_size(sigma, True)
-        logger.debug("Allocating %s float for blur sigma: %s" % (size, sigma))
-        gaussian_gpu = pyopencl.array.empty(self.queue, size, dtype=numpy.float32)
-#       Norming the gaussian takes three OCL kernel launch (gaussian, calc_sum and norm) -
-        evt = self.programs["preprocess"].gaussian(self.queue, (size,), (1,),
-                                            gaussian_gpu.data,  # __global     float     *data,
-                                            numpy.float32(sigma),  # const        float     sigma,
-                                            numpy.int32(size))  # const        int     SIZE
-        if self.profile: self.events.append(("gaussian %s" % sigma, evt))
+        wg_size = 2 ** int(math.ceil(math.log(size) / math.log(2)))
 
-        ########################################################################
-        # We use PyOpenCL parallel sum here. No benchmarking available.
-        ########################################################################
-        sum_data = pyopencl.array.sum(gaussian_gpu, dtype=numpy.float32, queue=self.queue)
-        evt = self.programs["preprocess"].divide_cst(self.queue, (size,), (1,),
-                                              gaussian_gpu.data,  # __global     float     *data,
-                                              sum_data.data,      # const        float     sigma,
-                                              numpy.int32(size))  # const        int     SIZE
-        if self.profile: self.events.append(("divide_cst", evt))
+        logger.debug("Allocating %s float for blur sigma: %s" % (size, sigma))
+        if wg_size > self.max_workgroup_size:  # compute on CPU
+            x = numpy.arange(size) - (size - 1.0) / 2.0
+            g = numpy.exp(-(x / sigma) ** 2 / 2.0).astype(numpy.float32)
+            g /= g.sum(dtype=numpy.float32)
+            gaussian_gpu = pyopencl.array.to_device(self.queue, g)
+        else:
+            gaussian_gpu = pyopencl.array.empty(self.queue, size, dtype=numpy.float32)
+            evt = self.programs["gaussian"].gaussian(self.queue, (wg_size,), (wg_size,),
+                                                gaussian_gpu.data,  # __global     float     *data,
+                                                numpy.float32(sigma),  # const        float     sigma,
+                                                numpy.int32(size))  # const        int     SIZE
+            if self.profile: self.events.append(("gaussian %s" % sigma, evt))
         self.buffers[name] = gaussian_gpu
 
 
@@ -274,7 +271,7 @@ class SiftPlan(object):
             kernel_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), kernel + ".cl")
             kernel_src = open(kernel_file).read()
             try:
-                program = pyopencl.Program(self.ctx, kernel_src).build()
+                program = pyopencl.Program(self.ctx, kernel_src).build('-D WORKGROUP=%s' % self.max_workgroup_size)
             except pyopencl.MemoryError as error:
                 raise MemoryError(error)
             self.programs[kernel] = program
