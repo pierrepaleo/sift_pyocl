@@ -268,6 +268,7 @@ setup(name='sift',
       data_files=data_files
       )
 
+print data_files
 try:
     import pyopencl
 except ImportError:

@@ -103,7 +103,7 @@ class test_convol(unittest.TestCase):
             gpu_filter = pyopencl.array.to_device(queue, gaussian)
             t0 = time.time()
             k1 = self.program.horizontal_convolution(queue, self.shape, self.wg,
-                                self.gpu_in.data, self.gpu_out.data, gpu_filter.data, self.IMAGE_W, self.IMAGE_H, numpy.int32(ksize))
+                                self.gpu_in.data, self.gpu_out.data, gpu_filter.data, numpy.int32(ksize), self.IMAGE_W, self.IMAGE_H)
             res = self.gpu_out.get()
             t1 = time.time()
             ref = scipy.ndimage.filters.convolve1d(self.input, gaussian, axis= -1, mode="reflect")
@@ -141,7 +141,7 @@ class test_convol(unittest.TestCase):
             gpu_filter = pyopencl.array.to_device(queue, gaussian)
             t0 = time.time()
             k1 = self.program.vertical_convolution(queue, self.shape, self.wg,
-                                self.gpu_in.data, self.gpu_out.data, gpu_filter.data, self.IMAGE_W, self.IMAGE_H, numpy.int32(ksize))
+                                self.gpu_in.data, self.gpu_out.data, gpu_filter.data, numpy.int32(ksize), self.IMAGE_W, self.IMAGE_H)
             res = self.gpu_out.get()
             t1 = time.time()
             ref = scipy.ndimage.filters.convolve1d(self.input, gaussian, axis=0, mode="reflect")
@@ -181,9 +181,9 @@ class test_convol(unittest.TestCase):
             gpu_filter = pyopencl.array.to_device(queue, gaussian)
             t0 = time.time()
             k1 = self.program.horizontal_convolution(queue, self.shape, self.wg,
-                                self.gpu_in.data, self.gpu_tmp.data, gpu_filter.data, self.IMAGE_W, self.IMAGE_H, numpy.int32(ksize))
+                                self.gpu_in.data, self.gpu_tmp.data, gpu_filter.data, numpy.int32(ksize), self.IMAGE_W, self.IMAGE_H)
             k2 = self.program.vertical_convolution(queue, self.shape, self.wg,
-                                self.gpu_tmp.data, self.gpu_out.data, gpu_filter.data, self.IMAGE_W, self.IMAGE_H, numpy.int32(ksize))
+                                self.gpu_tmp.data, self.gpu_out.data, gpu_filter.data, numpy.int32(ksize), self.IMAGE_W, self.IMAGE_H)
             res = self.gpu_out.get()
             k2.wait()
             t1 = time.time()

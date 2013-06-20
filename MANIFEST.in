@@ -1,0 +1,4 @@
+recursive-include openCL *.cl
+include stdeb.cfg
+include MANIFEST.in
+include README.md
