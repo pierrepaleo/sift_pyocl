@@ -44,16 +44,16 @@ import os, imp, sys, subprocess, threading
 import distutils.util
 import logging
 import urllib2
-import bz2
-import gzip
-import numpy
+# import bz2
+# import gzip
+# import numpy
 import shutil
 logger = logging.getLogger("utilstest")
 
 def copy(infile, outfile):
     "link or copy file according to the OS"
-    if "link" in dir(os):
-        os.link(infile, outfile)
+    if "symlink" in dir(os):
+        os.symlink(infile, outfile)
     else:
         shutil.copy(infile, outfile)
 
@@ -214,7 +214,7 @@ def getLogger(filename=__file__):
     """
     small helper function that initialized the logger and returns it
     """
-    dirname, basename = os.path.split(os.path.abspath(filename))
+    basename = os.path.basename(os.path.abspath(filename))
     basename = os.path.splitext(basename)[0]
     force_build = False
     level = logging.WARN
@@ -228,12 +228,12 @@ def getLogger(filename=__file__):
         elif opts in ["-f", "--force"]:
             force_build = True
 #            sys.argv.pop(sys.argv.index(opts))
-    logger = logging.getLogger(basename)
-    logger.setLevel(level)
-    logger.debug("tests loaded from file: %s" % basename)
+    mylogger = logging.getLogger(basename)
+    mylogger.setLevel(level)
+    mylogger.debug("tests loaded from file: %s" % basename)
     if force_build:
         UtilsTest.forceBuild()
-    return logger
+    return mylogger
 
 ################################################################################
 # This is very specific to PyOpenCL
