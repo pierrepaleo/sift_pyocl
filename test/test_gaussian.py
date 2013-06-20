@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-#-*- coding: utf8 -*-
+# -*- coding: utf-8 -*-
 #
 #    Project: Sift implementation in Python + OpenCL
 #             https://github.com/kif/sift_pyocl
@@ -15,7 +15,7 @@ __authors__ = ["Jérôme Kieffer"]
 __contact__ = "jerome.kieffer@esrf.eu"
 __license__ = "BSD"
 __copyright__ = "European Synchrotron Radiation Facility, Grenoble, France"
-__date__ = "2013-05-28"
+__date__ = "2013-06-20"
 __license__ = """
 Permission is hereby granted, free of charge, to any person
 obtaining a copy of this software and associated documentation
@@ -69,71 +69,75 @@ for kernel in kernels:
 
 def gaussian_cpu(sigma, size=None):
     """
-    Calculate a 1D gaussian using numpy. 
-    This is the same as scipy.signal.gaussian 
-    
+    Calculate a 1D gaussian using numpy.
+    This is the same as scipy.signal.gaussian
+
     @param sigma: width of the gaussian
-    @param size: can be calculated as 1 + 2 * 4sigma  
+    @param size: can be calculated as 1 + 2 * 4sigma
     """
+    t0 = time.time()
     if not size:
         size = int(1 + 8 * sigma)
     x = numpy.arange(size) - (size - 1.0) / 2.0
     g = numpy.exp(-(x / sigma) ** 2 / 2.0).astype(numpy.float32)
     g /= g.sum(dtype=numpy.float32)
 
+    if PROFILE:
+        logger.info("execution time: %.3fms on CPU" % (1e3 * (time.time() - t0)))
     return g
 
 def gaussian_gpu_v1(sigma, size=None):
     """
-    Calculate a 1D gaussian using pyopencl. 
-    This is the same as scipy.signal.gaussian 
-    
+    Calculate a 1D gaussian using pyopencl.
+    This is the same as scipy.signal.gaussian
+
     @param sigma: width of the gaussian
-    @param size: can be calculated as 1 + 2 * 4sigma  
+    @param size: can be calculated as 1 + 2 * 4sigma
     """
     if not size:
         size = int(1 + 8 * sigma)
     g_gpu = pyopencl.array.empty(queue, size, dtype=numpy.float32, order="C")
     t0 = time.time()
     evt1 = kernels["preprocess"].gaussian(queue, (size,), (1,),
-                                        g_gpu.data,                #__global     float     *data,
-                                        numpy.float32(sigma),      #const        float     sigma,
-                                        numpy.int32(size))         #const        int     SIZE
+                                        g_gpu.data,  # __global     float     *data,
+                                        numpy.float32(sigma),  # const        float     sigma,
+                                        numpy.int32(size))  # const        int     SIZE
     sum_data = pyopencl.array.sum(g_gpu, dtype=numpy.float32, queue=queue)
     evt2 = kernels["preprocess"].divide_cst(queue, (size,), (1,),
-                                          g_gpu.data,                #__global     float     *data,
-                                          sum_data.data,                  #const        float     sigma,
-                                          numpy.int32(size))         #const        int     SIZE
+                                          g_gpu.data,  # __global     float     *data,
+                                          sum_data.data,  # const        float     sigma,
+                                          numpy.int32(size))  # const        int     SIZE
     g = g_gpu.get()
-    logger.info("execution time: %.3fms; Kernel took %.3fms and %.3fms" % (1e3 * (time.time() - t0), 1e-6 * (evt1.profile.end - evt1.profile.start)
+    if PROFILE:
+        logger.info("execution time: %.3fms; Kernel took %.3fms and %.3fms" % (1e3 * (time.time() - t0), 1e-6 * (evt1.profile.end - evt1.profile.start)
                 , 1e-6 * (evt2.profile.end - evt2.profile.start)))
 
     return g
 
 def gaussian_gpu_v2(sigma, size=None):
     """
-    Calculate a 1D gaussian using pyopencl. 
+    Calculate a 1D gaussian using pyopencl.
     This is the same as scipy.signal.gaussian.
-    Only one kernel to   
-    
+    Only one kernel to
+
     @param sigma: width of the gaussian
-    @param size: can be calculated as 1 + 2 * 4sigma  
+    @param size: can be calculated as 1 + 2 * 4sigma
     """
     if not size:
         size = int(1 + 8 * sigma)
     g_gpu = pyopencl.array.empty(queue, size, dtype=numpy.float32, order="C")
     t0 = time.time()
     evt = kernels["gaussian"].gaussian(queue, (64,), (64,),
-                                        g_gpu.data,                #__global     float     *data,
-                                        numpy.float32(sigma),      #const        float     sigma,
-                                        numpy.int32(size))         #const        int     SIZE
+                                        g_gpu.data,  # __global     float     *data,
+                                        numpy.float32(sigma),  # const        float     sigma,
+                                        numpy.int32(size))  # const        int     SIZE
     g = g_gpu.get()
-    logger.info("execution time: %.3fms; Kernel took %.3fms" % (1e3 * (time.time() - t0), 1e-6 * (evt.profile.end - evt.profile.start)))
+    if PROFILE:
+        logger.info("execution time: %.3fms; Kernel took %.3fms" % (1e3 * (time.time() - t0), 1e-6 * (evt.profile.end - evt.profile.start)))
     return g
 
 
 def show(ref, res, delta):
-    import pylab
     pylab.ion()
     pylab.plot(ref, label="ref")
     pylab.plot(res, label="res")
