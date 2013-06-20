@@ -12,6 +12,8 @@
 #include <string.h>
 #include <math.h>
 #define MAX_KP 300 //for a given octave 
+#define DIGITS 3 //for comparison precision (10e-DIGITS)
+
 typedef struct keypoint {
 	float p;
 	float r;
@@ -25,8 +27,11 @@ example: truncate(3.141592,3) = 3.141000
 */
 
 float truncate(float a,unsigned int digits) {
-	float p = pow(10,digits);
-	return (float) ((int) (a*p))/p;
+	if (digits != 0) {
+		float p = pow(10,digits);
+		return (float) ((int) (a*p))/p;
+	}
+	else return (float) ((int) a);
 }
 
 
@@ -91,12 +96,12 @@ int main(int args, char* argv[]) {
 	int flag_ok = 0;
 
 	for (i=0; MAX_KP > i && k_opencl[i].r != -1.0; i++) {
-		r = k_opencl[i].r;
-		c = k_opencl[i].c;
-		s = k_opencl[i].s;
+		r = truncate(k_opencl[i].r,DIGITS);
+		c = truncate(k_opencl[i].c,DIGITS);
+		s = truncate(k_opencl[i].s,DIGITS);
 		flag_ok = 0;
 		for (j=0; flag_ok == 0 && MAX_KP > j && k_cpp[j].r != -1.0; j++) {
-			if (k_cpp[j].r == r && k_cpp[j].c == c && k_cpp[j].s == s) {
+			if (truncate(k_cpp[j].r,DIGITS) == r && truncate(k_cpp[j].c,DIGITS) == c && truncate(k_cpp[j].s,DIGITS) == s) {
 				flag_ok = 1;
 				kp_ok++;
 			}
