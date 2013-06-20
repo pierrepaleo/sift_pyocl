@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#define MAX_KP 300 //for a given octave
+#define MAX_KP 300 //for a given octave 
 typedef struct keypoint {
 	float p;
 	float r;
