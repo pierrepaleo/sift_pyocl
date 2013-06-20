@@ -22,6 +22,18 @@ typedef struct keypoint {
 } keypoint;
 
 /*
+  Swap two keypoints pointers
+*/
+void keypoint_swap(keypoint k1, keypoint k2) {
+	keypoint tmp_ptr = k1;
+	k1 = k2;
+	k2 = tmp_ptr; 
+}
+
+
+
+
+/*
 truncates "a" to its "digits" first digits
 example: truncate(3.141592,3) = 3.141000
 */
@@ -115,15 +127,25 @@ int main(int args, char* argv[]) {
 }
 
 
+void cut_sort(keypoint* input, unsigned int start, unsigned int end) {
+	unsigned int len = end-start+1;
+	if (len > 2) {
+		cut_sort(input, start, (end+start)/2);
+		cut_sort(input,(end+start)/2+1,end);
+	}
+	else {
+		if (len == 1) ; //return input[start];
+		else {
+			if (input[start].r > input[end].r) keypoint_swap(input[start],input[end]);
+			//else ;
+		}
+	}	
+	
+
+}
 
 
-
-
-
-
-
-
-
+//TODO: print kp_opencl, see if kp_opencl[:].r have been sorted by parts of 2
 
 
 
