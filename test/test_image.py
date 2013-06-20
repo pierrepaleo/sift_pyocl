@@ -132,8 +132,8 @@ class test_image(unittest.TestCase):
         tests the local maximum/minimum detection kernel
         """
         #local_maxmin_setup :
-        border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, nb_keypoints, width, height, DOGS, g = local_maxmin_setup()
-        self.s = numpy.int32(2) #1, 2, 3 ... not 4 nor 0.
+        border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, s, nb_keypoints, width, height, DOGS, g = local_maxmin_setup()
+        self.s = numpy.int32(s) #1, 2, 3 ... not 4 nor 0.
         self.gpu_dogs = pyopencl.array.to_device(queue, DOGS)
         self.output = pyopencl.array.empty(queue, (nb_keypoints,4), dtype=numpy.float32, order="C")
         self.output.fill(-1.0,queue) #memset for invalid keypoints
@@ -228,9 +228,9 @@ class test_image(unittest.TestCase):
 
         
         if (PRINT_KEYPOINTS):
-            print("Keypoints before interpolation: %s" %(actual_nb_keypoints))
+            print("[s=%s]Keypoints before interpolation: %s" %(s,actual_nb_keypoints))
             #print keypoints_prev[0:10,:]
-            print("Keypoints after interpolation : %s" %(res2.shape[0]))
+            print("[s=%s]Keypoints after interpolation : %s" %(s,res2.shape[0]))
             print res[0:actual_nb_keypoints]#[0:10,:]
             #print("Ref:")
             #print ref[0:32,:]
@@ -252,14 +252,14 @@ class test_image(unittest.TestCase):
         '''
         
         #orientation_setup :
-        keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octsize = orientation_setup()
-        #keypoints is a compacted vector of keypoints #not anymore !
+        keypoints, nb_keypoints, updated_nb_keypoints, grad, ori, octsize = orientation_setup()
+        #keypoints is a compacted vector of keypoints #not anymore
         keypoints_before_orientation = numpy.copy(keypoints) #important here
         wg = max(self.wg),
         shape = calc_size((keypoints.shape[0],), wg)
         #shape = calc_size(keypoints.shape, self.wg)
         gpu_keypoints = pyopencl.array.to_device(queue,keypoints)
-        actual_nb_keypoints = numpy.int32(actual_nb_keypoints)
+        actual_nb_keypoints = numpy.int32(updated_nb_keypoints)
         print("Max. number of keypoints before orientation assignment : %s" %actual_nb_keypoints)
 
         gpu_grad = pyopencl.array.to_device(queue, grad)
@@ -285,7 +285,7 @@ class test_image(unittest.TestCase):
         #print keypoints_before_orientation[0:33]
         if (PRINT_KEYPOINTS):
             print("Keypoints after orientation assignment :")
-            print res[0:10]
+            print res[0:actual_nb_keypoints]#[0:10]
             #print " "
             #print ref[0:7]
         
@@ -308,12 +308,119 @@ class test_image(unittest.TestCase):
 
 
 
+
+
+    def test_descriptor(self):
+        '''
+        #tests keypoints descriptors creation kernel
+        '''
+        
+        #descriptor_setup :
+        keypoints, nb_keypoints, actual_nb_keypoints, grad, ori = descriptor_setup()
+        #keypoints should be a ompacted vector of keypoints
+        wg = max(self.wg),
+        shape = calc_size((keypoints.shape[0],), wg)
+        gpu_keypoints = pyopencl.array.to_device(queue,keypoints)
+        #TODO: replace this by "keypoints_start", "keypoints_end"
+        gpu_descriptors = pyopencl.array.empty(queue, (actual_nb_keypoints,128), dtype=numpy.uint8, order="C")
+        actual_nb_keypoints = numpy.int32(actual_nb_keypoints)
+        gpu_grad = pyopencl.array.to_device(queue, grad)
+        gpu_ori = pyopencl.array.to_device(queue, ori)
+        grad_height, grad_width = numpy.int32(grad.shape)
+       # keypoints_start = numpy.int32(0)
+       # keypoints_end = numpy.int32(actual_nb_keypoints)
+       # counter = pyopencl.array.to_device(queue, keypoints_end) #actual_nb_keypoints)
+        
+        t0 = time.time()
+        k1 = self.program.descriptor(queue, shape, wg, 
+            gpu_keypoints.data, gpu_descriptors.data, gpu_grad.data ,gpu_ori.data,
+            actual_nb_keypoints, grad_width, grad_height)    	
+        res = gpu_descriptors.get()
+        t1 = time.time()
+        
+        #ref = my_descriptor(keypoints, grad, ori, 0, actual_nb_keypoints)
+        
+        #print res[0]
+        #print res[0:44,10:19]
+        print res[0:15,0:15]
+               
+        t2 = time.time()
+        
+        #print keypoints_before_orientation[0:33]
+        #if (PRINT_KEYPOINTS):
+        
+         
+#        TODO
+#        #sort to compare added keypoints
+#        d1,d2,d3,d4 = keypoints_compare(ref,res)
+#        self.assert_(d1 < 1e-4, "delta_cols=%s" % (d1))
+#        self.assert_(d2 < 1e-4, "delta_rows=%s" % (d2))
+#        self.assert_(d3 < 1e-4, "delta_sigma=%s" % (d3))
+#        self.assert_(d4 < 1e-4, "delta_angle=%s" % (d4))
+#        logger.info("delta_cols=%s" % d1)
+#        logger.info("delta_rows=%s" % d2)
+#        logger.info("delta_sigma=%s" % d3)
+#        logger.info("delta_angle=%s" % d4)
+        
+        
+        if PROFILE:
+            logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
+            logger.info("Descriptors computation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def test_suite_image():
     testSuite = unittest.TestSuite()
-    #testSuite.addTest(test_image("test_gradient"))
-    #testSuite.addTest(test_image("test_local_maxmin"))
+    testSuite.addTest(test_image("test_gradient"))
+    testSuite.addTest(test_image("test_local_maxmin"))
     testSuite.addTest(test_image("test_interpolation"))
-    #testSuite.addTest(test_image("test_orientation"))
+    testSuite.addTest(test_image("test_orientation"))
+    #testSuite.addTest(test_image("test_descriptor"))
     return testSuite
 
 if __name__ == '__main__':
