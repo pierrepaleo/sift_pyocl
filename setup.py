@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-#-*- coding: utf8 -*-
+#-*- coding: utf-8 -*-
 #
 #    Project: Sift implementation in Python + OpenCL
 #             https://github.com/kif/sift_pyocl
@@ -112,8 +112,20 @@ if ("sdist" in sys.argv):
 
 
 installDir = os.path.join(get_python_lib(), "sift")
+data_files = [(installDir, glob.glob("openCL/*.cl"))]
 
-data_files = [(installDir, glob.glob("*.cl"))]
+
+from distutils.command.install_data import install_data
+class smart_install_data(install_data):
+    def run(self):
+        install_cmd = self.get_finalized_command('install')
+        self.install_dir = os.path.join(getattr(install_cmd, 'install_lib'),"sift")
+        print "DATA to be installed in %s" %  self.install_dir
+        return install_data.run(self)
+
+
+data_files =  glob.glob("openCL/*.cl")
+
 
 if sys.platform == "win32":
     # This is for mingw32/gomp?
@@ -237,6 +249,7 @@ if sphinx:
                 BuildDoc.run(self)
             sys.path.pop(0)
     cmdclass['build_doc'] = build_doc
+    cmdclass['install_data'] = smart_install_data
 
 setup(name='sift',
       version=version,
