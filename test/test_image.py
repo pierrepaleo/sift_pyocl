@@ -252,14 +252,14 @@ class test_image(unittest.TestCase):
         '''
         
         #orientation_setup :
-        ref, nb_keypoints, updated_nb_keypoints, grad, ori = orientation_setup()
+        keypoints, nb_keypoints, updated_nb_keypoints, grad, ori, octsize = orientation_setup()
         #keypoints is a compacted vector of keypoints #not anymore
         keypoints_before_orientation = numpy.copy(keypoints) #important here
         wg = max(self.wg),
         shape = calc_size((keypoints.shape[0],), wg)
         #shape = calc_size(keypoints.shape, self.wg)
         gpu_keypoints = pyopencl.array.to_device(queue,keypoints)
-        actual_nb_keypoints = numpy.int32(actual_nb_keypoints)
+        actual_nb_keypoints = numpy.int32(updated_nb_keypoints)
         print("Max. number of keypoints before orientation assignment : %s" %actual_nb_keypoints)
 
         gpu_grad = pyopencl.array.to_device(queue, grad)
@@ -338,16 +338,16 @@ class test_image(unittest.TestCase):
         res = gpu_descriptors.get()
         t1 = time.time()
         
-        ref = my_descriptor(keypoints, grad, ori, 0, actual_nb_keypoints)
+        #ref = my_descriptor(keypoints, grad, ori, 0, actual_nb_keypoints)
         
-        print res[0]
-        print ref[0]
-                
+        #print res[0]
+        #print res[0:44,10:19]
+        print res[0:15,0:15]
+               
         t2 = time.time()
         
         #print keypoints_before_orientation[0:33]
-       # if (PRINT_KEYPOINTS):
-            #TODO
+        #if (PRINT_KEYPOINTS):
         
          
 #        TODO
@@ -416,11 +416,11 @@ class test_image(unittest.TestCase):
 
 def test_suite_image():
     testSuite = unittest.TestSuite()
-    #testSuite.addTest(test_image("test_gradient"))
-    #testSuite.addTest(test_image("test_local_maxmin"))
-    #testSuite.addTest(test_image("test_interpolation"))
-    #testSuite.addTest(test_image("test_orientation"))
-    testSuite.addTest(test_image("test_descriptor"))
+    testSuite.addTest(test_image("test_gradient"))
+    testSuite.addTest(test_image("test_local_maxmin"))
+    testSuite.addTest(test_image("test_interpolation"))
+    testSuite.addTest(test_image("test_orientation"))
+    #testSuite.addTest(test_image("test_descriptor"))
     return testSuite
 
 if __name__ == '__main__':

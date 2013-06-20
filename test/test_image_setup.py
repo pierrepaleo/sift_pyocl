@@ -26,7 +26,7 @@ def local_maxmin_setup():
     peakthresh = numpy.float32(255.0 * 0.04 / 3.0) #SIFT uses 255.0 * 0.04 / 3.0
     EdgeThresh = numpy.float32(0.06) #SIFT
     EdgeThresh0 = numpy.float32(0.08) #SIFT
-    octsize = numpy.int32(4) #initially 1, then twiced at each new octave
+    octsize = numpy.int32(1) #initially 1, then twiced at each new octave
     scale = numpy.int32(1)
     nb_keypoints = 1000 #constant size !
         

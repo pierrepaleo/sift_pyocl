@@ -664,14 +664,32 @@ __kernel void descriptor(
 			/* 
 			 In sift.cpp :
 			  (float) descriptor	--> normalization (v = v/norm(v))
-			  						--> threshold to 0.2, i.e v[i] >= 0.2 becomes 0.2
+			  						--> threshold to 0.2, i.e v[i] > 0.2 becomes 0.2
+			  						--> if changed, normalization again
 									--> cast to (unsigned char) : v[i] = MIN(255,512*v[i])  
 			 In this kernel :
-			  (u. char) descriptor	--> threshold to (20% * 2) of 255, i.e v[i] >= 51*2 becomes 103
+			  (u. char) descriptor	--> already "normalized" in [|0,255|]
+			  						--> threshold to 20% of 255, i.e v[i] > 51 becomes 51
+			  						--> if changed, renormalize in [|0,255|]
+			  						--> v[i] = MIN(255,2*v[i])
 			*/
-			//for (i=0; i < 128; i++) 
-			//	if (descriptors[i] >= 103) descriptors[i] = (unsigned char) 103;
+		
+		/*
+			bool changed = false;
+			for (i=0; i < 128; i++) 
+				if (descriptors[i] >= 51) {
+					descriptors[i] = (unsigned char) 51;
+					changed = true;
+				}
+			if (changed == true)
+				for (i=0; i < 128; i++) {
+					descriptors[i] = (unsigned char) (256.0f/52.0f* descriptors[i]);
+					descriptors[i] = MIN(255,2*descriptors[i]); //TODO: replace these 2 lines by one
+				}
 			
+		*/
+		
+		
 			
 		} //end "valid keypoint"
 	} //end "in the keypoints"

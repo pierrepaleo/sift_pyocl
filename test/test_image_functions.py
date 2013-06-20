@@ -336,26 +336,36 @@ def my_descriptor(keypoints, grad, orim, keypoints_start, keypoints_end):
                                                 descriptors[index][rindex][cindex][oindex] += cweight * (1.0 - ofrac if (orr == 0) else ofrac)
                                         # end "valid cindex"
                                 # end "valid rindex"
-                    # end "sample in boundaries"
+                        # end "sample in boundaries"
                 # end "j loop"
             # end "i loop"
-            
-            #unwrap and normalize the 128-vector
-            descriptors = normalize(descriptors.reshape(keypoints_end-keypoints_start+1,128))
-            
-            #threshold to 0.2 like in sift.cpp
-            idx = descriptors > 0.2
-            descriptors[idx] = 0.2
-            #if values were actually threshold, we have to normalize again
-            if (idx.shape[0] != 0): descriptors = normalize(descriptors)
-            
-            #cast to "unsigned char"
-            descriptors = numpy.int32(512*descriptors)
-            #for i in range(0,128): descriptors[i] = min(255,descriptors[i])
-            
-            return descriptors
-
-    # end "valid keypoint"
+        # end "valid keypoint"
+    #end loop in keypoints
+   
+    #unwrap and normalize the 128-vector
+    descriptors = descriptors.reshape(keypoints_end-keypoints_start+1,128)
+    for i in range(0,keypoints_end-keypoints_start): descriptors[i] = normalize(descriptors[i])
+     
+    #threshold to 0.2 like in sift.cpp
+    changed = 0
+    for i in range(0,keypoints_end-keypoints_start):
+        idx = descriptors[i] > 0.2
+        if (idx.shape[0] != 0):
+            (descriptors[i])[idx] = 0.2
+            changed = 1
+   
+    #if values were actually threshold, we have to normalize again
+    if (changed == 1):
+       for i in range(0,keypoints_end-keypoints_start):
+           descriptors[i] = normalize(descriptors[i])
+    
+    #cast to "unsigned char"
+    descriptors = 512*descriptors
+    for i in range(0,keypoints_end-keypoints_start): (descriptors[i])[255<=descriptors[i]] = 255
+    descriptors = descriptors.astype(numpy.uint8)
+    return descriptors
+    
+        
 
 
 def normalize(vec):
