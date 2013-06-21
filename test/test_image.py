@@ -99,7 +99,7 @@ class test_image(unittest.TestCase):
         self.width = numpy.int32(15)
         self.height = numpy.int32(14)
 
-        self.mat = numpy.random.rand(self.height,self.width).astype(numpy.float32)
+        self.mat = numpy.random.rand(self.height, self.width).astype(numpy.float32)
         self.gpu_mat = pyopencl.array.to_device(queue, self.mat)
         self.gpu_grad = pyopencl.array.empty(queue, self.mat.shape, dtype=numpy.float32, order="C")
         self.gpu_ori = pyopencl.array.empty(queue, self.mat.shape, dtype=numpy.float32, order="C")
@@ -110,7 +110,7 @@ class test_image(unittest.TestCase):
         res_norm = self.gpu_grad.get()
         res_ori = self.gpu_ori.get()
         t1 = time.time()
-        ref_norm,ref_ori = my_gradient(self.mat)
+        ref_norm, ref_ori = my_gradient(self.mat)
         t2 = time.time()
         delta_norm = abs(ref_norm - res_norm).max()
         delta_ori = abs(ref_ori - res_ori).max()
@@ -135,11 +135,11 @@ class test_image(unittest.TestCase):
         border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, s, nb_keypoints, width, height, DOGS, g = local_maxmin_setup()
         self.s = numpy.int32(s) #1, 2, 3 ... not 4 nor 0.
         self.gpu_dogs = pyopencl.array.to_device(queue, DOGS)
-        self.output = pyopencl.array.empty(queue, (nb_keypoints,4), dtype=numpy.float32, order="C")
-        self.output.fill(-1.0,queue) #memset for invalid keypoints
+        self.output = pyopencl.array.empty(queue, (nb_keypoints, 4), dtype=numpy.float32, order="C")
+        self.output.fill(-1.0, queue) #memset for invalid keypoints
         self.counter = pyopencl.array.zeros(queue, (1,), dtype=numpy.int32, order="C")
         nb_keypoints = numpy.int32(nb_keypoints)
-        self.shape = calc_size((DOGS.shape[1],DOGS.shape[0]*DOGS.shape[2]), self.wg) #it's a 3D vector !!
+        self.shape = calc_size((DOGS.shape[1], DOGS.shape[0] * DOGS.shape[2]), self.wg) #it's a 3D vector !!
 
         t0 = time.time()
         k1 = self.program.local_maxmin(queue, self.shape, self.wg,
@@ -153,16 +153,16 @@ class test_image(unittest.TestCase):
 
         t1 = time.time()
         ref, actual_nb_keypoints2 = my_local_maxmin(DOGS, peakthresh, border_dist, octsize,
-        	EdgeThresh0, EdgeThresh,nb_keypoints,self.s,width,height)
+        	EdgeThresh0, EdgeThresh, nb_keypoints, self.s, width, height)
         t2 = time.time()
 
         #we have to sort the arrays, for peaks orders is unknown for GPU
-        res_peaks = res[(res[:,0].argsort(axis=0)),0]
-        ref_peaks = ref[(ref[:,0].argsort(axis=0)),0]
-        res_r = res[(res[:,1].argsort(axis=0)),1]
-        ref_r = ref[(ref[:,1].argsort(axis=0)),1]
-        res_c = res[(res[:,2].argsort(axis=0)),2]
-        ref_c = ref[(ref[:,2].argsort(axis=0)),2]
+        res_peaks = res[(res[:, 0].argsort(axis=0)), 0]
+        ref_peaks = ref[(ref[:, 0].argsort(axis=0)), 0]
+        res_r = res[(res[:, 1].argsort(axis=0)), 1]
+        ref_r = ref[(ref[:, 1].argsort(axis=0)), 1]
+        res_c = res[(res[:, 2].argsort(axis=0)), 2]
+        ref_c = ref[(ref[:, 2].argsort(axis=0)), 2]
         #res_s = res[(res[:,3].argsort(axis=0)),3]
         #ref_s = ref[(ref[:,3].argsort(axis=0)),3]
         delta_peaks = abs(ref_peaks - res_peaks).max()
@@ -170,7 +170,7 @@ class test_image(unittest.TestCase):
         delta_c = abs(ref_c - res_c).max()
 
         if (PRINT_KEYPOINTS):
-            print("keypoints after 2 steps of refinement: (s= %s, octsize=%s) %s" %(self.s,octsize,self.actual_nb_keypoints))
+            print("keypoints after 2 steps of refinement: (s= %s, octsize=%s) %s" % (self.s, octsize, self.actual_nb_keypoints))
             #print("For ref: %s" %(ref_peaks[ref_peaks!=-1].shape))
             print res[0:self.actual_nb_keypoints]#[0:74]
             #print ref[0:32]
@@ -198,13 +198,13 @@ class test_image(unittest.TestCase):
         """
 
         #interpolation_setup :
-        border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, nb_keypoints, actual_nb_keypoints, width, height, DOGS, s, keypoints_prev,blur = interpolation_setup()
+        border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, nb_keypoints, actual_nb_keypoints, width, height, DOGS, s, keypoints_prev, blur = interpolation_setup()
 
         # actual_nb_keypoints is the number of keypoints returned by "local_maxmin".
         #After the interpolation, it will be reduced, but we can still use it as a boundary.
         shape = calc_size(keypoints_prev.shape, self.wg)
         gpu_dogs = pyopencl.array.to_device(queue, DOGS)
-        gpu_keypoints1 = pyopencl.array.to_device(queue,keypoints_prev)
+        gpu_keypoints1 = pyopencl.array.to_device(queue, keypoints_prev)
         #actual_nb_keypoints = numpy.int32(len((keypoints_prev[:,0])[keypoints_prev[:,1] != -1]))
         start_keypoints = numpy.int32(0)
         actual_nb_keypoints = numpy.int32(actual_nb_keypoints)
@@ -217,21 +217,21 @@ class test_image(unittest.TestCase):
 
         t1 = time.time()
         ref = numpy.copy(keypoints_prev) #important here
-        for i,k in enumerate(ref[:actual_nb_keypoints,:]):
-            ref[i]= my_interp_keypoint(DOGS, s, k[1], k[2],5,peakthresh,width,height)
+        for i, k in enumerate(ref[:nb_keypoints, :]):
+            ref[i] = my_interp_keypoint(DOGS, s, k[1], k[2], 5, peakthresh, width, height)
 
         t2 = time.time()
 
 
         #we have to compare keypoints different from (-1,-1,-1,-1)
         res2 = res[res[:, 1] != -1]
-        ref2 = ref[ref[:,1]!=-1]
+        ref2 = ref[ref[:, 1] != -1]
 
 
         if (PRINT_KEYPOINTS):
-            print("[s=%s]Keypoints before interpolation: %s" %(s,actual_nb_keypoints))
+            print("[s=%s]Keypoints before interpolation: %s" % (s, actual_nb_keypoints))
             #print keypoints_prev[0:10,:]
-            print("[s=%s]Keypoints after interpolation : %s" %(s,res2.shape[0]))
+            print("[s=%s]Keypoints after interpolation : %s" % (s, res2.shape[0]))
             print res[0:actual_nb_keypoints]#[0:10,:]
             #print("Ref:")
             #print ref[0:32,:]
@@ -259,9 +259,9 @@ class test_image(unittest.TestCase):
         wg = max(self.wg),
         shape = calc_size((keypoints.shape[0],), wg)
         #shape = calc_size(keypoints.shape, self.wg)
-        gpu_keypoints = pyopencl.array.to_device(queue,keypoints)
+        gpu_keypoints = pyopencl.array.to_device(queue, keypoints)
         actual_nb_keypoints = numpy.int32(updated_nb_keypoints)
-        print("Max. number of keypoints before orientation assignment : %s" %actual_nb_keypoints)
+        print("Max. number of keypoints before orientation assignment : %s" % actual_nb_keypoints)
 
         gpu_grad = pyopencl.array.to_device(queue, grad)
         gpu_ori = pyopencl.array.to_device(queue, ori)
@@ -279,7 +279,7 @@ class test_image(unittest.TestCase):
         cnt = counter.get()
         t1 = time.time()
 
-        ref,updated_nb_keypoints = my_orientation(keypoints, nb_keypoints, keypoints_start, keypoints_end, grad, ori, octsize, orisigma)
+        ref, updated_nb_keypoints = my_orientation(keypoints, nb_keypoints, keypoints_start, keypoints_end, grad, ori, octsize, orisigma)
 
         t2 = time.time()
 
@@ -290,10 +290,10 @@ class test_image(unittest.TestCase):
             #print " "
             #print ref[0:7]
 
-        print("Total keypoints for kernel : %s -- For Python : %s \t [octsize = %s]" %(cnt,updated_nb_keypoints,octsize))
+        print("Total keypoints for kernel : %s -- For Python : %s \t [octsize = %s]" % (cnt, updated_nb_keypoints, octsize))
 
         #sort to compare added keypoints
-        d1,d2,d3,d4 = keypoints_compare(ref,res)
+        d1, d2, d3, d4 = keypoints_compare(ref, res)
         self.assert_(d1 < 1e-4, "delta_cols=%s" % (d1))
         self.assert_(d2 < 1e-4, "delta_rows=%s" % (d2))
         self.assert_(d3 < 1e-4, "delta_sigma=%s" % (d3))
@@ -317,33 +317,38 @@ class test_image(unittest.TestCase):
         '''
 
         #descriptor_setup :
-        keypoints, nb_keypoints, actual_nb_keypoints, grad, ori = descriptor_setup()
-        #keypoints should be a ompacted vector of keypoints
+        keypoints_o, nb_keypoints, actual_nb_keypoints, grad, ori = descriptor_setup()
+        #keypoints should be a compacted vector of keypoints
+        keypoints_start, keypoints_end = 0, 80 #actual_nb_keypoints
+        #keypoints_start, keypoints_end = 20, 30
+        keypoints = keypoints_o[keypoints_start:keypoints_end]
+        print("Working on keypoints : [%s,%s]" % (keypoints_start, keypoints_end))
         wg = max(self.wg),
-        shape = calc_size((keypoints.shape[0],), wg)
-        gpu_keypoints = pyopencl.array.to_device(queue,keypoints)
-        #TODO: replace this by "keypoints_start", "keypoints_end"
-        gpu_descriptors = pyopencl.array.empty(queue, (actual_nb_keypoints,128), dtype=numpy.uint8, order="C")
-        actual_nb_keypoints = numpy.int32(actual_nb_keypoints)
+        shape = calc_size((keypoints_o.shape[0],), wg)
+        gpu_keypoints = pyopencl.array.to_device(queue, keypoints_o)
+        gpu_descriptors = pyopencl.array.empty(queue, (keypoints_end - keypoints_start + 1, 128), dtype=numpy.uint8, order="C")
         gpu_grad = pyopencl.array.to_device(queue, grad)
         gpu_ori = pyopencl.array.to_device(queue, ori)
+
+        local_size = (keypoints_end - keypoints_start + 1) * 128 * 4
+        local_mem = pyopencl.LocalMemory(local_size)
+
+        keypoints_start, keypoints_end = numpy.int32(keypoints_start), numpy.int32(keypoints_end)
         grad_height, grad_width = numpy.int32(grad.shape)
-       # keypoints_start = numpy.int32(0)
-       # keypoints_end = numpy.int32(actual_nb_keypoints)
-       # counter = pyopencl.array.to_device(queue, keypoints_end) #actual_nb_keypoints)
 
         t0 = time.time()
         k1 = self.program.descriptor(queue, shape, wg,
-            gpu_keypoints.data, gpu_descriptors.data, gpu_grad.data ,gpu_ori.data,
-            actual_nb_keypoints, grad_width, grad_height)
+            gpu_keypoints.data, gpu_descriptors.data, local_mem, gpu_grad.data, gpu_ori.data,
+            keypoints_start, keypoints_end, grad_width, grad_height)
         res = gpu_descriptors.get()
         t1 = time.time()
 
-        #ref = my_descriptor(keypoints, grad, ori, 0, actual_nb_keypoints)
+        ref = my_descriptor(keypoints_o, grad, ori, keypoints_start, keypoints_end)
 
-        #print res[0]
-        #print res[0:44,10:19]
-        print res[0:15,0:15]
+        #print res[0:30,0:15]
+        print ""
+        #print ref[0:30,0:15]
+        print res[0:keypoints_end - keypoints_start, 0:15] - ref[0:keypoints_end - keypoints_start, 0:15]
 
         t2 = time.time()
 
@@ -417,10 +422,10 @@ class test_image(unittest.TestCase):
 
 def test_suite_image():
     testSuite = unittest.TestSuite()
-    testSuite.addTest(test_image("test_gradient"))
-    testSuite.addTest(test_image("test_local_maxmin"))
+    #testSuite.addTest(test_image("test_gradient"))
+    #testSuite.addTest(test_image("test_local_maxmin"))
     testSuite.addTest(test_image("test_interpolation"))
-    testSuite.addTest(test_image("test_orientation"))
+    #testSuite.addTest(test_image("test_orientation"))
     #testSuite.addTest(test_image("test_descriptor"))
     return testSuite
 

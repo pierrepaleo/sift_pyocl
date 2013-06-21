@@ -267,24 +267,24 @@ __kernel void interp_keypoint(
 				pos = newr*width+newc;
 
 				//Fill in the values of the gradient from pixel differences
-				g0 = (DOGS[index_dog_next+pos] - DOGS[index_dog_prev+pos]) / 2.0;
-				g1 = (DOGS[index_dog+(newr+1)*width+newc] - DOGS[index_dog+(newr-1)*width+newc]) / 2.0;
-				g2 = (DOGS[index_dog+pos+1] - DOGS[index_dog+pos-1]) / 2.0;
+				g0 = (DOGS[index_dog_next+pos] - DOGS[index_dog_prev+pos]) / 2.0f;
+				g1 = (DOGS[index_dog+(newr+1)*width+newc] - DOGS[index_dog+(newr-1)*width+newc]) / 2.0f;
+				g2 = (DOGS[index_dog+pos+1] - DOGS[index_dog+pos-1]) / 2.0f;
 
 				//Fill in the values of the Hessian from pixel differences
-				H00 = DOGS[index_dog_prev+pos]   - 2.0 * DOGS[index_dog+pos] + DOGS[index_dog_next+pos];
-				H11 = DOGS[index_dog+(newr-1)*width+newc] - 2.0 * DOGS[index_dog+pos] + DOGS[index_dog+(newr+1)*width+newc];
-				H22 = DOGS[index_dog+pos-1] - 2.0 * DOGS[index_dog+pos] + DOGS[index_dog+pos+1];
-
+				H00 = DOGS[index_dog_prev+pos]   - 2.0f * DOGS[index_dog+pos] + DOGS[index_dog_next+pos];
+				H11 = DOGS[index_dog+(newr-1)*width+newc] - 2.0f * DOGS[index_dog+pos] + DOGS[index_dog+(newr+1)*width+newc];
+				H22 = DOGS[index_dog+pos-1] - 2.0f * DOGS[index_dog+pos] + DOGS[index_dog+pos+1];
+			
 				H01 = ( (DOGS[index_dog_next+(newr+1)*width+newc] - DOGS[index_dog_next+(newr-1)*width+newc])
-						- (DOGS[index_dog_prev+(newr+1)*width+newc] - DOGS[index_dog_prev+(newr-1)*width+newc])) / 4.0;
-
+						- (DOGS[index_dog_prev+(newr+1)*width+newc] - DOGS[index_dog_prev+(newr-1)*width+newc])) / 4.0f;
+						
 				H02 = ( (DOGS[index_dog_next+pos+1] - DOGS[index_dog_next+pos-1])
-						-(DOGS[index_dog_prev+pos+1] - DOGS[index_dog_prev+pos-1])) / 4.0;
-
+						-(DOGS[index_dog_prev+pos+1] - DOGS[index_dog_prev+pos-1])) / 4.0f;
+						
 				H12 = ( (DOGS[index_dog+(newr+1)*width+newc+1] - DOGS[index_dog+(newr+1)*width+newc-1])
-						- (DOGS[index_dog+(newr-1)*width+newc+1] - DOGS[index_dog+(newr-1)*width+newc-1])) / 4.0;
-
+						- (DOGS[index_dog+(newr-1)*width+newc+1] - DOGS[index_dog+(newr-1)*width+newc-1])) / 4.0f;
+									
 				H10 = H01; H20 = H02; H21 = H12;
 
 
@@ -302,6 +302,7 @@ __kernel void interp_keypoint(
 				K21 = H01*H20 - H00*H21;
 				K22 = H00*H11 - H01*H10;
 
+
 				/*
 					x = -H^(-1)*g
 				 As the Taylor Serie is calcualted around the current keypoint,
@@ -312,19 +313,19 @@ __kernel void interp_keypoint(
 				solution2 = -(g0*K20 + g1*K21 + g2*K22)/det; //"offset" in c
 
 				//interpolated DoG magnitude at this peak
-				peakval = DOGS[index_dog+pos] + 0.5 * (solution0*g0+solution1*g1+solution2*g2);
-
-
+				peakval = DOGS[index_dog+pos] + 0.5f * (solution0*g0+solution1*g1+solution2*g2);
+		
+		
 			/* Move to an adjacent (row,col) location if quadratic interpolation is larger than 0.6 units in some direction. 				The movesRemain counter allows only a fixed number of moves to prevent possibility of infinite loops.
 			*/
 
-				if (solution1 > 0.6 && newr < height - 3)
+				if (solution1 > 0.6f && newr < height - 3)
 					newr++; //if the extremum is too far (along "r" here), we get closer if we can
-				else if (solution1 < -0.6 && newr > 3)
+				else if (solution1 < -0.6f && newr > 3)
 					newr--;
-				if (solution2 > 0.6 && newc < width - 3)
+				if (solution2 > 0.6f && newc < width - 3)
 					newc++;
-				else if (solution2 < -0.6 && newc > 3)
+				else if (solution2 < -0.6f && newc > 3)
 					newc--;
 
 				/*
@@ -341,12 +342,12 @@ __kernel void interp_keypoint(
 			/* Do not create a keypoint if interpolation still remains far outside expected limits,
 				or if magnitude of peak value is below threshold (i.e., contrast is too low).
 			*/
-			keypoint ki = 0.0; //float4
-			if (fabs(solution0) < 1.5 && fabs(solution1) < 1.5 && fabs(solution2) < 1.5 && fabs(peakval) > peak_thresh) {
+			keypoint ki = 0.0f; //float4
+			if (fabs(solution0) <= 1.5f && fabs(solution1) <= 1.5f && fabs(solution2) <= 1.5f && fabs(peakval) >= peak_thresh) {
 				ki.s0 = peakval;
-				ki.s1 = k.s1 + solution1;
-				ki.s2 = k.s2 + solution2;
-				ki.s3 = InitSigma * pow(2.0, (((float) scale) + solution0) / 3.0); //3.0 is "par.Scales"
+				ki.s1 = /*k.s1*/ newr + solution1;
+				ki.s2 = /*k.s2*/ newc + solution2;
+				ki.s3 = InitSigma * pow(2.0f, (((float) scale) + solution0) / 3.0f); //3.0 is "par.Scales"
 			}
 			else { //the keypoint was not correctly interpolated : we reject it
 				ki.s0 = -1.0f; ki.s1 = -1.0f; ki.s2 = -1.0f; ki.s3 = -1.0f;
@@ -379,7 +380,7 @@ __kernel void interp_keypoint(
  			 After this function, it will be (c,r,sigma,angle)
  			-The workgroup size have to be "small" in order to achieve "hist[36]"
  *
- * @param keypoints: Pointer to global memory with current keypoints vector. It will be modified with the interpolated points
+ * @param keypoints: Pointer to global memory with current keypoints vector.
  * @param grad: Pointer to global memory with gradient norm previously calculated
  * @param ori: Pointer to global memory with gradient orientation previously calculated
  * @param counter: Pointer to global memory with actual number of keypoints previously found
@@ -525,40 +526,61 @@ __kernel void orientation_assignment(
 
 
 
-/*
-   
+/**
+ * \brief Compute a SIFT descriptor for each keypoint.
+ *
+ * Like in sift.cpp, keypoints are eventually cast to 1-byte integer, for memory sake.
+ * However, calculations need to be on float, so we need a temporary descriptors vector in shared memory.
+ *
+ *
+ * @param keypoints: Pointer to global memory with current keypoints vector
+ * @param descriptor: Pointer to global memory with the output SIFT descriptor, cast to uint8
+ * @param tmp_descriptor: Pointer to shared memory with temporary computed float descriptors
+ * @param grad: Pointer to global memory with gradient norm previously calculated
+ * @param oril: Pointer to global memory with gradient orientation previously calculated
+ * @param keypoints_start : index start for keypoints
+ * @param keypoints_end: end index for keypoints
+ * @param grad_width: integer number of columns of the gradient
+ * @param grad_height: integer num of lines of the gradient
+ 
+ 
+ WARNING: scale, row and col must not have been multiplied by octsize/octscale here !
 
-WARNING: scale, row and col must not have been multiplied by octsize/octscale here !
+-par.MagFactor = 3 //"1.5 sigma"
+-OriSize  = 8 //number of bins in the local histogram
+-par.IndexSigma  = 1.0
 
-par.MagFactor = 3 //"1.5 sigma"
-OriSize  = 8 //number of bins in the local histogram
-4  = 4 //square root of the number of subregions
-par.IndexSigma  = 1.0
-
-TODO:
--(c,r,sigma) are not (?) multiplied by octsize yet. It can be done in this kernel.
--Check if the "normalization" (at the end of the kernel) is suitable 
+ TODO:
+-(c,r,sigma) are not multiplied by octsize yet. It can be done in this kernel.
 -memory optimization
--replace "1/M_PI_F" by "M_1_PI_F" ?
 
-*/
+
+Vertical keypoints (gid0) :
+desc[128*gid0 + i] with i in range(0,128)
+
+Horizontal keypoints (gid1) :
+desc[W*i+gid0] with i in range(0,128) and W = keypoints_end-keypoints_start+1
+
+ */
+
+
 __kernel void descriptor(
 	__global keypoint* keypoints,
 	__global unsigned char *descriptors,
+	__local float* tmp_descriptors,
 	__global float* grad, 
 	__global float* orim,
-	int actual_nb_keypoints,
+	int keypoints_start,
+	int keypoints_end,
 	int grad_width,
 	int grad_height)
 {
 
-
 	int gid0 = (int) get_global_id(0);
-	if (gid0 < actual_nb_keypoints) {
+	if (keypoints_start <= gid0 && gid0 < keypoints_end) {
 	
 		keypoint k = keypoints[gid0];
 		if (k.s1 != -1.0f) {
-
 	
 		/* Add features to vec obtained from sampling the grad and ori images
 		   for a particular scale.  Location of key is (scale,row,col) with respect
@@ -566,9 +588,14 @@ __kernel void descriptor(
 		   region containing the keypoint, and distribute the gradient for that
 		   pixel into the appropriate bins of the index array.
 		*/
-
+			int i,j;
+			/*
+				Local memory memset
+			*/
+			for (i=0; i < 128; i++)
+				tmp_descriptors[128*gid0+i] = 0.0f;
+			
 			float rx, cx;
-
 			int	irow = (int) (k.s1 + 0.5f), icol = (int) (k.s0 + 0.5f);
 			float sine = sin(k.s3), cosine = cos(k.s3);
 
@@ -577,31 +604,29 @@ __kernel void descriptor(
 
 			/* Radius of index sample region must extend to diagonal corner of
 			index patch plus half sample for interpolation. */
-			int iradius = (int) ((1.414f * spacing * (4 + 1) / 2.0f) + 0.5f);
+			int iradius = (int) ((1.414f * spacing * 2.5f) + 0.5f);
 
 			/* Examine all points from the gradient image that could lie within the index square. */
-			int i,j;
+			
 			for (i = -iradius; i <= iradius; i++) {
 				for (j = -iradius; j <= iradius; j++) {
 
 					/* Makes a rotation of -angle to achieve invariance to rotation */
-					 rx = ((cosine * i - sine * j) - (k.s1 - irow)) / spacing + 1.5f; //rpos
-					 cx = ((sine * i + cosine * j) - (k.s0 - icol)) / spacing + 1.5f; //cpos
+					 rx = ((cosine * i - sine * j) - (k.s1 - irow)) / spacing + 1.5f;
+					 cx = ((sine * i + cosine * j) - (k.s0 - icol)) / spacing + 1.5f;
 
 					 /* Compute location of sample in terms of real-valued index array
 					 coordinates.  Subtract 0.5 so that rx of 1.0 means to put full
 					 weight on index[1] (e.g., when rpos is 0 and 4 is 3. */
-					 
 
 					/* Test whether this sample falls within boundary of index patch. */ //FIXME: cast to int for comparison
 					if (rx > -1.0f && rx < 4.0f && cx > -1.0f && cx < 4.0f
 						 && (irow +i) >= 0  && (irow +i) < grad_height && (icol+j) >= 0 && (icol+j) < grad_width) {
-	//AddSample(...irow + i, icol + j,...);
-	//AddSample(...float r, float c,...)		
 
 						/* Compute Gaussian weight for sample, as function of radial distance
 				 		  from center.  Sigma is relative to half-width of index. */
-						float mag = grad[(int)(icol+j) + (int)(irow+i)*grad_width] * exp(- ((rx - 1.5f) * (rx - 1.5f) + (cx - 1.5f) * (cx - 1.5f)) / (8.0f));
+						float mag = grad[(int)(icol+j) + (int)(irow+i)*grad_width]
+									 * exp(- 0.125f*((rx - 1.5f) * (rx - 1.5f) + (cx - 1.5f) * (cx - 1.5f)) );
 
 						/* Subtract keypoint orientation to give ori relative to keypoint. */
 						float ori = orim[(int)(icol+j)+(int)(irow+i)*grad_width] -  k.s3;
@@ -614,17 +639,23 @@ __kernel void descriptor(
 	  					 this image sample.  The location of the sample in the index is (rx,cx). */
 						int	orr, rindex, cindex, oindex;
 						float	rweight, cweight;
-						int cur_ivec;
 
-						float oval = 8 * ori / (2.0f*M_PI_F);
-
+						float oval = 4.0f*ori*M_1_PI_F; //8ori/(2pi)
+						
 						int	ri = (int)((rx >= 0.0f) ? rx : rx - 1.0f),
 							ci = (int)((cx >= 0.0f) ? cx : cx - 1.0f), 
 							oi = (int)((oval >= 0.0f) ? oval : oval - 1.0f); 
 
-						float rfrac = rx - ri,			/* Fractional part of location. */
+						float rfrac = rx - ri,			// Fractional part of location.
 							cfrac = cx - ci,
 							ofrac = oval - oi;
+						/*	
+						//alternative in OpenCL :
+						int ri,ci,oi;
+						float	rfrac = fract(rx,&ri),
+								cfrac = fract(cx,&ci),
+								ofrac = fract(oval,&oi);
+						*/
 						if (ri >= -1  &&  ri < 4  && oi >=  0  &&  oi <= 8  && rfrac >= 0.0f  &&  rfrac <= 1.0f) { 
 
 						/* Put appropriate fraction in each of 8 buckets around this point
@@ -639,16 +670,28 @@ __kernel void descriptor(
 										cindex = ci + c;
 										if (cindex >=0 && cindex < 4) {
 											cweight = rweight * ((c == 0) ? 1.0f - cfrac : cfrac);
-											//ivec = index[rindex][cindex]; //then ivec[oindex] = ...
-											cur_ivec = rindex*4 + cindex;
 											for (orr = 0; orr < 2; orr++) {
 												oindex = oi + orr;
-												if (oindex >= 8)  /* Orientation wraps around at PI. */
+												if (oindex >= 8) {  /* Orientation wraps around at PI. */
 													oindex = 0;
-												//the cast to (unsigned char) is done here, we do not have the choice unless creating a temporary 128-float vector, which would be dramatic for memory
-												descriptors[cur_ivec*8+oindex] +=
-												 (unsigned char) (cweight * ((orr == 0) ? 1.0f - ofrac : ofrac));
-											}
+												}
+												/*
+													we want descriptors([rindex][cindex][oindex])[gid0]
+														rindex in [0,3]
+													 	cindex in [0,3]
+													 	oindex in [0,7]
+													so	rindex*4 + cindex is in [0,15]
+														i = (rindex*4+cindex)*8 + oindex is in [0,127]
+													finally : descriptors[128*gid0+i] 
+														with a vertical representation
+												*/
+													
+												tmp_descriptors[128*gid0+(rindex*4 + cindex)*8+oindex] 
+													+= (cweight * ((orr == 0) ? 1.0f - ofrac : ofrac));
+													
+													
+													
+											} //end for
 										} //end "valid cindex"
 									}
 								} //end "valid rindex"
@@ -659,34 +702,47 @@ __kernel void descriptor(
 			} //end "i loop"
 			
 			
-			/* 
-			 In sift.cpp :
-			  (float) descriptor	--> normalization (v = v/norm(v))
-			  						--> threshold to 0.2, i.e v[i] > 0.2 becomes 0.2
-			  						--> if changed, normalization again
-									--> cast to (unsigned char) : v[i] = MIN(255,512*v[i])  
-			 In this kernel :
-			  (u. char) descriptor	--> already "normalized" in [|0,255|]
-			  						--> threshold to 20% of 255, i.e v[i] > 51 becomes 51
-			  						--> if changed, renormalize in [|0,255|]
-			  						--> v[i] = MIN(255,2*v[i])
+			
+			/*
+				At this point, we have a descriptor associated with our keypoint.
+				We have to normalize it, then cast to 1-byte integer
 			*/
-		
-		/*
+			
+
+			// Normalization
+			float norm = 0;
+			for (i = 0; i < 128; i++)
+				norm+=pow(tmp_descriptors[128*gid0+i],2); //warning: not the same as C "pow"
+			norm = rsqrt(norm); //norm = 1.0f/sqrt(norm); //half_rsqrt to speed-up
+			for (i = 0; i < 128; i++)
+				tmp_descriptors[128*gid0+i] *= norm;
+			
+			
+			//Threshold to 0.2 of the norm, for invariance to illumination
 			bool changed = false;
-			for (i=0; i < 128; i++) 
-				if (descriptors[i] >= 51) {
-					descriptors[i] = (unsigned char) 51;
+			norm = 0;
+			for (i = 0; i < 128; i++) {
+				if (tmp_descriptors[128*gid0+i] > 0.2f) {
+					tmp_descriptors[128*gid0+i] = 0.2f;
 					changed = true;
 				}
-			if (changed == true)
-				for (i=0; i < 128; i++) {
-					descriptors[i] = (unsigned char) (256.0f/52.0f* descriptors[i]);
-					descriptors[i] = MIN(255,2*descriptors[i]); //TODO: replace these 2 lines by one
-				}
-			
-		*/
-		
+				norm += pow(tmp_descriptors[128*gid0+i],2); 
+			}
+
+			//if values have been changed, we have to normalize again...
+			if (changed) {
+				norm = rsqrt(norm);
+				for (i = 0; i < 128; i++)
+					tmp_descriptors[128*gid0+i] *= norm;
+			}
+
+			//finally, cast to integer			
+			//store to global memory : tmp_descriptor[i][gid0] --> descriptors[i][gid0]
+			for (i = 0; i < 128; i++) {
+				descriptors[128*gid0+i]
+					= (unsigned char) MIN(255,(unsigned char)(512.0f*tmp_descriptors[128*gid0+i]));
+					//= (unsigned char) tmp_descriptors[128*gid0+i]; 
+			}
 		
 			
 		} //end "valid keypoint"

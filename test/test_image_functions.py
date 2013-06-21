@@ -344,6 +344,7 @@ def my_descriptor(keypoints, grad, orim, keypoints_start, keypoints_end):
    
     #unwrap and normalize the 128-vector
     descriptors = descriptors.reshape(keypoints_end-keypoints_start+1,128)
+    
     for i in range(0,keypoints_end-keypoints_start): descriptors[i] = normalize(descriptors[i])
      
     #threshold to 0.2 like in sift.cpp
@@ -362,20 +363,16 @@ def my_descriptor(keypoints, grad, orim, keypoints_start, keypoints_end):
     #cast to "unsigned char"
     descriptors = 512*descriptors
     for i in range(0,keypoints_end-keypoints_start): (descriptors[i])[255<=descriptors[i]] = 255
+    
     descriptors = descriptors.astype(numpy.uint8)
+    
     return descriptors
     
         
 
 
 def normalize(vec):
-    return vec/numpy.linalg.norm(vec)
-
-def to_unsigned_char(vec): #not useful here
-    imin = -numpy.int32(2**31)
-    return numpy.round(255.0/2**32 *(vec - imin))
-
-
+    return (vec/numpy.linalg.norm(vec) if numpy.linalg.norm(vec) != 0 else 0)
 
 
 
