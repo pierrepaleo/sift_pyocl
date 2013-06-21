@@ -384,8 +384,8 @@ global_max_min( __global    float     *data,
     float neutral = data[lid]; //this is a neutral element
     local_max[lid] = neutral;
     local_min[lid] = neutral;
-    maximum[0] = neutral;
-    minimum[0] = neutral;
+//    maximum[0] = neutral;
+//    minimum[0] = neutral;
 
 // we reduce multiple elements per thread.  The number is determined by the 
     // number of active thread blocks (via gridDim).  More blocks will result
