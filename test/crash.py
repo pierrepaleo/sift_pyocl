@@ -9,7 +9,9 @@ import numpy
 import scipy.misc
 import pylab
 lena = scipy.misc.lena()
-s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=8)
+lena = numpy.zeros_like(lena)
+lena[100:110, 100:110] = 1
+s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=1024)
 kp = s.keypoints(lena)
 s.log_profile()
 fig = pylab.figure()
@@ -77,7 +79,7 @@ for p0 in range(kp.shape[0]):
             best_id = p1
     d = ((kpi - ref[best_id]) ** 2).sum()
     if d > 1:
-        print kpi, (kpi - ref[best_id]).astype(int)
+        print kpi, ref[best_id], (kpi - ref[best_id]).astype(int)
 
     sp1.annotate("", xy=kpi[:2], xytext=ref[best_id][:2], color="green",
                      arrowprops=dict(facecolor='green', edgecolor='green', width=1),)

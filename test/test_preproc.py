@@ -253,6 +253,7 @@ class test_preproc(unittest.TestCase):
             raw_input("enter")
         self.assert_(delta < 1e-6, "delta=%s" % delta)
 
+
     def test_bin(self):
         """
         Test binning kernel
@@ -293,14 +294,63 @@ class test_preproc(unittest.TestCase):
             raw_input("enter")
         self.assert_(delta < 1e-6, "delta=%s" % delta)
 
+    def test_max_min(self):
+        """
+        Test global_max_min kernel
+        """
+        lint = numpy.random.random(self.input.shape).astype(numpy.float32)
+        inp_gpu = pyopencl.array.to_device(queue, lint)
+        size = lint.size
+        blocksize = 16
+        min_gpu = pyopencl.array.empty(queue, (blocksize,), dtype=numpy.float32, order="C")
+        max_gpu = pyopencl.array.empty(queue, (blocksize,), dtype=numpy.float32, order="C")
+        t = time.time()
+        nmin = lint.min()
+        nmax = lint.max()
+        t0 = time.time()
+        k1 = self.program.global_max_min(queue, (size,), (blocksize,), inp_gpu.data, max_gpu.data, min_gpu.data,
+                                        numpy.int32(lint.size))
+        min_res = min_gpu.get()
+        max_res = max_gpu.get()
+        print min_res
+        print max_res
+
+#        k2 = self.program.global_max_min(queue, (blocksize,), (blocksize,), max_gpu.data, max_gpu.data, min_gpu.data,
+#                                        numpy.int32(blocksize))
+#        k3 = self.program.global_max_min(queue, (blocksize,), (blocksize,), min_gpu.data, max_gpu.data, min_gpu.data,
+#                                        numpy.int32(blocksize))
+#        min_res = min_gpu.get()
+#        max_res = max_gpu.get()
+        t1 = time.time()
+        min_pyocl = pyopencl.array.min(inp_gpu, queue).get()
+        max_pyocl = pyopencl.array.max(inp_gpu, queue).get()
+        t2 = time.time()
+        print min_res
+        print max_res
+        max_res = max_res.max()
+        min_res = min_res.min()
+        if PROFILE:
+            logger.info("Global execution time: CPU %.3fms, GPU: %.3fms, pyopencl: %.3fms." % (1000.0 * (t0 - t), 1000.0 * (t1 - t0), 1000.0 * (t2 - t1)))
+            logger.info("reduction took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+        print nmin, min_res, min_pyocl
+        print nmax, max_res, max_pyocl
+        self.assertEqual(nmin, min_res, "min: numpy vs ours")
+        self.assertEqual(nmax, max_res, "max: numpy vs ours")
+        self.assertEqual(nmin, min_pyocl, "min: numpy vs pyopencl")
+        self.assertEqual(nmax, max_pyocl, "max: numpy vs pyopencl")
+        self.assertEqual(min_pyocl, min_res, "min: ours vs pyopencl")
+        self.assertEqual(max_pyocl, max_res, "max: ours vs pyopencl")
+
+
 def test_suite_preproc():
     testSuite = unittest.TestSuite()
-    testSuite.addTest(test_preproc("test_uint8"))
-    testSuite.addTest(test_preproc("test_uint16"))
-    testSuite.addTest(test_preproc("test_int32"))
-    testSuite.addTest(test_preproc("test_int64"))
-    testSuite.addTest(test_preproc("test_shrink"))
-    testSuite.addTest(test_preproc("test_bin"))
+#    testSuite.addTest(test_preproc("test_uint8"))
+#    testSuite.addTest(test_preproc("test_uint16"))
+#    testSuite.addTest(test_preproc("test_int32"))
+#    testSuite.addTest(test_preproc("test_int64"))
+#    testSuite.addTest(test_preproc("test_shrink"))
+#    testSuite.addTest(test_preproc("test_bin"))
+    testSuite.addTest(test_preproc("test_max_min"))
     return testSuite
 
 if __name__ == '__main__':

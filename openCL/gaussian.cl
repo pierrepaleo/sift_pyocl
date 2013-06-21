@@ -11,6 +11,9 @@
  * @param size:     size of the function
  *
 **/
+#ifndef WORKGROUP_SIZE
+	#define WORKGROUP_SIZE 1024
+#endif
 
 __kernel void
 gaussian(            __global     float     *data,
@@ -21,8 +24,9 @@ gaussian(            __global     float     *data,
     int lid = get_local_id(0);
 //    int wd = get_work_dim(0); DEFINE WG are compile time
     //allocate a shared memory of size floats
-    __local float gaus[WORKGROUP];
-    __local float sum[WORKGROUP];                     
+    __local float gaus[WORKGROUP_SIZE];
+    __local float sum[WORKGROUP_SIZE];    
+
     if(lid < SIZE){
         float x = ((float)lid - ((float)SIZE - 1.0f)/2.0f) / sigma;
         float y = exp(-x * x / 2.0f);
@@ -94,8 +98,5 @@ gaussian(            __global     float     *data,
 //    Now we normalize the gaussian curve
     if(lid < SIZE){
         data[lid] = gaus[lid] / sum[0];
-    }
-    else {
-        data[lid] = 0.0f;
     }
 }

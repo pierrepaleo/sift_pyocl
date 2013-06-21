@@ -1,88 +1,155 @@
-//CL//
-#define GROUP_SIZE 64
-#define READ_AND_MAP(i) (mmc_from_scalar(x[i]))
-#define REDUCE(a, b) (agg_mmc(a, b))
+#define GROUP_SIZE 1024
+#define READ_AND_MAP(i) (pyopencl_reduction_inp[i])
+#define REDUCE(a, b) fmin(a,b)
 
-typedef struct {
-  float cur_min;
-  float cur_max;
-  int pad;
-} minmax_collector;
+#define READ_AND_MAP(i) (in[i])
 
-//CL//
-minmax_collector mmc_neutral()
+
+/*
+ * size: of the array
+ */
+
+
+__kernel void reduce_kernel_stage1(
+  __global out_type *out, 
+  __global const float *in,
+  unsigned int seq_count, 
+  unsigned int size)
 {
-minmax_collector result;
-result.cur_min = 1.0/0.0;
-result.cur_max = -1.0/0.0;
-return result;
-}
-minmax_collector mmc_from_scalar(float x)
-{
-minmax_collector result;
-result.cur_min = x;
-result.cur_max = x;
-return result;
-}
-minmax_collector agg_mmc(minmax_collector a, minmax_collector b)
-{
-minmax_collector result = a;
-if (b.cur_min < result.cur_min)
-result.cur_min = b.cur_min;
-if (b.cur_max > result.cur_max)
-result.cur_max = b.cur_max;
-return result;
-}
+    __local float ldata[GROUP_SIZE];
 
+    unsigned int lid = get_local_id(0);
 
-typedef minmax_collector out_type;
+    unsigned int i = get_group_id(0)*GROUP_SIZE*seq_count + lid;
 
-__kernel void reduce_max_min(
-      __global out_type *out, 
-      __global float *x,
-      unsigned int seq_count, 
-      unsigned int n)
+    float acc = READ_AND_MAP(0);
+    for (unsigned s = 0; s < seq_count; ++s)
     {
-        __local out_type ldata[GROUP_SIZE];
+      if (i >= size)
+        break;
+      acc = REDUCE(acc, READ_AND_MAP(i));
 
-        unsigned int lid = get_local_id(0);
+      i += GROUP_SIZE;
+    }
 
-        unsigned int i = get_group_id(0)*GROUP_SIZE*seq_count + lid;
+    ldata[lid] = acc;
 
-        out_type acc = mmc_neutral();
-        for (unsigned s = 0; s < seq_count; ++s)
-        {
-          if (i >= n)
-            break;
-          acc = REDUCE(acc, READ_AND_MAP(i));
+    
 
-          i += GROUP_SIZE;
-        }
-
-        ldata[lid] = acc;
+        barrier(CLK_LOCAL_MEM_FENCE);
 
         
 
-            barrier(CLK_LOCAL_MEM_FENCE);
+        if (lid < 512)
+        {
+            ldata[lid] = REDUCE(
+              ldata[lid],
+              ldata[lid + 512]);
+        }
 
-            
+        
 
-            if (lid < 32)
-            {
-                ldata[lid] = REDUCE(ldata[lid], ldata[lid + 32]);
-            }
+        barrier(CLK_LOCAL_MEM_FENCE);
 
-            barrier(CLK_LOCAL_MEM_FENCE);
+        
 
-            if (lid < 32)
-            {
-                __local volatile out_type *lvdata = ldata;
-                    lvdata[lid] = REDUCE(lvdata[lid], lvdata[lid + 16]);
-                    lvdata[lid] = REDUCE(lvdata[lid], lvdata[lid + 8]);
-                    lvdata[lid] = REDUCE(lvdata[lid], lvdata[lid + 4]);
-                    lvdata[lid] = REDUCE(lvdata[lid], lvdata[lid + 2]);
-                    lvdata[lid] = REDUCE(lvdata[lid], lvdata[lid + 1]);
-            }
+        if (lid < 256)
+        {
+            ldata[lid] = REDUCE(
+              ldata[lid],
+              ldata[lid + 256]);
+        }
 
-        if (lid == 0) out[get_group_id(0)] = ldata[0];
-    }
+        
+
+        barrier(CLK_LOCAL_MEM_FENCE);
+
+        
+
+        if (lid < 128)
+        {
+            ldata[lid] = REDUCE(
+              ldata[lid],
+              ldata[lid + 128]);
+        }
+
+        
+
+        barrier(CLK_LOCAL_MEM_FENCE);
+
+        
+
+        if (lid < 64)
+        {
+            ldata[lid] = REDUCE(
+              ldata[lid],
+              ldata[lid + 64]);
+        }
+
+        
+
+        barrier(CLK_LOCAL_MEM_FENCE);
+
+        
+
+        if (lid < 32)
+        {
+            ldata[lid] = REDUCE(
+              ldata[lid],
+              ldata[lid + 32]);
+        }
+
+        
+
+
+
+        barrier(CLK_LOCAL_MEM_FENCE);
+
+        if (lid < 32)
+        {
+            __local volatile float *lvdata = ldata;
+                
+
+                lvdata[lid] = REDUCE(
+                  lvdata[lid],
+                  lvdata[lid + 16]);
+
+                
+
+                
+
+                lvdata[lid] = REDUCE(
+                  lvdata[lid],
+                  lvdata[lid + 8]);
+
+                
+
+                
+
+                lvdata[lid] = REDUCE(
+                  lvdata[lid],
+                  lvdata[lid + 4]);
+
+                
+
+                
+
+                lvdata[lid] = REDUCE(
+                  lvdata[lid],
+                  lvdata[lid + 2]);
+
+                
+
+                
+
+                lvdata[lid] = REDUCE(
+                  lvdata[lid],
+                  lvdata[lid + 1]);
+
+                
+
+
+        }
+
+    if (lid == 0) out[get_group_id(0)] = ldata[0];
+}

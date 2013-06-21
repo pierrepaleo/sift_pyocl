@@ -439,6 +439,9 @@ class SiftPlan(object):
                                                 numpy.int32(scale),  # int scale,
                                                 *self.scales[octave])  # int width, int height)
                 if self.profile:self.events.append(("local_maxmin %s %s" % (octave, scale), evt))
+                print("after local_max_min:")
+                print(self.buffers["Kp_1"].get()[:5])
+
 #                self.debug_holes("After local_maxmin %s %s" % (octave, scale))
                 procsize = calc_size((self.kpsize,), wgsize)
     #           Refine keypoints
@@ -452,8 +455,11 @@ class SiftPlan(object):
                                               numpy.float32(par.InitSigma),  # float InitSigma,
                                               *self.scales[octave])  # int width, int height)
                 if self.profile:self.events.append(("interp_keypoint %s %s" % (octave, scale), evt))
+
 #                self.debug_holes("After interp_keypoint %s %s" % (octave, scale))
                 newcnt = self.compact(last_start)
+                print("after compaction:")
+                print(self.buffers["Kp_1"].get()[:5])
 #                self.debug_holes("After compact %s %s" % (octave, scale))
 
                 # recycle buffers G_2 and tmp to store ori and grad
