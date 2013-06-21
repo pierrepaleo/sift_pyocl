@@ -267,29 +267,29 @@ __kernel void interp_keypoint(
 				pos = newr*width+newc;
 
 				//Fill in the values of the gradient from pixel differences
-				g0 = (DOGS[index_dog_next+pos] - DOGS[index_dog_prev+pos]) / 2.0;
-				g1 = (DOGS[index_dog+(newr+1)*width+newc] - DOGS[index_dog+(newr-1)*width+newc]) / 2.0;
-				g2 = (DOGS[index_dog+pos+1] - DOGS[index_dog+pos-1]) / 2.0;
+				g0 = (DOGS[index_dog_next+pos] - DOGS[index_dog_prev+pos]) / 2.0f;
+				g1 = (DOGS[index_dog+(newr+1)*width+newc] - DOGS[index_dog+(newr-1)*width+newc]) / 2.0f;
+				g2 = (DOGS[index_dog+pos+1] - DOGS[index_dog+pos-1]) / 2.0f;
 
 				//Fill in the values of the Hessian from pixel differences
-				H00 = DOGS[index_dog_prev+pos]   - 2.0 * DOGS[index_dog+pos] + DOGS[index_dog_next+pos];
-				H11 = DOGS[index_dog+(newr-1)*width+newc] - 2.0 * DOGS[index_dog+pos] + DOGS[index_dog+(newr+1)*width+newc];
-				H22 = DOGS[index_dog+pos-1] - 2.0 * DOGS[index_dog+pos] + DOGS[index_dog+pos+1];
+				H00 = DOGS[index_dog_prev+pos]   - 2.0f * DOGS[index_dog+pos] + DOGS[index_dog_next+pos];
+				H11 = DOGS[index_dog+(newr-1)*width+newc] - 2.0f * DOGS[index_dog+pos] + DOGS[index_dog+(newr+1)*width+newc];
+				H22 = DOGS[index_dog+pos-1] - 2.0f * DOGS[index_dog+pos] + DOGS[index_dog+pos+1];
 			
 				H01 = ( (DOGS[index_dog_next+(newr+1)*width+newc] - DOGS[index_dog_next+(newr-1)*width+newc])
-						- (DOGS[index_dog_prev+(newr+1)*width+newc] - DOGS[index_dog_prev+(newr-1)*width+newc])) / 4.0;
+						- (DOGS[index_dog_prev+(newr+1)*width+newc] - DOGS[index_dog_prev+(newr-1)*width+newc])) / 4.0f;
 						
 				H02 = ( (DOGS[index_dog_next+pos+1] - DOGS[index_dog_next+pos-1])
-						-(DOGS[index_dog_prev+pos+1] - DOGS[index_dog_prev+pos-1])) / 4.0;
+						-(DOGS[index_dog_prev+pos+1] - DOGS[index_dog_prev+pos-1])) / 4.0f;
 						
 				H12 = ( (DOGS[index_dog+(newr+1)*width+newc+1] - DOGS[index_dog+(newr+1)*width+newc-1])
-						- (DOGS[index_dog+(newr-1)*width+newc+1] - DOGS[index_dog+(newr-1)*width+newc-1])) / 4.0;
+						- (DOGS[index_dog+(newr-1)*width+newc+1] - DOGS[index_dog+(newr-1)*width+newc-1])) / 4.0f;
 									
 				H10 = H01; H20 = H02; H21 = H12;
 
 
 				//inversion of the Hessian	: det*K = H^(-1)
-/*			
+			
 				det = -(H02*H11*H20) + H01*H12*H20 + H02*H10*H21 - H00*H12*H21 - H01*H10*H22 + H00*H11*H22;
 
 				K00 = H11*H22 - H12*H21;
@@ -301,34 +301,6 @@ __kernel void interp_keypoint(
 				K20 = H10*H21 - H11*H20;
 				K21 = H01*H20 - H00*H21;
 				K22 = H00*H11 - H01*H10;
-*/
-
-/*
-	Alessandro checked version
-*/
-				det = ( H00*H11*H22 +
-					   H01*H12*H20 +
-					   H02*H10*H21 -
-					   H02*H11*H20 -
-					   H00*H12*H21 -
-					   H01*H10*H22 );
-
-				K00 = H11*H22 - H12*H21;
-				K11 = H00*H22 - H02*H20;
-				K22 = H00*H11 - H01*H10;
-
-				K01 = H10*H22 - H20*H12;
-				K02 = H10*H21 - H20*H11;
-				K12 = H00*H21 - H20*H01;
-
-				K10 =  K01 ;
-				K20 =  K02 ;
-				K21 =  K12 ;
-
-				//K10 = H01*H22 - H21*H02;
-				//K20 = H01*H12 - H11*H02;
-				//K21 = H00*H12 - H02*H10;
-
 
 
 				/*
@@ -341,19 +313,19 @@ __kernel void interp_keypoint(
 				solution2 = -(g0*K20 + g1*K21 + g2*K22)/det; //"offset" in c
 
 				//interpolated DoG magnitude at this peak
-				peakval = DOGS[index_dog+pos] + 0.5 * (solution0*g0+solution1*g1+solution2*g2);
+				peakval = DOGS[index_dog+pos] + 0.5f * (solution0*g0+solution1*g1+solution2*g2);
 		
 		
 			/* Move to an adjacent (row,col) location if quadratic interpolation is larger than 0.6 units in some direction. 				The movesRemain counter allows only a fixed number of moves to prevent possibility of infinite loops.
 			*/
 
-				if (solution1 > 0.6 && newr < height - 3)
+				if (solution1 > 0.6f && newr < height - 3)
 					newr++; //if the extremum is too far (along "r" here), we get closer if we can
-				else if (solution1 < -0.6 && newr > 3)
+				else if (solution1 < -0.6f && newr > 3)
 					newr--;
-				if (solution2 > 0.6 && newc < width - 3)
+				if (solution2 > 0.6f && newc < width - 3)
 					newc++;
-				else if (solution2 < -0.6 && newc > 3)
+				else if (solution2 < -0.6f && newc > 3)
 					newc--;
 
 				/*
@@ -370,12 +342,12 @@ __kernel void interp_keypoint(
 			/* Do not create a keypoint if interpolation still remains far outside expected limits, 
 				or if magnitude of peak value is below threshold (i.e., contrast is too low).
 			*/
-			keypoint ki = 0.0; //float4
-			if (fabs(solution0) < 1.5 && fabs(solution1) < 1.5 && fabs(solution2) < 1.5 && fabs(peakval) > peak_thresh) {
+			keypoint ki = 0.0f; //float4
+			if (fabs(solution0) <= 1.5f && fabs(solution1) <= 1.5f && fabs(solution2) <= 1.5f && fabs(peakval) >= peak_thresh) {
 				ki.s0 = peakval;
-				ki.s1 = k.s1 + solution1;
-				ki.s2 = k.s2 + solution2;
-				ki.s3 = InitSigma * pow(2.0, (((float) scale) + solution0) / 3.0); //3.0 is "par.Scales"
+				ki.s1 = /*k.s1*/ newr + solution1;
+				ki.s2 = /*k.s2*/ newc + solution2;
+				ki.s3 = InitSigma * pow(2.0f, (((float) scale) + solution0) / 3.0f); //3.0 is "par.Scales"
 			}
 			else { //the keypoint was not correctly interpolated : we reject it
 				ki.s0 = -1.0f; ki.s1 = -1.0f; ki.s2 = -1.0f; ki.s3 = -1.0f;

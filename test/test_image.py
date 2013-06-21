@@ -216,7 +216,7 @@ class test_image(unittest.TestCase):
 
         t1 = time.time()
         ref = numpy.copy(keypoints_prev) #important here
-        for i,k in enumerate(ref[:actual_nb_keypoints,:]):
+        for i,k in enumerate(ref[:nb_keypoints,:]):
             ref[i]= my_interp_keypoint(DOGS, s, k[1], k[2],5,peakthresh,width,height)
                 
         t2 = time.time()
@@ -423,9 +423,9 @@ def test_suite_image():
     testSuite = unittest.TestSuite()
     #testSuite.addTest(test_image("test_gradient"))
     #testSuite.addTest(test_image("test_local_maxmin"))
-    #testSuite.addTest(test_image("test_interpolation"))
+    testSuite.addTest(test_image("test_interpolation"))
     #testSuite.addTest(test_image("test_orientation"))
-    testSuite.addTest(test_image("test_descriptor"))
+    #testSuite.addTest(test_image("test_descriptor"))
     return testSuite
 
 if __name__ == '__main__':

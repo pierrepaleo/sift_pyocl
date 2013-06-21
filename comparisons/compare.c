@@ -12,7 +12,7 @@
 #include <string.h>
 #include <math.h>
 #define MAX_KP 300 //for a given octave 
-#define DIGITS 3 //for comparison precision (10e-DIGITS)
+#define DIGITS 1 //for comparison precision (10e-DIGITS)
 
 typedef struct keypoint {
 	float p;
@@ -101,32 +101,38 @@ int main(int args, char* argv[]) {
 	keypoint* k_opencl = (keypoint*) calloc(MAX_KP,sizeof(keypoint));
 	if (parse_keypoints(argv[2],k_cpp,&total_keypoints_cpp) == -1) return -1;
 	if (parse_keypoints(argv[1],k_opencl,&total_keypoints_opencl) == -1) return -1;
-	//let the fun begin
 	
 	unsigned int i,j, kp_ok = 0;
 	float r=0,c=0,s=0;
 	int flag_ok = 0;
 
-	for (i=0; MAX_KP > i && k_opencl[i].r != -1.0; i++) {
-		r = truncate(k_opencl[i].r,DIGITS);
-		c = truncate(k_opencl[i].c,DIGITS);
-		s = truncate(k_opencl[i].s,DIGITS);
-		flag_ok = 0;
-		for (j=0; flag_ok == 0 && MAX_KP > j && k_cpp[j].r != -1.0; j++) {
-			if (truncate(k_cpp[j].r,DIGITS) == r && truncate(k_cpp[j].c,DIGITS) == c && truncate(k_cpp[j].s,DIGITS) == s) {
-				flag_ok = 1;
-				kp_ok++;
+	for (i=0; total_keypoints_opencl > i; i++) {
+		if (k_opencl[i].r != -1.0) {
+			r = truncate(k_opencl[i].r,DIGITS);
+			c = truncate(k_opencl[i].c,DIGITS);
+			s = truncate(k_opencl[i].s,DIGITS);
+			flag_ok = 0;
+			for (j=0; flag_ok == 0 && total_keypoints_cpp > j; j++) {
+				if (k_cpp[j].r != -1.0) {
+					if (truncate(k_cpp[j].r,DIGITS) == r 
+						&& truncate(k_cpp[j].c,DIGITS) == c
+						&& truncate(k_cpp[j].s,DIGITS) == s) {
+						flag_ok = 1;
+						kp_ok++;
+					}
+				}
 			}
+			if (flag_ok == 0) printf("Keypoint (%f,%f) did not match\n",r,c);
 		}
 	}
-	printf("End of comparison -- %d/(%d,%d) keypoints matches (opencl,cpp)\n",
+	printf("End of comparison -- %d/(%d,%d) keypoints matches\n",
 		kp_ok,total_keypoints_opencl,total_keypoints_cpp);
 	return 1;
 
 
 }
 
-
+/*
 void cut_sort(keypoint* input, unsigned int start, unsigned int end) {
 	unsigned int len = end-start+1;
 	if (len > 2) {
@@ -146,7 +152,7 @@ void cut_sort(keypoint* input, unsigned int start, unsigned int end) {
 
 
 //TODO: print kp_opencl, see if kp_opencl[:].r have been sorted by parts of 2
-
+*/
 
 
 
