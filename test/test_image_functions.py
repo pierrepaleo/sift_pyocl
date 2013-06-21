@@ -372,7 +372,7 @@ def my_descriptor(keypoints, grad, orim, keypoints_start, keypoints_end):
 
 
 def normalize(vec):
-    return vec/numpy.linalg.norm(vec)
+    return (vec/numpy.linalg.norm(vec) if numpy.linalg.norm(vec) != 0 else 0)
 
 
 

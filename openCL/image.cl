@@ -289,7 +289,7 @@ __kernel void interp_keypoint(
 
 
 				//inversion of the Hessian	: det*K = H^(-1)
-			
+/*			
 				det = -(H02*H11*H20) + H01*H12*H20 + H02*H10*H21 - H00*H12*H21 - H01*H10*H22 + H00*H11*H22;
 
 				K00 = H11*H22 - H12*H21;
@@ -301,6 +301,35 @@ __kernel void interp_keypoint(
 				K20 = H10*H21 - H11*H20;
 				K21 = H01*H20 - H00*H21;
 				K22 = H00*H11 - H01*H10;
+*/
+
+/*
+	Alessandro checked version
+*/
+				det = ( H00*H11*H22 +
+					   H01*H12*H20 +
+					   H02*H10*H21 -
+					   H02*H11*H20 -
+					   H00*H12*H21 -
+					   H01*H10*H22 );
+
+				K00 = H11*H22 - H12*H21;
+				K11 = H00*H22 - H02*H20;
+				K22 = H00*H11 - H01*H10;
+
+				K01 = H10*H22 - H20*H12;
+				K02 = H10*H21 - H20*H11;
+				K12 = H00*H21 - H20*H01;
+
+				K10 =  K01 ;
+				K20 =  K02 ;
+				K21 =  K12 ;
+
+				//K10 = H01*H22 - H21*H02;
+				//K20 = H01*H12 - H11*H02;
+				//K21 = H00*H12 - H02*H10;
+
+
 
 				/*
 					x = -H^(-1)*g 
@@ -591,8 +620,8 @@ __kernel void descriptor(
 			/*
 				Local memory memset
 			*/
-			//for (i=0; i < 128; i++)
-			//	tmp_descriptors[i*(keypoints_end-keypoints_start+1)+gid0] = 0.0f;
+			for (i=0; i < 128; i++)
+				tmp_descriptors[128*gid0+i] = 0.0f;
 			
 			float rx, cx;
 			int	irow = (int) (k.s1 + 0.5f), icol = (int) (k.s0 + 0.5f);

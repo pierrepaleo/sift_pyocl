@@ -78,7 +78,7 @@ class test_image(unittest.TestCase):
         kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), "image.cl")
         kernel_src = open(kernel_path).read()
         self.program = pyopencl.Program(ctx, kernel_src).build()
-        self.wg = (1, 16)
+        self.wg = (1, 8)
 
         
 
@@ -316,36 +316,39 @@ class test_image(unittest.TestCase):
         '''
         
         #descriptor_setup :
-        keypoints, nb_keypoints, actual_nb_keypoints, grad, ori = descriptor_setup()
+        keypoints_o, nb_keypoints, actual_nb_keypoints, grad, ori = descriptor_setup()
         #keypoints should be a compacted vector of keypoints
-        keypoints_start, keypoints_end = 0, actual_nb_keypoints
+        keypoints_start, keypoints_end = 0, 80 #actual_nb_keypoints
+        #keypoints_start, keypoints_end = 20, 30
+        keypoints = keypoints_o[keypoints_start:keypoints_end]
+        print("Working on keypoints : [%s,%s]"%(keypoints_start,keypoints_end))
         wg = max(self.wg),
-        shape = calc_size((keypoints.shape[0],), wg)
-        gpu_keypoints = pyopencl.array.to_device(queue,keypoints)
+        shape = calc_size((keypoints_o.shape[0],), wg)
+        gpu_keypoints = pyopencl.array.to_device(queue,keypoints_o)
         gpu_descriptors = pyopencl.array.empty(queue, (keypoints_end-keypoints_start+1,128), dtype=numpy.uint8, order="C")
         gpu_grad = pyopencl.array.to_device(queue, grad)
         gpu_ori = pyopencl.array.to_device(queue, ori)
         
-        localWorkSizeX, localWorkSizeY = 16,1
         local_size = (keypoints_end-keypoints_start+1)*128*4
         local_mem = pyopencl.LocalMemory(local_size)
         
-        keypoints_start, keypoints_end = numpy.int32(0), numpy.int32(actual_nb_keypoints)
+        keypoints_start, keypoints_end = numpy.int32(keypoints_start), numpy.int32(keypoints_end)
         grad_height, grad_width = numpy.int32(grad.shape)
 
         t0 = time.time()
         k1 = self.program.descriptor(queue, shape, wg, 
-            gpu_keypoints.data, gpu_descriptors.data, local_mem, gpu_grad.data ,gpu_ori.data,
+            gpu_keypoints.data, gpu_descriptors.data, local_mem, gpu_grad.data, gpu_ori.data,
             keypoints_start, keypoints_end, grad_width, grad_height)    	
         res = gpu_descriptors.get()
         t1 = time.time()
         
-        ref = my_descriptor(keypoints, grad, ori, 0, actual_nb_keypoints)
+        ref = my_descriptor(keypoints_o, grad, ori, keypoints_start, keypoints_end)
         
-        print res[0:keypoints_end,0:15]
-        #print ""
-        #print ref[0:keypoints_end,0:15]
-               
+        #print res[0:30,0:15]
+        print ""
+        #print ref[0:30,0:15]
+        print res[0:keypoints_end-keypoints_start,0:15]-ref[0:keypoints_end-keypoints_start,0:15]
+        
         t2 = time.time()
         
         #print keypoints_before_orientation[0:33]
