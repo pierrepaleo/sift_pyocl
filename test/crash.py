@@ -1,17 +1,17 @@
 import sys, os
 from math import sin, cos
 here = os.path.dirname(os.path.abspath(__file__))
-there = os.path.join(here,"..","build")
-lib = [os.path.abspath(os.path.join(there,i)) for i in os.listdir(there) if "lib" in i][0]
-sys.path.insert(0, lib)
+there = os.path.join(here, "..", "build")
+# lib = [os.path.abspath(os.path.join(there,i)) for i in os.listdir(there) if "lib" in i][0]
+# sys.path.insert(0, lib)
 import sift
 import numpy
 import scipy.misc
 import pylab
 lena = scipy.misc.lena()
-lena = numpy.zeros_like(lena)
-lena[100:110, 100:110] = 1
-s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=1024)
+lena[:] = 0
+lena[100:110, 100:110] = 255
+s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=8)
 kp = s.keypoints(lena)
 s.log_profile()
 fig = pylab.figure()
@@ -50,14 +50,14 @@ for i in range(ref.shape[0]):
                      arrowprops=dict(facecolor='blue', edgecolor='blue', width=1),)
 fig.show()
 print res[:, 4:].max()
-#minkp = min(kp.shape[0], ref.shape[0])
-#kpp = numpy.empty((minkp, 2, 2), dtype=numpy.float32)
-#kpp[:, :, 0] = kp[:minkp, :2]
-#kpp[:, :, 1] = ref[:minkp, :2]
-#mateched = feature.reduce_orsa(kpp)
-#print mateched.shape
-#print mateched[:, 0:2] - mateched[:, 1:2]
-#for y in mateched[:, 1]:
+# minkp = min(kp.shape[0], ref.shape[0])
+# kpp = numpy.empty((minkp, 2, 2), dtype=numpy.float32)
+# kpp[:, :, 0] = kp[:minkp, :2]
+# kpp[:, :, 1] = ref[:minkp, :2]
+# mateched = feature.reduce_orsa(kpp)
+# print mateched.shape
+# print mateched[:, 0:2] - mateched[:, 1:2]
+# for y in mateched[:, 1]:
 #    print y
 #    r1 = numpy.where(abs(kp[:, 0] - y) < 0.001)[0][0]
 #    r2 = numpy.where(abs(ref[:, 0] - y) < 0.001)[0][0]

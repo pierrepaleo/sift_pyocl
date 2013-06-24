@@ -114,7 +114,8 @@ def my_interp_keypoint(DOGS, s, r, c,movesRemain,peakthresh,width,height):
     loop = 1
     movesRemain = 5
     while (loop == 1):
-    
+        
+        r0, c0 = newr, newc
         x,peakval = fit_quadratic(dog_prev,dog,dog_next, newr, newc)
         
         if (x[1] > 0.6 and newr < height - 3):
@@ -136,8 +137,8 @@ def my_interp_keypoint(DOGS, s, r, c,movesRemain,peakthresh,width,height):
     if (abs(x[0]) <  1.5 and abs(x[1]) <  1.5 and abs(x[2]) <  1.5 and abs(peakval) > peakthresh):
         ki = numpy.zeros(4,dtype=numpy.float32)
         ki[0] = peakval
-        ki[1] = r + x[1]
-        ki[2] = c + x[2]
+        ki[1] = r0 + x[1]
+        ki[2] = c0 + x[2]
         ki[3] = 1.6 * 2.0**((float(s) + x[0]) / 3.0) #3.0 is "par.Scales" 
     else:
         ki = (-1,-1,-1,-1)
