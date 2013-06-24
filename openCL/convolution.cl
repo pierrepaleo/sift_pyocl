@@ -13,9 +13,9 @@ __kernel void horizontal_convolution(
 	const __global float * input, 
 	__global float * output,
 	__constant float * filter __attribute__((max_constant_size(MAX_CONST_SIZE))),
+	int FILTER_SIZE,
 	int IMAGE_W,
-	int IMAGE_H,
-	int FILTER_SIZE
+	int IMAGE_H
 )
 {
 	int gid1 = (int) get_global_id(1);
@@ -68,9 +68,9 @@ __kernel void vertical_convolution(
 	const __global float * input, 
 	__global float * output,
 	__constant float * filter __attribute__((max_constant_size(MAX_CONST_SIZE))),
+	int FILTER_SIZE,
 	int IMAGE_W,
-	int IMAGE_H,
-	int FILTER_SIZE
+	int IMAGE_H
 )
 {
 	

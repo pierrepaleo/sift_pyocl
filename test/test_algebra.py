@@ -123,7 +123,10 @@ class test_algebra(unittest.TestCase):
         self.shape = calc_size(self.mat1.shape, self.wg)
 
         t0 = time.time()
-        k1 = self.program.combine(queue, self.shape, self.wg, self.gpu_mat1.data, self.coeff1, self.gpu_mat2.data, self.coeff2, self.gpu_out.data, self.width, self.height)
+        k1 = self.program.combine(queue, self.shape, self.wg, 
+                                  self.gpu_mat1.data, self.coeff1, self.gpu_mat2.data, self.coeff2, 
+                                  self.gpu_out.data, numpy.int32(0),
+                                  self.width, self.height)
         res = self.gpu_out.get()
         t1 = time.time()
         ref = my_combine(self.mat1,self.coeff1,self.mat2,self.coeff2)

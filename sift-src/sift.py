@@ -1,2 +1,2 @@
 
-fom .param import par
+from .param import par
