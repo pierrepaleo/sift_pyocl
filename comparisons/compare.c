@@ -12,7 +12,7 @@
 #include <string.h>
 #include <math.h>
 #define MAX_KP 300 //for a given octave 
-#define DIGITS 1 //for comparison precision (10e-DIGITS)
+#define DIGITS 3 //for comparison precision (10e-DIGITS)
 
 typedef struct keypoint {
 	float p;
@@ -31,22 +31,22 @@ void keypoint_swap(keypoint k1, keypoint k2) {
 }
 
 
-
-
 /*
 truncates "a" to its "digits" first digits
 example: truncate(3.141592,3) = 3.141000
+
+warning: have to use round(), for compiler removes the cast to (int)
+WARNING: not 100% reliable, due to pre-truncating
 */
 
 float truncate(float a,unsigned int digits) {
 	if (digits != 0) {
 		float p = pow(10,digits);
-		return (float) ((int) (a*p))/p;
+		float tmp = (int) round(a*p);
+		return ((int) tmp)/p;
 	}
 	else return (float) ((int) a);
 }
-
-
 
 
 
@@ -116,13 +116,13 @@ int main(int args, char* argv[]) {
 				if (k_cpp[j].r != -1.0) {
 					if (truncate(k_cpp[j].r,DIGITS) == r 
 						&& truncate(k_cpp[j].c,DIGITS) == c
-						&& truncate(k_cpp[j].s,DIGITS) == s) {
+						/*&& truncate(k_cpp[j].s,DIGITS) == s CHECK THAT LATER*/) {
 						flag_ok = 1;
 						kp_ok++;
 					}
 				}
 			}
-			if (flag_ok == 0) printf("Keypoint (%f,%f) did not match\n",r,c);
+			if (flag_ok == 0) printf("Keypoint (%f,%f,%f) did not match\n",r,c,s);
 		}
 	}
 	printf("End of comparison -- %d/(%d,%d) keypoints matches\n",
