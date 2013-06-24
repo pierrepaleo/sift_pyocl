@@ -2,13 +2,15 @@ import sys, os
 from math import sin, cos
 here = os.path.dirname(os.path.abspath(__file__))
 there = os.path.join(here,"..","build")
-lib = [os.path.abspath(os.path.join(there,i)) for i in os.listdir(there) if "lib" in i][0]
-sys.path.insert(0, lib)
+# lib = [os.path.abspath(os.path.join(there,i)) for i in os.listdir(there) if "lib" in i][0]
+# sys.path.insert(0, lib)
 import sift
 import numpy
 import scipy.misc
 import pylab
 lena = scipy.misc.lena()
+lena[:]=0
+lena[100:110,100:110] = 255
 s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=8)
 kp = s.keypoints(lena)
 s.log_profile()
