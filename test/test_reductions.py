@@ -75,20 +75,20 @@ class test_reductions(unittest.TestCase):
     def test_max_min_rnd(self):
         self.test_max_min(numpy.random.randint(1000), -numpy.random.randint(1000))
 
-    def test_max_min(self, val_max=1.0, val_min=0.0, shape=((256, 256))):
+    def test_max_min(self, val_max=1.0, val_min=0.0, shape=((32, 32))):
         """
         Test global_max_min kernel
         """
         print("values: %s -> %s" % (val_min, val_max))
-        data = (val_max * numpy.random.random(shape) + val_min).astype(numpy.float32)
+        data = ((val_max - val_min) * numpy.random.random(shape) + val_min).astype(numpy.float32)
 #        data = numpy.zeros(shape, dtype=numpy.float32)
         inp_gpu = pyopencl.array.to_device(queue, data)
         wg_float = min(512.0, numpy.sqrt(data.size))
         wg = 2 ** (int(math.ceil(math.log(wg_float, 2))))
         size = wg * wg
-        pix_per_thread = numpy.uint32((data.size) // size)
+        pix_per_thread = numpy.uint32((data.size) // size + 1)
         max_min_gpu = pyopencl.array.zeros(queue, (wg, 2), dtype=numpy.float32, order="C")
-#        max_min_gpu = pyopencl.array.empty(queue, (2 * wg,), dtype=numpy.float32, order="C")
+#        max_min_gpu = pyopencl.array.empty(queue, (wg, 2), dtype=numpy.float32, order="C")
         max_gpu = pyopencl.array.empty(queue, (1,), dtype=numpy.float32, order="C")
         min_gpu = pyopencl.array.empty(queue, (1,), dtype=numpy.float32, order="C")
         print wg, size, pix_per_thread
@@ -96,7 +96,7 @@ class test_reductions(unittest.TestCase):
         nmin = data.min()
         nmax = data.max()
         t0 = time.time()
-        k1 = self.program.max_min_global_stage1(queue, (size,), (wg,), inp_gpu.data, max_min_gpu.data, pix_per_thread, numpy.uint32(data.size))
+        k1 = self.program.max_min_global_stage1(queue, (size,), (wg,), inp_gpu.data, max_min_gpu.data, numpy.uint32(data.size))
         k1.wait()
         k2 = self.program.max_min_global_stage2(queue, (wg,), (wg,), max_min_gpu.data, max_gpu.data, min_gpu.data)
         k2.wait()
@@ -104,27 +104,35 @@ class test_reductions(unittest.TestCase):
         min_res = min_gpu.get()
         max_res = max_gpu.get()
 
-        print "temp_res", max_min_gpu.get().max(), nmax.dtype, max_res.dtype, max_res - nmax
-        print max_min_gpu.get()
-        
-        print "Final:",min_res,max_res
+        print "temp_res", max_min_gpu.get().max(), max_min_gpu.get().min()
+#        print max_min_gpu.get()
+
+        print "Final:", min_res, max_res
         t1 = time.time()
         min_pyocl = pyopencl.array.min(inp_gpu, queue).get()
         max_pyocl = pyopencl.array.max(inp_gpu, queue).get()
         t2 = time.time()
-        print min_res
-        print max_res
         max_res = max_res.max()
         min_res = min_res.min()
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms, pyopencl: %.3fms." % (1000.0 * (t0 - t), 1000.0 * (t1 - t0), 1000.0 * (t2 - t1)))
-            logger.info("reduction took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+            logger.info("reduction took %.3fms + %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start), 1e-6 * (k2.profile.end - k2.profile.start)))
         print nmin, min_res, min_pyocl
         print nmax, max_res, max_pyocl
         if nmax != max_res:
-            print "temp_res", max_min_gpu.get().max(), nmax.dtype, max_res.dtype, max_res - nmax
+            print "Max error:", max_min_gpu.get().max(), max_res, nmax, max_pyocl
+            a, b = numpy.where(data == nmax)
+            c = numpy.where(data.ravel() == nmax)
+            a = a[0]
+            b = b[0]
+            c = c[0]
+            print a, b, c, max_min_gpu.get()[a]
         if nmin != min_res:
-            print "temp_res", max_min_gpu.get().min()
+            print "Min error:", max_min_gpu.get().min(), min_res, nmin, min_pyocl
+
+        print "where min", numpy.where(data == nmin), numpy.where(data.ravel() == nmin)
+        print "where max", numpy.where(data == nmax), numpy.where(data.ravel() == nmax)
+
         print("*"*80)
 
         self.assertEqual(nmin, min_res, "min: numpy vs ours")
@@ -137,8 +145,9 @@ class test_reductions(unittest.TestCase):
 
 def test_suite_reductions():
     testSuite = unittest.TestSuite()
-    testSuite.addTest(test_reductions("test_max_min"))
     testSuite.addTest(test_reductions("test_max_min_rnd"))
+    testSuite.addTest(test_reductions("test_max_min"))
+
     return testSuite
 
 if __name__ == '__main__':
