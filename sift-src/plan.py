@@ -60,7 +60,7 @@ class SiftPlan(object):
     kp is a nx132 array. the second dimension is composed of x,y, scale and angle as well as 128 floats describing the keypoint
 
     """
-    kernels = ["convolution", "preprocess", "algebra", "image", "gaussian"]
+    kernels = ["convolution", "preprocess", "algebra", "image", "gaussian", "reductions"]
     converter = {numpy.dtype(numpy.uint8):"u8_to_float",
                  numpy.dtype(numpy.uint16):"u16_to_float",
                  numpy.dtype(numpy.int32):"s32_to_float",
@@ -100,6 +100,7 @@ class SiftPlan(object):
         self.programs = {}
         self.memory = None
         self.octave_max = None
+        self.red_size = None
         self._calc_scales()
         self._calc_memory()
         if device is None:
@@ -159,7 +160,9 @@ class SiftPlan(object):
         self.kpsize = int(self.shape[0] * self.shape[1] // self.PIX_PER_KP)  # Is the number of kp independant of the octave ? int64 causes problems with pyopencl
         self.memory += self.kpsize * size_of_float * 4 * 2  # those are array of float4 to register keypoints, we need two of them
         self.memory += 4  # keypoint index Counter
-
+        wg_float = min(512.0, numpy.sqrt(self.shape[0] * self.shape[1]))
+        self.red_size = 2 ** (int(math.ceil(math.log(wg_float, 2))))
+        self.memory += 4 * 2 * self.red_size  # temporary storage for reduction
 
         ########################################################################
         # Calculate space for gaussian kernels
@@ -196,8 +199,11 @@ class SiftPlan(object):
             self.buffers[(octave, "ori") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32)
             for scale in range(par.Scales + 3):
                 self.buffers[(octave, scale) ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32)
-            self.buffers[(octave, "DoGs") ] = pyopencl.array.empty(self.queue,(par.Scales + 2, shape[0], shape[1]), dtype=numpy.float32)
+            self.buffers[(octave, "DoGs") ] = pyopencl.array.empty(self.queue, (par.Scales + 2, shape[0], shape[1]), dtype=numpy.float32)
             shape = (shape[0] // 2, shape[1] // 2)
+        wg_float = min(512.0, numpy.sqrt(self.shape[0] * self.shape[1]))
+        wg = 2 ** (int(math.ceil(math.log(wg_float, 2))))
+        self.buffers["max_min"] = pyopencl.array.empty(self.queue, (self.red_size, 2), dtype=numpy.float32)  # temporary buffer for max/min reduction
         self.buffers["min"] = pyopencl.array.empty(self.queue, (1), dtype=numpy.float32)
         self.buffers["max"] = pyopencl.array.empty(self.queue, (1), dtype=numpy.float32)
         self.buffers["255"] = pyopencl.array.to_device(self.queue, numpy.array([255.0], dtype=numpy.float32))
@@ -339,11 +345,29 @@ class SiftPlan(object):
             if self.profile:self.events.append(("convert ->float", evt))
         else:
             raise RuntimeError("invalid input format error")
-        min_data = pyopencl.array.min(self.buffers[(0, 0)], self.queue)
-        max_data = pyopencl.array.max(self.buffers[(0, 0)], self.queue)
+
+        k1 = self.programs["reductions"].max_min_global_stage1(self.queue, (self.red_size * self.red_size,), (self.red_size,),
+                                                     self.buffers[(0, 0)].data,
+                                                     self.buffers["max_min"].data,
+                                                     numpy.uint32(self.shape[0] * self.shape[1]))
+        k2 = self.programs["reductions"].max_min_global_stage2(self.queue, (self.red_size,), (self.red_size,),
+                                                               self.buffers["max_min"].data,
+                                                               self.buffers["max"].data,
+                                                               self.buffers["min"].data)
+        if self.profile:
+            self.events.append(("max_min_stage1", k1))
+            self.events.append(("max_min_stage2", k2))
+
+        print self.buffers["max"]
+        print self.buffers["min"]
+#        min_data = pyopencl.array.min(self.buffers[(0, 0)], self.queue)
+#        max_data = pyopencl.array.max(self.buffers[(0, 0)], self.queue)
         evt = self.programs["preprocess"].normalizes(self.queue, self.procsize[0], self.wgsize[0],
                                                self.buffers[(0, 0)].data,
-                                               min_data.data, max_data.data, self.buffers["255"].data, *self.scales[0])
+                                               self.buffers["min"].data,
+                                               self.buffers["max"].data,
+                                               self.buffers["255"].data,
+                                               *self.scales[0])
         if self.profile:self.events.append(("normalize", evt))
 
 
@@ -523,7 +547,7 @@ class SiftPlan(object):
                         self.buffers["cnt"].data,  # __global int* counter,
                         start,  # int start,
                         kp_counter)  # int nbkeypoints
-        if self.profile:self.events.append(("compact",evt))
+        if self.profile:self.events.append(("compact", evt))
         newcnt = self.buffers["cnt"].get()[0]
         print("After compaction, %i (-%i)" % (newcnt, kp_counter - newcnt))
         # swap keypoints:
@@ -548,13 +572,13 @@ class SiftPlan(object):
     def debug_holes(self, label=""):
         print("%s %s" % (label, numpy.where(self.buffers["Kp_1"].get()[:, 1] == -1)[0]))
     def log_profile(self):
-        t=0
+        t = 0
         if self.profile:
             for e in self.events:
-                if "__len__" in dir(e) and len(e)>=2:
+                if "__len__" in dir(e) and len(e) >= 2:
                     et = 1e-6 * (e[1].profile.end - e[1].profile.start)
                     print("%50s:\t%.3fms" % (e[0], et))
-                    t+=et
+                    t += et
         print("_"*80)
         print("%50s:\t%.3fms" % ("Total execution time", t))
 if __name__ == "__main__":
