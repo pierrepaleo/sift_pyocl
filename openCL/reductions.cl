@@ -82,11 +82,12 @@ __kernel void max_min_global_stage1(
     unsigned int group_size =  min(get_local_size(0), (unsigned int) WORKGROUP_SIZE);
     unsigned int lid = get_local_id(0);
     float2 acc;
-    unsigned int i =  lid + group_size * get_group_id(0); //get_global_id(0);
     unsigned int big_block = group_size * get_num_groups(0);
-    if (lid<SIZE) 
+    unsigned int i =  lid + group_size * get_group_id(0); //get_global_id(0);
+
+    if (lid<SIZE)
     	acc = READ_AND_MAP(lid);
-    else 
+    else
     	acc = READ_AND_MAP(0);
     while (i<SIZE){
       acc = REDUCE(acc, READ_AND_MAP(i));
@@ -94,48 +95,50 @@ __kernel void max_min_global_stage1(
     }
     ldata[lid] = acc;
     barrier(CLK_LOCAL_MEM_FENCE);
-    if ((lid < 512) && ((lid + 512)<group_size)){
+
+    if ((lid<group_size) && (lid < 512) && ((lid + 512)<group_size)){
     	ldata[lid] = REDUCE(ldata[lid], ldata[lid + 512]);
     }
     barrier(CLK_LOCAL_MEM_FENCE);
-    if ((lid < 256) && ((lid + 256)<group_size)){
+    if ((lid<group_size) && (lid < 256) && ((lid + 256)<group_size)){
     	ldata[lid] = REDUCE(ldata[lid], ldata[lid + 256]);
     }
     barrier(CLK_LOCAL_MEM_FENCE);
-    if ((lid < 128) && ((lid + 128)<group_size)){
+    if ((lid<group_size) && (lid < 128) && ((lid + 128)<group_size)){
     	ldata[lid] = REDUCE(ldata[lid], ldata[lid + 128]);
     }
     barrier(CLK_LOCAL_MEM_FENCE);
-    if ((lid < 64 ) && ((lid + 64 )<group_size)){
+    if ((lid<group_size) && (lid < 64 ) && ((lid + 64 )<group_size)){
     	ldata[lid] = REDUCE(ldata[lid], ldata[lid + 64 ]);
     }
     barrier(CLK_LOCAL_MEM_FENCE);
-    if ((lid < 32 ) && ((lid + 32 )<group_size)){
+    if ((lid<group_size) && (lid < 32 ) && ((lid + 32 )<group_size)){
     	ldata[lid] = REDUCE(ldata[lid], ldata[lid + 32 ]);
     }
     barrier(CLK_LOCAL_MEM_FENCE);
-    if ((lid < 16 ) && ((lid + 16 )<group_size)){
+    if ((lid<group_size) && (lid < 16 ) && ((lid + 16 )<group_size)){
     	ldata[lid] = REDUCE(ldata[lid], ldata[lid + 16 ]);
     }
     barrier(CLK_LOCAL_MEM_FENCE);
-    if ((lid < 8  ) && ((lid + 8  )<group_size)){
+    if ((lid<group_size) && (lid < 8  ) && ((lid + 8  )<group_size)){
     	ldata[lid] = REDUCE(ldata[lid], ldata[lid + 8  ]);
     }
     barrier(CLK_LOCAL_MEM_FENCE);
-    if ((lid < 4  ) && ((lid + 4  )<group_size)){
+
+    if ((lid<group_size) && (lid < 4  ) && ((lid + 4  )<group_size)){
     	ldata[lid] = REDUCE(ldata[lid], ldata[lid + 4  ]);
     }
     barrier(CLK_LOCAL_MEM_FENCE);
-    if ((lid < 2  ) && ((lid + 2  )<group_size)){
+    if ((lid<group_size) && (lid < 2  ) && ((lid + 2  )<group_size)){
     	ldata[lid] = REDUCE(ldata[lid], ldata[lid + 2  ]);
     }
     barrier(CLK_LOCAL_MEM_FENCE);
-    
-    if ((lid ==0 ) && ((lid + 1)<group_size)){
-    	out[get_group_id(0)] = REDUCE(ldata[0],ldata[1]);
-    }else{
-    	out[get_group_id(0)] = ldata[0];
+    if ((lid<group_size) && (lid < 1  ) && ((lid + 1  )<group_size)){
+    	ldata[lid] = REDUCE(ldata[lid], ldata[lid + 1  ]);
     }
+    barrier(CLK_LOCAL_MEM_FENCE);
+
+  	out[get_group_id(0)] = ldata[0];
 }
 
 
@@ -158,50 +161,51 @@ __kernel void max_min_global_stage2(
 	__local float2 ldata[WORKGROUP_SIZE];
     unsigned int lid = get_local_id(0);
     unsigned int group_size =  min(get_local_size(0), (unsigned int) WORKGROUP_SIZE);
-    float2 acc;
-    if (lid<group_size){
+    float2 acc = (float2)(-1.0f, -1.0f);
+    if (lid<=group_size){
     	ldata[lid] = data2[lid];
     }else{
-    	ldata[lid] = data2[0];
+    	ldata[lid] = acc;
     }
 	barrier(CLK_LOCAL_MEM_FENCE);
 
-	if ((lid < 512) && ((lid + 512)<group_size)){
+	if ((lid<group_size) && (lid < 512) && ((lid + 512)<group_size)){
 		ldata[lid] = REDUCE(ldata[lid], ldata[lid + 512]);
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
-	if ((lid < 256) && ((lid + 256)<group_size)){
+	if ((lid<group_size) && (lid < 256) && ((lid + 256)<group_size)){
 		ldata[lid] = REDUCE(ldata[lid], ldata[lid + 256]);
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
-	if ((lid < 128) && ((lid + 128)<group_size)){
+	if ((lid<group_size) && (lid < 128) && ((lid + 128)<group_size)){
 		ldata[lid] = REDUCE(ldata[lid], ldata[lid + 128]);
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
-	if ((lid < 64 ) && ((lid + 64 )<group_size)){
+	if ((lid<group_size) && (lid < 64 ) && ((lid + 64 )<group_size)){
 		ldata[lid] = REDUCE(ldata[lid], ldata[lid + 64 ]);
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
-	if ((lid < 32 ) && ((lid + 32 )<group_size)){
+	if ((lid<group_size) && (lid < 32 ) && ((lid + 32 )<group_size)){
 		ldata[lid] = REDUCE(ldata[lid], ldata[lid + 32 ]);
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
-	if ((lid < 16 ) && ((lid + 16 )<group_size)){
+	if ((lid<group_size) && (lid < 16 ) && ((lid + 16 )<group_size)){
 		ldata[lid] = REDUCE(ldata[lid], ldata[lid + 16 ]);
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
-	if ((lid < 8  ) && ((lid + 8  )<group_size)){
+	if ((lid<group_size) && (lid < 8  ) && ((lid + 8  )<group_size)){
 		ldata[lid] = REDUCE(ldata[lid], ldata[lid + 8  ]);
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
-	if ((lid < 4  ) && ((lid + 4  )<group_size)){
+	if ((lid<group_size) && (lid < 4  ) && ((lid + 4  )<group_size)){
 		ldata[lid] = REDUCE(ldata[lid], ldata[lid + 4  ]);
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
-	if ((lid < 2  ) && ((lid + 2  )<group_size)){
+	if ((lid<group_size) && (lid < 2  ) && ((lid + 2  )<group_size)){
 		ldata[lid] = REDUCE(ldata[lid], ldata[lid + 2  ]);
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
+
 	if (lid == 0  ){
 		if ( 1 < group_size){
 			acc = REDUCE(ldata[0], ldata[1]);
