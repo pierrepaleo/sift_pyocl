@@ -264,6 +264,7 @@ __kernel void interp_keypoint(
 			//this loop replaces the recursive "InterpKeyPoint"
 			while (loop == 1) {
 
+				r = newr, c = newc; //values got as parameters of InterpKeyPoint()" in sift.cpp
 				pos = newr*width+newc;
 
 				//Fill in the values of the gradient from pixel differences
@@ -345,8 +346,8 @@ __kernel void interp_keypoint(
 			keypoint ki = 0.0f; //float4
 			if (fabs(solution0) <= 1.5f && fabs(solution1) <= 1.5f && fabs(solution2) <= 1.5f && fabs(peakval) >= peak_thresh) {
 				ki.s0 = peakval;
-				ki.s1 = /*k.s1*/ newr + solution1;
-				ki.s2 = /*k.s2*/ newc + solution2;
+				ki.s1 = /*k.s1*/ r + solution1;
+				ki.s2 = /*k.s2*/ c + solution2;
 				ki.s3 = InitSigma * pow(2.0f, (((float) scale) + solution0) / 3.0f); //3.0 is "par.Scales"
 			}
 			else { //the keypoint was not correctly interpolated : we reject it
