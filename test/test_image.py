@@ -344,10 +344,9 @@ class test_image(unittest.TestCase):
         
         ref = my_descriptor(keypoints_o, grad, ori, keypoints_start, keypoints_end)
         
-        #print res[0:30,0:15]
-        print ""
-        #print ref[0:30,0:15]
-        print res[0:keypoints_end-keypoints_start,0:15]-ref[0:keypoints_end-keypoints_start,0:15]
+        print res[0:30,0:15]#keypoints_end-keypoints_start,0:15]
+        #print ""
+        #print ref[0:keypoints_end-keypoints_start,0:15]
         
         t2 = time.time()
         
@@ -423,9 +422,9 @@ def test_suite_image():
     testSuite = unittest.TestSuite()
     #testSuite.addTest(test_image("test_gradient"))
     #testSuite.addTest(test_image("test_local_maxmin"))
-    testSuite.addTest(test_image("test_interpolation"))
+    #testSuite.addTest(test_image("test_interpolation"))
     #testSuite.addTest(test_image("test_orientation"))
-    #testSuite.addTest(test_image("test_descriptor"))
+    testSuite.addTest(test_image("test_descriptor"))
     return testSuite
 
 if __name__ == '__main__':
