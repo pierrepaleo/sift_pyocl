@@ -497,7 +497,7 @@ class SiftPlan(object):
                 if self.profile:self.events.append(("compute_gradient_orientation %s %s" % (octave, scale), evt))
 
     #           Orientation assignement: 1D kernel, rather heavy kernel
-                if newcnt:  # launch kernel only if needed
+                if newcnt and newcnt > last_start:  # launch kernel only if needed
                     procsize = calc_size((int(newcnt),), wgsize)
                     print procsize, wgsize
                     evt = self.programs["image"].orientation_assignment(self.queue, procsize, wgsize,
@@ -572,15 +572,19 @@ class SiftPlan(object):
     def debug_holes(self, label=""):
         print("%s %s" % (label, numpy.where(self.buffers["Kp_1"].get()[:, 1] == -1)[0]))
     def log_profile(self):
-        t = 0
+        t = 0.0
+        orient = 0.0
         if self.profile:
             for e in self.events:
                 if "__len__" in dir(e) and len(e) >= 2:
                     et = 1e-6 * (e[1].profile.end - e[1].profile.start)
                     print("%50s:\t%.3fms" % (e[0], et))
                     t += et
+                    if "orient" in e[0]:
+                        orient += et
         print("_"*80)
         print("%50s:\t%.3fms" % ("Total execution time", t))
+        print("%50s:\t%.3fms" % ("Total Orientation assignment", orient))
 if __name__ == "__main__":
     # Prepare debugging
     import scipy.misc

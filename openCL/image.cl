@@ -16,14 +16,19 @@
 
 */
 typedef float4 keypoint;
-#define MIN(i,j) ( (i)<(j) ? (i):(j) )
-#define MAX(i,j) ( (i)<(j) ? (j):(i) )
+//#define MIN(i,j) ( (i)<(j) ? (i):(j) )
+//#define MAX(i,j) ( (i)<(j) ? (j):(i) )
 
 /*
  Do not use __constant memory for large (usual) images
 */
 #define MAX_CONST_SIZE 16384
 
+#ifndef WORKGROUP_SIZE
+	#define WORKGROUP_SIZE 32
+#endif
+
+#define NEIGHB 7
 
 /**
  * \brief Gradient of a grayscale image
@@ -416,43 +421,64 @@ __kernel void orientation_assignment(
 	int grad_width,
 	int grad_height)
 {
-	int gid0 = (int) get_global_id(0);
-
-	if (keypoints_start <= gid0 && gid0 < keypoints_end) { //do not use *counter, for it will be modified below
-		keypoint k = keypoints[gid0];
-		if (k.s1 != -1.0f) { //if the keypoint is valid
-			int	bin, prev, next;
-			int old;
-			float distsq, gval, angle, interp=0.0;
-			float hist[36] = { 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f, 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f, 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f};
-			int	row = (int) (k.s1 + 0.5),
-				col = (int) (k.s2 + 0.5);
-
+	unsigned int gid0 = (int) get_global_id(0);
+	unsigned int lid0 = (int) get_local_id(0);
+	keypoint k = keypoints[gid0];
+	int	row = (int) (k.s1 + 0.5),
+		col = (int) (k.s2 + 0.5);
+	float sigma = OriSigma * k.s3;
+	int	radius = (int) (sigma * 3.0f);
+	int rmin = max(0,row - radius);
+	int cmin = max(0,col - radius);
+	int rmax = min(row + radius,grad_height - 2);
+	int cmax = min(col + radius,grad_width - 2);
+	int i,j,r,c;
+	int	bin, prev, next;
+	int old;
+	float distsq, gval, angle, interp=0.0;
+	float hist[36] = { 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f, 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f, 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f};
+	__local int start_read[WORKGROUP_SIZE];
+	__local float local_grad[NEIGHB*NEIGHB*WORKGROUP_SIZE];// 6x6 neigbourhood or 7x7?
+	__local float local_ori[NEIGHB*NEIGHB*WORKGROUP_SIZE]; // 6x6 neigbourhood or 7x7 ?
+	int isValid = ((keypoints_start <= gid0) && (gid0 < keypoints_end) && (k.s1 != -1.0f));//do not use *counter, for it will be modified below
+	if (isValid) {
+		start_read[lid0] = rmin*grad_width+cmin;
+	}
+	else{
+		start_read[lid0]=-1;
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	//collaborative reading in global memory
+	for (i=0;i<WORKGROUP_SIZE;i++){
+		if (start_read[i]>-1){
+			for (r = 0; r <= 2*radius; r++){
+				if (lid0<=(2*radius)){
+					local_grad[NEIGHB*NEIGHB*i+NEIGHB*r+lid0] = grad[start_read[i]+r*grad_width+lid0];
+					local_ori[NEIGHB*NEIGHB*i+NEIGHB*r+lid0] = ori[start_read[i]+r*grad_width+lid0];
+				}
+				else{
+					local_grad[NEIGHB*NEIGHB*i+NEIGHB*r+lid0] = 0.0f;
+					local_ori[NEIGHB*NEIGHB*i+NEIGHB*r+lid0] = 0.0f;
+				}
+			}
+		}
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (isValid) {
 			/* Look at pixels within 3 sigma around the point and sum their
 			  Gaussian weighted gradient magnitudes into the histogram. */
-
-			float sigma = OriSigma * k.s3;
-			int	radius = (int) (sigma * 3.0);
-			int rmin = MAX(0,row - radius);
-			int cmin = MAX(0,col - radius);
-			int rmax = MIN(row + radius,grad_height - 2);
-			int cmax = MIN(col + radius,grad_width - 2);
-			int i,j,r,c;
-			for (r = rmin; r <= rmax; r++) {
-				for (c = cmin; c <= cmax; c++) {
-
-					gval = grad[r*grad_width+c];
+			for (r = 0; r <= 2*radius; r++) {
+				for (c = 0; c <= 2*radius; c++) {
+					gval = local_grad[r*NEIGHB+c];
 					distsq = (r-k.s1)*(r-k.s1) + (c-k.s2)*(c-k.s2);
 
 					if (gval > 0.0f  &&  distsq < ((float) (radius*radius)) + 0.5f) {
 						/* Ori is in range of -PI to PI. */
-						angle = ori[r*grad_width+c];
-						bin = (int) (36 * (angle + M_PI_F + 0.001f) / (2.0f * M_PI_F)); //FIXME: why this offset ?
-						if (bin >= 0 && bin <= 36) {
-							bin = MIN(bin, 35);
-							hist[bin] += exp(- distsq / (2.0f*sigma*sigma)) * gval;
-
-						}
+						angle = local_ori[r*NEIGHB+c];
+						bin = (int) (36 * (angle + M_PI_F ) / (2.0f * M_PI_F));
+						if (bin<0) bin+=36;
+						else if (bin>35) bin-=36;
+						hist[bin] += exp(- distsq / (2.0f*sigma*sigma)) * gval;
 					}
 				}
 			}
@@ -522,7 +548,7 @@ __kernel void orientation_assignment(
 					}
 				} //end "val >= 80%*maxval"
 			} //end loop in histogram
-		} //end "valid keypoint"
+//		} //end "valid keypoint"
 	} //end "in the vector"
 }
 
@@ -741,8 +767,7 @@ __kernel void descriptor(
 			//finally, cast to integer
 			//store to global memory : tmp_descriptor[i][gid0] --> descriptors[i][gid0]
 			for (i = 0; i < 128; i++) {
-				descriptors[128*gid0+i]
-					= (unsigned char) MIN(255,(unsigned char)(512.0f*tmp_descriptors[128*gid0+i]));
+				descriptors[128*gid0+i] = min((unsigned char)255,(unsigned char)(512.0f*tmp_descriptors[128*gid0+i]));
 					//= (unsigned char) tmp_descriptors[128*gid0+i];
 			}
 
