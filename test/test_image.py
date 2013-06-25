@@ -269,10 +269,13 @@ class test_image(unittest.TestCase):
         keypoints_start = numpy.int32(0)
         keypoints_end = numpy.int32(actual_nb_keypoints)
         counter = pyopencl.array.to_device(queue, keypoints_end) #actual_nb_keypoints)
+        #shared memory : 36-bin histograms
+        local_size = (keypoints_end-keypoints_start+1)*36*4
+        local_mem = pyopencl.LocalMemory(local_size)
         
         t0 = time.time()
         k1 = self.program.orientation_assignment(queue, shape, wg, 
-        	gpu_keypoints.data, gpu_grad.data, gpu_ori.data, counter.data,
+        	gpu_keypoints.data, gpu_grad.data, gpu_ori.data, counter.data, local_mem,
         	octsize, orisigma, nb_keypoints, keypoints_start, keypoints_end, grad_width, grad_height)    	
         res = gpu_keypoints.get()
         cnt = counter.get()

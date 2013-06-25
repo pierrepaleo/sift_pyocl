@@ -385,6 +385,7 @@ __kernel void interp_keypoint(
  * @param grad: Pointer to global memory with gradient norm previously calculated
  * @param ori: Pointer to global memory with gradient orientation previously calculated
  * @param counter: Pointer to global memory with actual number of keypoints previously found
+ * @param hist: Pointer to shared memory with histogram (36 values per thread)
  * @param octsize: initially 1 then twiced at each octave
  * @param OriSigma : a SIFT parameter, default is 1.5. Warning : it is not "InitSigma".
  * @param nb_keypoints : maximum number of keypoints
@@ -400,6 +401,20 @@ par.OriHistThresh = 0.8;
 -replace "36" by an external paramater ?
 -replace "0.8" by an external parameter ?
 
+TODO:
+-Memory optimization
+	--Use less registers (re-use, calculation instead of assignation)
+	--Use local memory for float histogram[36]
+-Speed-up
+	--Less access to global memory (k.s1 is OK because this is a register)
+	--leave the loops as soon as possible
+	--Avoid divisions
+
+TODO: QUESTION :
+keypoint k = keypoints[gid0];
+keypoint is float4.
+Is this a copy (register) or a pointer ? would explain bad performances...
+
 */
 
 __kernel void orientation_assignment(
@@ -407,6 +422,7 @@ __kernel void orientation_assignment(
 	__global float* grad, 
 	__global float* ori,
 	__global int* counter,
+	__local float* hist,
 	int octsize,
 	float OriSigma, //WARNING: (1.5), it is not "InitSigma (=1.6)"
 	int nb_keypoints,
@@ -420,33 +436,37 @@ __kernel void orientation_assignment(
 	if (keypoints_start <= gid0 && gid0 < keypoints_end) { //do not use *counter, for it will be modified below
 		keypoint k = keypoints[gid0];
 		if (k.s1 != -1.0f) { //if the keypoint is valid 
+			
+			//Local memory memset
+			for (int i=0; i < 36; i++)
+				hist[36*gid0+i] = 0.0f;
+				
 			int	bin, prev, next;
-			int old;
+			int old; //counter value
 			float distsq, gval, angle, interp=0.0;
-			float hist[36] = { 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f, 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f, 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f};
-			int	row = (int) (k.s1 + 0.5),
-				col = (int) (k.s2 + 0.5);
+			//int	row = (int) (k.s1 + 0.5),
+			//	col = (int) (k.s2 + 0.5);
 
 			/* Look at pixels within 3 sigma around the point and sum their
 			  Gaussian weighted gradient magnitudes into the histogram. */
 			  
 			float sigma = OriSigma * k.s3;
 			int	radius = (int) (sigma * 3.0);
-			int rmin = MAX(0,row - radius);
-			int cmin = MAX(0,col - radius);
-			int rmax = MIN(row + radius,grad_height - 2);
-			int cmax = MIN(col + radius,grad_width - 2);
+			int rmin = MAX(0,((int) (k.s1 + 0.5)) - radius);
+			int cmin = MAX(0,((int) (k.s2 + 0.5)) - radius);
+			int rmax = MIN(((int) (k.s1 + 0.5)) + radius,grad_height - 2);
+			int cmax = MIN(((int) (k.s2 + 0.5)) + radius,grad_width - 2);
 			int i,j,r,c;
 			for (r = rmin; r <= rmax; r++) {
 				for (c = cmin; c <= cmax; c++) {
 
 					gval = grad[r*grad_width+c];
-					distsq = (r-k.s1)*(r-k.s1) + (c-k.s2)*(c-k.s2);
+					distsq = (r-k.s1,2)*(r-k.s1,2) + (c-k.s2,2)*(c-k.s2,2);
 				
 					if (gval > 0.0f  &&  distsq < ((float) (radius*radius)) + 0.5f) {
 						/* Ori is in range of -PI to PI. */
 						angle = ori[r*grad_width+c];
-						bin = (int) (36 * (angle + M_PI_F + 0.001f) / (2.0f * M_PI_F)); //FIXME: why this offset ?
+						bin = (int) (36 * (angle + M_PI_F + 0.001f) / (2.0f * M_PI_F)); //why this offset ?
 						if (bin >= 0 && bin <= 36) {
 							bin = MIN(bin, 35);
 							hist[bin] += exp(- distsq / (2.0f*sigma*sigma)) * gval;
@@ -485,14 +505,15 @@ __kernel void orientation_assignment(
 				hist[next] = -hist[next];
 			}
 			interp = 0.5f * (hist[prev] - hist[next]) / (hist[prev] - 2.0f * maxval + hist[next]);
-			angle = 2.0f * M_PI_F * (argmax + 0.5f + interp) / 36 - M_PI_F;
+			angle = 2.0f * M_PI_F * (argmax + 0.5f + interp) * 0.027778f - M_PI_F; //1/36 = 0.027777777777777776
 		
-		
+			/*
+				Re-arrange coordinates to be coherent with sift.cpp
+			*/
 			k.s0 = k.s2; //c
 			k.s1 = k.s1; //r
 			k.s2 = k.s3; //sigma
 			k.s3 = angle;		   //angle
-		
 			keypoints[gid0] = k;
 		
 			/*
@@ -500,7 +521,7 @@ __kernel void orientation_assignment(
 				We can create new keypoints of same (x,y,sigma) but a different angle.
 			 	For every local peak in histogram, every peak of value >= 80% of maxval generates a new keypoint	
 			*/
-		
+			//TODO: use k instead of k2 for memory ?
 			keypoint k2 = 0.0; k2.s0 = k.s0; k2.s1 = k.s1; k2.s2 = k.s2;
 			for (i = 0; i < 36; i++) {
 				prev = (i == 0 ? 36 -1 : i - 1);
