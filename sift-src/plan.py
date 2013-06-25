@@ -70,7 +70,7 @@ class SiftPlan(object):
     sigmaRatio = 2.0 ** (1.0 / par.Scales)
     PIX_PER_KP = 10  # pre_allocate buffers for keypoints
 
-    def __init__(self, shape=None, dtype=None, devicetype="GPU", template=None, profile=False, device=None, PIX_PER_KP=None, max_workgroup_size=sys.maxint):
+    def __init__(self, shape=None, dtype=None, devicetype="ALL", template=None, profile=False, device=None, PIX_PER_KP=None, max_workgroup_size=sys.maxint):
         """
         Contructor of the class
         """
@@ -196,7 +196,7 @@ class SiftPlan(object):
             self.buffers[(octave, "ori") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32)
             for scale in range(par.Scales + 3):
                 self.buffers[(octave, scale) ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32)
-            self.buffers[(octave, "DoGs") ] = pyopencl.array.empty(self.queue,(par.Scales + 2, shape[0], shape[1]), dtype=numpy.float32)
+            self.buffers[(octave, "DoGs") ] = pyopencl.array.empty(self.queue, (par.Scales + 2, shape[0], shape[1]), dtype=numpy.float32)
             shape = (shape[0] // 2, shape[1] // 2)
         self.buffers["min"] = pyopencl.array.empty(self.queue, (1), dtype=numpy.float32)
         self.buffers["max"] = pyopencl.array.empty(self.queue, (1), dtype=numpy.float32)
@@ -248,7 +248,7 @@ class SiftPlan(object):
         sum_data = pyopencl.array.sum(gaussian_gpu, dtype=numpy.float32, queue=self.queue)
         evt = self.programs["preprocess"].divide_cst(self.queue, (size,), (1,),
                                               gaussian_gpu.data,  # __global     float     *data,
-                                              sum_data.data,      # const        float     sigma,
+                                              sum_data.data,  # const        float     sigma,
                                               numpy.int32(size))  # const        int     SIZE
         if self.profile: self.events.append(("divide_cst", evt))
         self.buffers[name] = gaussian_gpu
@@ -520,7 +520,7 @@ class SiftPlan(object):
                         self.buffers["cnt"].data,  # __global int* counter,
                         start,  # int start,
                         kp_counter)  # int nbkeypoints
-        if self.profile:self.events.append(("compact",evt))
+        if self.profile:self.events.append(("compact", evt))
         newcnt = self.buffers["cnt"].get()[0]
         print("After compaction, %i (-%i)" % (newcnt, kp_counter - newcnt))
         # swap keypoints:
@@ -545,13 +545,13 @@ class SiftPlan(object):
     def debug_holes(self, label=""):
         print("%s %s" % (label, numpy.where(self.buffers["Kp_1"].get()[:, 1] == -1)[0]))
     def log_profile(self):
-        t=0
+        t = 0
         if self.profile:
             for e in self.events:
-                if "__len__" in dir(e) and len(e)>=2:
+                if "__len__" in dir(e) and len(e) >= 2:
                     et = 1e-6 * (e[1].profile.end - e[1].profile.start)
                     print("%50s:\t%.3fms" % (e[0], et))
-                    t+=et
+                    t += et
         print("_"*80)
         print("%50s:\t%.3fms" % ("Total execution time", t))
 if __name__ == "__main__":
