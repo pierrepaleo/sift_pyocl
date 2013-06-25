@@ -70,7 +70,7 @@ class SiftPlan(object):
     sigmaRatio = 2.0 ** (1.0 / par.Scales)
     PIX_PER_KP = 10  # pre_allocate buffers for keypoints
 
-    def __init__(self, shape=None, dtype=None, devicetype="GPU", template=None, profile=False, device=None, PIX_PER_KP=None, max_workgroup_size=sys.maxint):
+    def __init__(self, shape=None, dtype=None, devicetype="GPU", template=None, profile=False, device=None, PIX_PER_KP=None, max_workgroup_size=128):
         """
         Contructor of the class
         """
@@ -160,7 +160,7 @@ class SiftPlan(object):
         self.kpsize = int(self.shape[0] * self.shape[1] // self.PIX_PER_KP)  # Is the number of kp independant of the octave ? int64 causes problems with pyopencl
         self.memory += self.kpsize * size_of_float * 4 * 2  # those are array of float4 to register keypoints, we need two of them
         self.memory += 4  # keypoint index Counter
-        wg_float = min(512.0, numpy.sqrt(self.shape[0] * self.shape[1]))
+        wg_float = min(self.max_workgroup_size, numpy.sqrt(self.shape[0] * self.shape[1]))
         self.red_size = 2 ** (int(math.ceil(math.log(wg_float, 2))))
         self.memory += 4 * 2 * self.red_size  # temporary storage for reduction
 
@@ -277,7 +277,7 @@ class SiftPlan(object):
             kernel_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), kernel + ".cl")
             kernel_src = open(kernel_file).read()
             try:
-                program = pyopencl.Program(self.ctx, kernel_src).build('-D WORKGROUP=%s' % self.max_workgroup_size)
+                program = pyopencl.Program(self.ctx, kernel_src).build('-D WORKGROUP_SIZE=%s' % self.max_workgroup_size)
             except pyopencl.MemoryError as error:
                 raise MemoryError(error)
             self.programs[kernel] = program
@@ -347,9 +347,9 @@ class SiftPlan(object):
             raise RuntimeError("invalid input format error")
 
         k1 = self.programs["reductions"].max_min_global_stage1(self.queue, (self.red_size * self.red_size,), (self.red_size,),
-                                                     self.buffers[(0, 0)].data,
-                                                     self.buffers["max_min"].data,
-                                                     numpy.uint32(self.shape[0] * self.shape[1]))
+                                                               self.buffers[(0, 0)].data,
+                                                               self.buffers["max_min"].data,
+                                                               numpy.uint32(self.shape[0] * self.shape[1]))
         k2 = self.programs["reductions"].max_min_global_stage2(self.queue, (self.red_size,), (self.red_size,),
                                                                self.buffers["max_min"].data,
                                                                self.buffers["max"].data,
@@ -357,11 +357,6 @@ class SiftPlan(object):
         if self.profile:
             self.events.append(("max_min_stage1", k1))
             self.events.append(("max_min_stage2", k2))
-
-        print self.buffers["max"]
-        print self.buffers["min"]
-#        min_data = pyopencl.array.min(self.buffers[(0, 0)], self.queue)
-#        max_data = pyopencl.array.max(self.buffers[(0, 0)], self.queue)
         evt = self.programs["preprocess"].normalizes(self.queue, self.procsize[0], self.wgsize[0],
                                                self.buffers[(0, 0)].data,
                                                self.buffers["min"].data,
@@ -427,7 +422,7 @@ class SiftPlan(object):
         """
         prevSigma = par.InitSigma
         print("Calculating octave %i" % octave)
-        wgsize = (8,)  # (max(self.wgsize[octave]),) #TODO: optimize
+        wgsize = (32,)  # (max(self.wgsize[octave]),) #TODO: optimize
         kpsize32 = numpy.int32(self.kpsize)
         self._reset_keypoints()
         octsize = numpy.int32(2 ** octave)
@@ -449,7 +444,7 @@ class SiftPlan(object):
                                              *self.scales[octave])
             if self.profile:self.events.append(("DoG %s %s" % (octave, scale), evt))
         for scale in range(1, par.Scales + 1):
-                print("Before local_maxmin, cnt is %s %s %s" % (self.buffers["cnt"].get()[0], self.procsize[octave], self.wgsize[octave]))
+#                print("Before local_maxmin, cnt is %s %s %s" % (self.buffers["cnt"].get()[0], self.procsize[octave], self.wgsize[octave]))
                 evt = self.programs["image"].local_maxmin(self.queue, self.procsize[octave], self.wgsize[octave],
                                                 self.buffers[(octave, "DoGs")].data,  # __global float* DOGS,
                                                 self.buffers["Kp_1"].data,  # __global keypoint* output,
@@ -463,8 +458,8 @@ class SiftPlan(object):
                                                 numpy.int32(scale),  # int scale,
                                                 *self.scales[octave])  # int width, int height)
                 if self.profile:self.events.append(("local_maxmin %s %s" % (octave, scale), evt))
-                print("after local_max_min:")
-                print(self.buffers["Kp_1"].get()[:5])
+#                print("after local_max_min:")
+#                print(self.buffers["Kp_1"].get()[:5])
 
 #                self.debug_holes("After local_maxmin %s %s" % (octave, scale))
                 procsize = calc_size((self.kpsize,), wgsize)
@@ -482,8 +477,8 @@ class SiftPlan(object):
 
 #                self.debug_holes("After interp_keypoint %s %s" % (octave, scale))
                 newcnt = self.compact(last_start)
-                print("after compaction:")
-                print(self.buffers["Kp_1"].get()[:5])
+#                print("after compaction:")
+#                print(self.buffers["Kp_1"].get()[:5])
 #                self.debug_holes("After compact %s %s" % (octave, scale))
 
                 # recycle buffers G_2 and tmp to store ori and grad

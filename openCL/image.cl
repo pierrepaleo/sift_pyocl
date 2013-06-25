@@ -435,7 +435,9 @@ __kernel void orientation_assignment(
 {
 	int gid0 = (int) get_global_id(0);
 	int lid0 = (int) get_local_id(0);
+	int i;
 	__local float hist[36*WORKGROUP_SIZE];
+	
 	//Local memory memset
 	for (int i=0; i < 36; i++)
 		hist[36*lid0+i] = 0.0f;
@@ -459,7 +461,7 @@ __kernel void orientation_assignment(
 			int cmin = MAX(0,((int) (k.s2 + 0.5)) - radius);
 			int rmax = MIN(((int) (k.s1 + 0.5)) + radius,grad_height - 2);
 			int cmax = MIN(((int) (k.s2 + 0.5)) + radius,grad_width - 2);
-			int i,j,r,c;
+			int j,r,c;
 			for (r = rmin; r <= rmax; r++) {
 				for (c = cmin; c <= cmax; c++) {
 
@@ -470,23 +472,27 @@ __kernel void orientation_assignment(
 					if (gval > 0.0f  &&  distsq < ((float) (radius*radius)) + 0.5f) {
 						/* Ori is in range of -PI to PI. */
 						angle = ori[r*grad_width+c];
-						bin = (int) (36 * (angle + M_PI_F + 0.001f) / (2.0f * M_PI_F)); //why this offset ?
-						if (bin >= 0 && bin <= 36) {
-							bin = MIN(bin, 35);
-							hist[36*lid0+bin] += exp(- distsq / (2.0f*sigma*sigma)) * gval;
-
-						}
+						bin = (int) (36 * (angle + M_PI_F + 0.001f) / (M_2_PI_F)); //why this offset ?
+						bin%=36;
+						hist[36*lid0+bin] += exp(- distsq / (2.0f*sigma*sigma)) * gval;
+//								
+//						if (bin >= 0 && bin <= 36) {
+//							bin = MIN(bin, 35);
+//							hist[36*lid0+bin] += exp(- distsq / (2.0f*sigma*sigma)) * gval;
+//
+//						}
 					}
 				}
 			}
 
 			/* Apply smoothing 6 times for accurate Gaussian approximation. */
 			float prev2, temp2;
+//			int i2 = 0
 			for (j = 0; j < 6; j++) {
 				prev2 = hist[36*lid0+35];
 				for (i = 0; i < 36; i++) {
 					temp2 = hist[36*lid0+i];
-					hist[36*lid0+i] = ( prev2 + hist[36*lid0+i] + hist[36*lid0+(i + 1 == 36) ? 0 : i + 1] ) / 3.0f;
+					hist[36*lid0+i] = ( prev2 + hist[36*lid0+i] + hist[36*lid0+((i + 1 == 36) ? 0 : i + 1)] ) / 3.0f;
 					prev2 = temp2;
 				}
 			}
@@ -495,7 +501,9 @@ __kernel void orientation_assignment(
 			float maxval = 0.0f;
 			int argmax = 0;
 			for (i = 0; i < 36; i++)
-				if (hist[36*lid0+i] > maxval) { maxval = hist[36*lid0+i]; argmax = i; }
+				if (hist[36*lid0+i] > maxval) { 
+					maxval = hist[36*lid0+i]; 
+					argmax = i; }
 
 			/*
 				This maximum value in the histogram is defined as the orientation of our current keypoint
@@ -509,7 +517,7 @@ __kernel void orientation_assignment(
 				hist[36*lid0+next] = -hist[36*lid0+next];
 			}
 			interp = 0.5f * (hist[36*lid0+prev] - hist[36*lid0+next]) / (hist[36*lid0+prev] - 2.0f * maxval + hist[36*lid0+next]);
-			angle = 2.0f * M_PI_F * (argmax + 0.5f + interp) / 36 - M_PI_F;
+			angle = M_2_PI_F * (argmax + 0.5f + interp) / 36 - M_PI_F;
 
 
 			k.s0 = k.s2 * octsize; //c
@@ -524,7 +532,7 @@ __kernel void orientation_assignment(
 				We can create new keypoints of same (x,y,sigma) but a different angle.
 			 	For every local peak in histogram, every peak of value >= 80% of maxval generates a new keypoint
 			*/
-
+//			return;
 			keypoint k2 = 0.0; k2.s0 = k.s0; k2.s1 = k.s1; k2.s2 = k.s2;
 			for (i = 0; i < 36; i++) {
 				prev = (i == 0 ? 36 -1 : i - 1);

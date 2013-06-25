@@ -1,3 +1,4 @@
+#!/usr/bin/python
 import sys, os
 from math import sin, cos
 here = os.path.dirname(os.path.abspath(__file__))
@@ -11,7 +12,7 @@ import pylab
 lena = scipy.misc.lena()
 # lena[:] = 0
 # lena[100:110, 100:110] = 255
-s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=8)
+s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128)
 kp = s.keypoints(lena)
 s.log_profile()
 fig = pylab.figure()
@@ -39,7 +40,7 @@ ref = res[:, :4]
 
 sp2.set_title("C++: %s keypoint" % ref.shape[0])
 for i in range(ref.shape[0]):
-    print res[i, 4:].max()
+#    print res[i, 4:].max()
     x = ref[i, 0]
     y = ref[i, 1]
     scale = ref[i, 2]
@@ -78,8 +79,8 @@ for p0 in range(kp.shape[0]):
             best = d,
             best_id = p1
     d = ((kpi - ref[best_id]) ** 2).sum()
-    if d > 1:
-        print kpi, ref[best_id], (kpi - ref[best_id]).astype(int)
+#    if d > 1:
+#        print kpi, ref[best_id], (kpi - ref[best_id]).astype(int)
 
     sp1.annotate("", xy=kpi[:2], xytext=ref[best_id][:2], color="green",
                      arrowprops=dict(facecolor='green', edgecolor='green', width=1),)
