@@ -50,7 +50,7 @@ for i in range(ref.shape[0]):
     sp1.annotate("", xy=(x, y), xytext=(x + scale * cos(angle), y + scale * sin(angle)), color="blue",
                      arrowprops=dict(facecolor='blue', edgecolor='blue', width=1),)
 fig.show()
-print res[:, 4:].max()
+# print res[:, 4:].max()
 # minkp = min(kp.shape[0], ref.shape[0])
 # kpp = numpy.empty((minkp, 2, 2), dtype=numpy.float32)
 # kpp[:, :, 0] = kp[:minkp, :2]
