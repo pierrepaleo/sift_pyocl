@@ -501,7 +501,7 @@ class SiftPlan(object):
                 if newcnt and newcnt > last_start:  # launch kernel only if needed
                     procsize = int(newcnt * wgsize[0]),
                     print "orientation_assignment:", procsize, wgsize
-                    evt = self.programs["image"].orientation_assignment(self.queue, procsize, wgsize,
+                    evt = self.programs["keypoints"].orientation_assignment(self.queue, procsize, wgsize,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
                                           grad.data,  # __global float* grad,
                                           ori.data,  # __global float* ori,
@@ -524,7 +524,7 @@ class SiftPlan(object):
                                                 self.buffers[(octave, par.Scales)].data, self.buffers[(octave + 1, 0)].data,
                                                 numpy.int32(2), numpy.int32(2), *self.scales[octave + 1])
              if self.profile:self.events.append(("shrink %s->%s" % (self.scales[octave], self.scales[octave + 1]), evt))
-        results = numpy.empty((last_start, 4))
+        results = numpy.empty((last_start, 4), dtype=numpy.float32)
         if last_start:
             evt = pyopencl.enqueue_copy(self.queue, results, self.buffers["Kp_1"].data)
             if self.profile:self.events.append(("copy D->H", evt))

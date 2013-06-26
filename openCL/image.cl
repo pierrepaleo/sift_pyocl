@@ -437,24 +437,27 @@ __kernel void orientation_assignment(
 {
 	unsigned int gid0 = (int) get_global_id(0);
 	unsigned int lid0 = (int) get_local_id(0);
-	keypoint k = keypoints[gid0];
-	int	row = (int) (k.s1 + 0.5),
-		col = (int) (k.s2 + 0.5);
-	float sigma = OriSigma * k.s3;
-	int	radius = (int) (sigma * 3.0f);
-	int rmin = max(0,row - radius);
-	int cmin = max(0,col - radius);
-	int rmax = min(row + radius,grad_height - 2);
-	int cmax = min(col + radius,grad_width - 2);
+	
 	int i,j,r,c;
 	int	bin, prev, next;
 	int old;
 	float distsq, gval, angle, interp=0.0;
 	float hist[36] = { 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f, 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f, 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f};
-	int isValid = ((keypoints_start <= gid0) && (gid0 < keypoints_end) && (k.s1 != -1.0f));//do not use *counter, for it will be modified below
-	if (isValid) {
+	if  ((keypoints_start <= gid0) && (gid0 < keypoints_end) ) {
+		keypoint k = keypoints[gid0];
+		int	row = (int) (k.s1 + 0.5),
+			col = (int) (k.s2 + 0.5);
+		float sigma = OriSigma * k.s3;
+		int	radius = (int) (sigma * 3.0f);
+		int rmin = max(0,row - radius);
+		int cmin = max(0,col - radius);
+		int rmax = min(row + radius,grad_height - 2);
+		int cmax = min(col + radius,grad_width - 2);
+
+		if (k.s1!=-1.0f){
 			/* Look at pixels within 3 sigma around the point and sum their
 			  Gaussian weighted gradient magnitudes into the histogram. */
+		
 			for (r = rmin; r <= rmax; r++) {
 				for (c = cmin; c <= cmax; c++) {
 					gval = grad[r*grad_width+c];
@@ -506,9 +509,9 @@ __kernel void orientation_assignment(
 			angle = M_PI_F * (2.0f * (argmax + 0.5f + interp) / 36.0f - 1.0f);
 
 
-			k.s0 = k.s2 * octsize; //c
-			k.s1 = k.s1 * octsize; //r
-			k.s2 = k.s3 * octsize; //sigma
+			k.s0 = k.s2 * (float) octsize; //c
+			k.s1 = k.s1 * (float) octsize; //r
+			k.s2 = k.s3 * (float) octsize; //sigma
 			k.s3 = angle;		   //angle
 
 			keypoints[gid0] = k;
@@ -539,7 +542,7 @@ __kernel void orientation_assignment(
 					}
 				} //end "val >= 80%*maxval"
 			} //end loop in histogram
-//		} //end "valid keypoint"
+		} //end "valid keypoint"
 	} //end "in the vector"
 }
 

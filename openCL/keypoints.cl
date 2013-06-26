@@ -75,7 +75,7 @@ __kernel void orientation_assignment(
 	int lid0 = (int) get_local_id(0);
 	int groupid = get_group_id(0);
 	keypoint k = keypoints[groupid];
-	if (!(keypoints_start <= groupid && groupid < keypoints_end && k.s1 != -1.0f)) 
+	if (!(keypoints_start <= groupid && groupid < keypoints_end && k.s1 >=0.0f )) 
 		return;
 	int	bin, prev, next;
 	int old;
@@ -119,61 +119,61 @@ __kernel void orientation_assignment(
 				pos[lid0] = bin;
 			}
 		}
+		barrier(CLK_LOCAL_MEM_FENCE);
+		/*
+			We do not have atomic operations on floats...
+		*/
+		if (lid0 == 0) {		
+			for (i=0; i < WORKGROUP_SIZE; i++) {
+				if (pos[i] != -1) hist[pos[i]] += hist2[i];
+			}
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);		
 	}
 	
-	barrier(CLK_LOCAL_MEM_FENCE);
-	/*
-		We do not have atomic operations on floats...
-	*/
-	if (lid0 == 0) {		
-		for (i=0; i < WORKGROUP_SIZE; i++) {
-			if (pos[i] != -1) hist[pos[i]] += hist2[i];
-		}
-	}
-	barrier(CLK_LOCAL_MEM_FENCE);
 	
 
 
 
 	/* Apply smoothing 6 times for accurate Gaussian approximation. */
 	if (lid0<36){
-		prev = (lid0 == 0 ? 36 - 1 : lid0 - 1);
-		next = (lid0 == 36 - 1 ? 0 : lid0 + 1);
+		prev = (lid0 == 0 ? 35 : lid0 - 1);
+		next = (lid0 == 35 ? 0 : lid0 + 1);
 		hist2[lid0] = (hist[prev]+hist[lid0]+hist[next])/ 3.0f;
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
 	if (lid0<36){
-		prev = (lid0 == 0 ? 36 - 1 : lid0 - 1);
-		next = (lid0 == 36 - 1 ? 0 : lid0 + 1);
+		prev = (lid0 == 0 ? 35 : lid0 - 1);
+		next = (lid0 == 35 ? 0 : lid0 + 1);
 		hist[lid0] = (hist2[prev]+hist2[lid0]+hist2[next])/ 3.0f;
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
 	if (lid0<36){
-		prev = (lid0 == 0 ? 36 - 1 : lid0 - 1);
-		next = (lid0 == 36 - 1 ? 0 : lid0 + 1);
+		prev = (lid0 == 0 ? 35 : lid0 - 1);
+		next = (lid0 == 35 ? 0 : lid0 + 1);
 		hist2[lid0] = (hist[prev]+hist[lid0]+hist[next])/ 3.0f;
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
 	if (lid0<36){
-		prev = (lid0 == 0 ? 36 - 1 : lid0 - 1);
-		next = (lid0 == 36 - 1 ? 0 : lid0 + 1);
+		prev = (lid0 == 0 ? 35 : lid0 - 1);
+		next = (lid0 == 35 ? 0 : lid0 + 1);
 		hist[lid0] = (hist2[prev]+hist2[lid0]+hist2[next])/ 3.0f;
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
 	if (lid0<36){
-		prev = (lid0 == 0 ? 36 - 1 : lid0 - 1);
-		next = (lid0 == 36 - 1 ? 0 : lid0 + 1);
+		prev = (lid0 == 0 ? 35 : lid0 - 1);
+		next = (lid0 == 35 ? 0 : lid0 + 1);
 		hist2[lid0] = (hist[prev]+hist[lid0]+hist[next])/ 3.0f;
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
 	if (lid0<36){
-		prev = (lid0 == 0 ? 36 - 1 : lid0 - 1);
-		next = (lid0 == 36 - 1 ? 0 : lid0 + 1);
+		prev = (lid0 == 0 ? 35 : lid0 - 1);
+		next = (lid0 == 35 ? 0 : lid0 + 1);
 		hist[lid0] = (hist2[prev]+hist2[lid0]+hist2[next])/ 3.0f;
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
 	
-	/* Find maximum value in histogram. */
+	/* Find maximum value in histogram: Todo parallel max. */
 	float maxval = 0.0f;
 	int argmax = 0;
 	for (i = 0; i < 36; i++)
@@ -183,31 +183,32 @@ __kernel void orientation_assignment(
 		This maximum value in the histogram is defined as the orientation of our current keypoint
 		NOTE: a "true" keypoint has his coordinates multiplied by "octsize" (cf. SIFT)
 	*/
-	prev = (argmax == 0 ? 36 - 1 : argmax - 1);
-	next = (argmax == 36 - 1 ? 0 : argmax + 1);
+	prev = (argmax == 0 ? 35 : argmax - 1);
+	next = (argmax == 35 ? 0 : argmax + 1);
 	if (maxval < 0.0f) {
 		hist[prev] = -hist[prev];
 		maxval = -maxval;
 		hist[next] = -hist[next];
 	}
 	interp = 0.5f * (hist[prev] - hist[next]) / (hist[prev] - 2.0f * maxval + hist[next]);
-	angle = 2.0f * M_PI_F * (argmax + 0.5f + interp) / 36 - M_PI_F;
+	angle = 2.0f * M_PI_F * (argmax + 0.5f + interp) / 36.0f - M_PI_F;
 
-
-	k.s0 = k.s2 *octsize; //c
-	k.s1 = k.s1 *octsize; //r
-	k.s2 = k.s3 *octsize; //sigma
-	k.s3 = angle;		   //angle
-	return;
-	keypoints[groupid] = k;
+	if (lid0 == 0){
+		k.s0 = k.s2 *octsize; //c
+		k.s1 = k.s1 *octsize; //r
+		k.s2 = k.s3 *octsize; //sigma
+		k.s3 = angle;	   	  //angle
+		keypoints[groupid] = k;
+	}
 	/*
 		An orientation is now assigned to our current keypoint.
 		We can create new keypoints of same (x,y,sigma) but a different angle.
 		For every local peak in histogram, every peak of value >= 80% of maxval generates a new keypoint	
 	*/
-
-	keypoint k2 = 0.0; k2.s0 = k.s0; k2.s1 = k.s1; k2.s2 = k.s2;
-	for (i = 0; i < 36; i++) {
+	barrier(CLK_LOCAL_MEM_FENCE);
+	keypoint k2 = keypoints[groupid] ;
+	if (lid0<36){
+		i = lid0;
 		prev = (i == 0 ? 36 -1 : i - 1);
 		next = (i == 36 -1 ? 0 : i + 1);
 		if (hist[i] > hist[prev]  &&  hist[i] > hist[next] && hist[i] >= 0.8f * maxval && i != argmax) {
@@ -222,7 +223,8 @@ __kernel void orientation_assignment(
 			if (angle >= -M_PI_F  &&  angle <= M_PI_F) {
 				k2.s3 = angle;
 				old  = atomic_inc(counter);
-				if (old < nb_keypoints) keypoints[old] = k2;
+				if (old < nb_keypoints) 
+					keypoints[old] = k2;
 			}
 		} //end "val >= 80%*maxval"
 	} //end loop in histogram

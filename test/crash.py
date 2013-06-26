@@ -23,13 +23,6 @@ sp2 = fig.add_subplot(1, 2, 2)
 
 im = sp2.imshow(lena, cmap="gray")
 
-for i in range(kp.shape[0]):
-    x = kp[i, 0]
-    y = kp[i, 1]
-    scale = kp[i, 2]
-    angle = kp[i, 3]
-    sp1.annotate("", xy=(x, y), xytext=(x + scale * cos(angle), y + scale * sin(angle)), color="red",
-                     arrowprops=dict(facecolor='red', edgecolor='red', width=1),)
 
 
 import feature
@@ -47,8 +40,19 @@ for i in range(ref.shape[0]):
     angle = ref[i, 3]
     sp2.annotate("", xy=(x, y), xytext=(x + scale * cos(angle), y + scale * sin(angle)), color="red",
                      arrowprops=dict(facecolor='red', edgecolor='red', width=1),)
+    sp1.annotate("", xy=(x, y), xytext=(x + scale * cos(angle), y + scale * sin(angle)), color="red",
+                     arrowprops=dict(facecolor='red', edgecolor='red', width=1),)
+
+for i in range(kp.shape[0]):
+    x = kp[i, 0]
+    y = kp[i, 1]
+    scale = kp[i, 2]
+    angle = kp[i, 3]
     sp1.annotate("", xy=(x, y), xytext=(x + scale * cos(angle), y + scale * sin(angle)), color="blue",
                      arrowprops=dict(facecolor='blue', edgecolor='blue', width=1),)
+
+print kp
+
 fig.show()
 # print res[:, 4:].max()
 # minkp = min(kp.shape[0], ref.shape[0])
