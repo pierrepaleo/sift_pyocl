@@ -63,9 +63,10 @@ class SiftPlan(object):
     kernels = {"convolution":1024, #key: name value max local workgroup size
                "preprocess": 1024,
                "algebra": 1024,
-               "image":128,
+               "image":1024,
                "gaussian":1024,
-               "reductions":1024}
+               "reductions":1024,
+               "keypoints":128}
     converter = {numpy.dtype(numpy.uint8):"u8_to_float",
                  numpy.dtype(numpy.uint16):"u16_to_float",
                  numpy.dtype(numpy.int32):"s32_to_float",
@@ -500,7 +501,7 @@ class SiftPlan(object):
                 if newcnt and newcnt > last_start:  # launch kernel only if needed
                     procsize = int(newcnt * wgsize[0]),
                     print "orientation_assignment:", procsize, wgsize
-                    evt = self.programs["keypoints"].orientation_assignment(self.queue, procsize, wgsize,
+                    evt = self.programs["image"].orientation_assignment(self.queue, procsize, wgsize,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
                                           grad.data,  # __global float* grad,
                                           ori.data,  # __global float* ori,
@@ -512,6 +513,7 @@ class SiftPlan(object):
                                           newcnt,  # int keypoints_end,
                                           *self.scales[octave])  # int grad_width, int grad_height)
                     if self.profile:self.events.append(("orientation_assignment %s %s" % (octave, scale), evt))
+
 #                self.debug_holes("After orientation %s %s" % (octave, scale))
                 last_start = self.buffers["cnt"].get()[0]
         ########################################################################
