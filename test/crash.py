@@ -12,7 +12,7 @@ import pylab
 lena = scipy.misc.lena()
 # lena[:] = 0
 # lena[100:110, 100:110] = 255
-s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128)
+s = sift.SiftPlan(template=lena, device=(1, 0), profile=True, max_workgroup_size=128)
 kp = s.keypoints(lena)
 s.log_profile()
 fig = pylab.figure()

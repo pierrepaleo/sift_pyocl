@@ -1,7 +1,6 @@
 /*
  *   Project: SIFT: An algorithm for image alignement
- *            Kernel for image pre-processing:
- *            maximum and minimum calculation
+ *            kernel for maximum and minimum calculation
  *
  *
  *   Copyright (C) 2013 European Synchrotron Radiation Facility
@@ -79,7 +78,7 @@ __kernel void max_min_global_stage1(
 		unsigned int SIZE){
 
     __local volatile float2 ldata[WORKGROUP_SIZE];
-    unsigned int group_size =  min(get_local_size(0), (unsigned int) WORKGROUP_SIZE);
+    unsigned int group_size =  min((unsigned int) get_local_size(0), (unsigned int) WORKGROUP_SIZE);
     unsigned int lid = get_local_id(0);
     float2 acc;
     unsigned int big_block = group_size * get_num_groups(0);
@@ -160,7 +159,7 @@ __kernel void max_min_global_stage2(
 
 	__local float2 ldata[WORKGROUP_SIZE];
     unsigned int lid = get_local_id(0);
-    unsigned int group_size =  min(get_local_size(0), (unsigned int) WORKGROUP_SIZE);
+    unsigned int group_size =  min((unsigned int) get_local_size(0), (unsigned int) WORKGROUP_SIZE);
     float2 acc = (float2)(-1.0f, -1.0f);
     if (lid<=group_size){
     	ldata[lid] = data2[lid];

@@ -1,7 +1,5 @@
+
 typedef float4 keypoint;
-
-
-
 
 /**
  * \brief Linear combination of two matrices

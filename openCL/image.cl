@@ -18,6 +18,7 @@
 typedef float4 keypoint;
 //#define MIN(i,j) ( (i)<(j) ? (i):(j) )
 //#define MAX(i,j) ( (i)<(j) ? (j):(i) )
+
 #ifndef WORKGROUP_SIZE
 	#define WORKGROUP_SIZE 128
 #endif
