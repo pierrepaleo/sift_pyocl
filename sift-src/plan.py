@@ -165,6 +165,7 @@ class SiftPlan(object):
             self.memory += size * (nr_blur + nr_dogs) * size_of_float
         self.kpsize = int(self.shape[0] * self.shape[1] // self.PIX_PER_KP)  # Is the number of kp independant of the octave ? int64 causes problems with pyopencl
         self.memory += self.kpsize * size_of_float * 4 * 2  # those are array of float4 to register keypoints, we need two of them
+        self.memory += self.kpsize * 128 #stores the descriptors: 128 unsigned chars
         self.memory += 4  # keypoint index Counter
         wg_float = min(self.max_workgroup_size, numpy.sqrt(self.shape[0] * self.shape[1]))
         self.red_size = 2 ** (int(math.ceil(math.log(wg_float, 2))))
@@ -198,6 +199,7 @@ class SiftPlan(object):
                 self.buffers["raw"] = pyopencl.array.empty(self.queue, shape, dtype=self.dtype)
         self.buffers[ "Kp_1" ] = pyopencl.array.empty(self.queue, (self.kpsize, 4), dtype=numpy.float32)
         self.buffers[ "Kp_2" ] = pyopencl.array.empty(self.queue, (self.kpsize, 4), dtype=numpy.float32)
+        self.buffers[ "descr" ] = pyopencl.array.empty(self.queue, (self.kpsize, 128), dtype=numpy.uint8)
         self.buffers["cnt" ] = pyopencl.array.empty(self.queue, 1, dtype=numpy.int32)
 
         for octave in range(self.octave_max):
@@ -513,9 +515,17 @@ class SiftPlan(object):
                                           newcnt,  # int keypoints_end,
                                           *self.scales[octave])  # int grad_width, int grad_height)
                     if self.profile:self.events.append(("orientation_assignment %s %s" % (octave, scale), evt))
-
-#                self.debug_holes("After orientation %s %s" % (octave, scale))
-                last_start = self.buffers["cnt"].get()[0]
+                    newcnt = self.buffers["cnt"].get()[0]
+#                    evt = self.programs["descriptor"].orientation_assignment(self.queue, procsize, wgsize,
+#                                     self.buffers["Kp_1"].data,  #    __global keypoint* keypoints,
+#                                     self.buffers["descr"].data,  #   __global unsigned char *descriptors,
+#                                     grad.data,  # __global float* grad,
+#                                     ori.data,  # __global float* ori,
+#                                     numpy.int32(last_start),  # int keypoints_start,
+#                                     newcnt,  # int keypoints_end,
+#                                     *self.scales[octave])  # int grad_width, int grad_height)
+#                    if self.profile:self.events.append(("descriptor %s %s" % (octave, scale), evt))
+                last_start = newcnt
         ########################################################################
         # Rescale all images to populate all octaves TODO: scale G3 -> G'0
         ########################################################################
