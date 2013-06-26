@@ -61,7 +61,7 @@ else:
     queue = pyopencl.CommandQueue(ctx)
 
 SHOW_FIGURES = False
-PRINT_KEYPOINTS = True
+PRINT_KEYPOINTS = False
 
 
 print "working on %s" % ctx.devices[0].name
@@ -257,7 +257,7 @@ class test_image(unittest.TestCase):
         #keypoints is a compacted vector of keypoints #not anymore
         keypoints_before_orientation = numpy.copy(keypoints) #important here
         wg = 128, #FIXME : have to choose it for histograms #wg = max(self.wg),
-        shape = calc_size((keypoints.shape[0],), wg)
+        shape = keypoints.shape[0]*wg[0],
         #shape = calc_size(keypoints.shape, self.wg)
         gpu_keypoints = pyopencl.array.to_device(queue, keypoints)
         actual_nb_keypoints = numpy.int32(updated_nb_keypoints)
