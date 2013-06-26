@@ -433,7 +433,6 @@ __kernel void orientation_assignment(
 	int grad_width,
 	int grad_height)
 {
-
 	unsigned int gid0 = (int) get_global_id(0);
 	unsigned int lid0 = (int) get_local_id(0);
 	keypoint k = keypoints[gid0];
