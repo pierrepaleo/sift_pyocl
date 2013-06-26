@@ -1,0 +1,4 @@
+export TD=dummy
+python setup.py install --install-lib ${TD}/libs --install-scripts ${TD}/scripts
+
+echo "N OUBLIE PAS DE INITIALISER PYTHONPATH VERS -path absolu- de ${TD}/libs"

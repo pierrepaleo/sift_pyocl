@@ -253,6 +253,7 @@ class test_preproc(unittest.TestCase):
             raw_input("enter")
         self.assert_(delta < 1e-6, "delta=%s" % delta)
 
+
     def test_bin(self):
         """
         Test binning kernel
@@ -292,6 +293,8 @@ class test_preproc(unittest.TestCase):
             fig.show()
             raw_input("enter")
         self.assert_(delta < 1e-6, "delta=%s" % delta)
+
+
 
 def test_suite_preproc():
     testSuite = unittest.TestSuite()

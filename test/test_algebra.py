@@ -68,14 +68,14 @@ def my_combine(mat1,a1,mat2,a2):
     reference linear combination
     """
     return a1*mat1+a2*mat2
-    
-    
-    
+
+
+
 def my_compact(keypoints,nbkeypoints):
     '''
     Reference compacting
     '''
-    output = -numpy.ones_like(keypoints,dtype=numpy.float32)
+    output = -numpy.ones_like(keypoints)
     idx = numpy.where(keypoints[:,1]!=-1)[0]
     length = idx.size
     output[:length,0] = keypoints[idx,0]
@@ -89,52 +89,51 @@ def my_compact(keypoints,nbkeypoints):
 
 class test_algebra(unittest.TestCase):
     def setUp(self):
-    	
+
         kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), "algebra.cl")
         kernel_src = open(kernel_path).read()
         self.program = pyopencl.Program(ctx, kernel_src).build()
-        self.wg = (1, 512)
-       
+        self.wg = (1, 32)
+
 
     def tearDown(self):
         self.mat1 = None
         self.mat2 = None
         self.program = None
-        
-        
-        
-        
-        
-        
+
+
+
+
+
+
     def test_combine(self):
         """
         tests the combine (linear combination) kernel
         """
-        self.width = numpy.int32(15)
-    	self.height = numpy.int32(14)
-    	self.coeff1 = numpy.random.rand(1)[0].astype(numpy.float32)
-    	self.coeff2 = numpy.random.rand(1)[0].astype(numpy.float32)
-    	self.mat1 = numpy.random.rand(self.height,self.width).astype(numpy.float32)
-    	self.mat2 = numpy.random.rand(self.height,self.width).astype(numpy.float32)
-    	
-        self.gpu_mat1 = pyopencl.array.to_device(queue, self.mat1)
-        self.gpu_mat2 = pyopencl.array.to_device(queue, self.mat2)
-        self.gpu_out = pyopencl.array.empty(queue, self.mat1.shape, dtype=numpy.float32, order="C")
-        self.shape = calc_size(self.mat1.shape, self.wg)
+        width = numpy.int32(15)
+        height = numpy.int32(14)
+        coeff1 = numpy.random.rand(1)[0].astype(numpy.float32)
+        coeff2 = numpy.random.rand(1)[0].astype(numpy.float32)
+        mat1 = numpy.random.rand(height, width).astype(numpy.float32)
+        mat2 = numpy.random.rand(height, width).astype(numpy.float32)
+
+        gpu_mat1 = pyopencl.array.to_device(queue, mat1)
+        gpu_mat2 = pyopencl.array.to_device(queue, mat2)
+        gpu_out = pyopencl.array.empty(queue, mat1.shape, dtype=numpy.float32, order="C")
+        shape = calc_size(mat1.shape, self.wg)
 
         t0 = time.time()
-        k1 = self.program.combine(queue, self.shape, self.wg, 
-                                  self.gpu_mat1.data, self.coeff1, self.gpu_mat2.data, self.coeff2, 
-                                  self.gpu_out.data, numpy.int32(0),
-                                  self.width, self.height)
-        res = self.gpu_out.get()
+        k1 = self.program.combine(queue, shape, self.wg,
+                                  gpu_mat1.data, coeff1, gpu_mat2.data, coeff2,
+                                  gpu_out.data, numpy.int32(0),
+                                  width, height)
+        res = gpu_out.get()
         t1 = time.time()
-        ref = my_combine(self.mat1,self.coeff1,self.mat2,self.coeff2)
+        ref = my_combine(mat1, coeff1, mat2, coeff2)
         t2 = time.time()
         delta = abs(ref - res).max()
-
-        self.assert_(delta < 1e-4, "delta=%s" % (delta))
         logger.info("delta=%s" % delta)
+        self.assert_(delta < 1e-4, "delta=%s" % (delta))
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
             logger.info("Linear combination took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
@@ -145,37 +144,37 @@ class test_algebra(unittest.TestCase):
         """
         tests the "compact" kernel
         """
-        
+
         nbkeypoints = 1000 #constant value
         keypoints = numpy.random.rand(nbkeypoints,4).astype(numpy.float32)
         for i in range(0,nbkeypoints):
             if ((numpy.random.rand(1))[0] < 0.75):
                 keypoints[i]=(-1,-1,-1,-1)
-        
-        self.gpu_keypoints = pyopencl.array.to_device(queue, keypoints)
-        self.output = pyopencl.array.empty(queue, (nbkeypoints,4), dtype=numpy.float32, order="C")
-        self.output.fill(-1.0,queue)
-        self.counter = pyopencl.array.zeros(queue, (1,), dtype=numpy.int32, order="C")
+
+        gpu_keypoints = pyopencl.array.to_device(queue, keypoints)
+        output = pyopencl.array.empty(queue, (nbkeypoints,4), dtype=numpy.float32, order="C")
+        output.fill(-1.0,queue)
+        counter = pyopencl.array.zeros(queue, (1,), dtype=numpy.int32, order="C")
         wg = max(self.wg),
         shape = calc_size((keypoints.shape[0],), wg)
         nbkeypoints = numpy.int32(nbkeypoints)
-        
+        startkeypoints = numpy.int32(0)
         t0 = time.time()
-        k1 = self.program.compact(queue, shape, wg, 
-        	self.gpu_keypoints.data, self.output.data, self.counter.data, nbkeypoints)
-        res = self.output.get()
-        count = self.counter.get()[0]
+        k1 = self.program.compact(queue, shape, wg,
+            gpu_keypoints.data, output.data, counter.data, startkeypoints, nbkeypoints)
+        res = output.get()
+        count = counter.get()[0]
         t1 = time.time()
         ref, count_ref = my_compact(keypoints,nbkeypoints)
-       
         t2 = time.time()
 
-        res_sort_arg = res[:,0].argsort(axis=0)     
+        res_sort_arg = res[:, 0].argsort(axis=0)
         res_sort = res[res_sort_arg]
-        ref_sort_arg = ref[:,0].argsort(axis=0)     
+        ref_sort_arg = ref[:, 0].argsort(axis=0)
         ref_sort = ref[ref_sort_arg]
         delta = abs((res_sort - ref_sort)).max()
         self.assert_(delta < 1e-5, "delta=%s" % (delta))
+        self.assertEqual(count, count_ref, "conters are the same")
         logger.info("delta=%s" % delta)
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
@@ -195,7 +194,7 @@ class test_algebra(unittest.TestCase):
 
 
 
-  
+
 
 def test_suite_algebra():
     testSuite = unittest.TestSuite()
