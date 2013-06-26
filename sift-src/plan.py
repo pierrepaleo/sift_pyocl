@@ -60,7 +60,7 @@ class SiftPlan(object):
     kp is a nx132 array. the second dimension is composed of x,y, scale and angle as well as 128 floats describing the keypoint
 
     """
-    kernels = ["convolution", "preprocess", "algebra", "image", "gaussian", "reductions"]
+    kernels = ["convolution", "preprocess", "algebra", "image", "gaussian", "reductions", "keypoints"]
     converter = {numpy.dtype(numpy.uint8):"u8_to_float",
                  numpy.dtype(numpy.uint16):"u16_to_float",
                  numpy.dtype(numpy.int32):"s32_to_float",
@@ -501,7 +501,7 @@ class SiftPlan(object):
 #                    procsize = calc_size((int(newcnt),), wgsize)
                     procsize = int(newcnt*wgsize[0]),
                     print procsize, wgsize
-                    evt = self.programs["image"].orientation_assignment(self.queue, procsize, wgsize,
+                    evt = self.programs["keypoints"].orientation_assignment(self.queue, procsize, wgsize,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
                                           grad.data,  # __global float* grad,
                                           ori.data,  # __global float* ori,
