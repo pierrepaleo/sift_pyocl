@@ -18,17 +18,14 @@
 typedef float4 keypoint;
 //#define MIN(i,j) ( (i)<(j) ? (i):(j) )
 //#define MAX(i,j) ( (i)<(j) ? (j):(i) )
+#ifndef WORKGROUP_SIZE
+	#define WORKGROUP_SIZE 128
+#endif
 
 /*
  Do not use __constant memory for large (usual) images
 */
 #define MAX_CONST_SIZE 16384
-
-#ifndef WORKGROUP_SIZE
-	#define WORKGROUP_SIZE 32
-#endif
-
-#define NEIGHB 7
 
 /**
  * \brief Gradient of a grayscale image
@@ -391,6 +388,7 @@ __kernel void interp_keypoint(
  * @param grad: Pointer to global memory with gradient norm previously calculated
  * @param ori: Pointer to global memory with gradient orientation previously calculated
  * @param counter: Pointer to global memory with actual number of keypoints previously found
+ * @param hist: Pointer to shared memory with histogram (36 values per thread)
  * @param octsize: initially 1 then twiced at each octave
  * @param OriSigma : a SIFT parameter, default is 1.5. Warning : it is not "InitSigma".
  * @param nb_keypoints : maximum number of keypoints
@@ -405,6 +403,20 @@ par.OriBins = 36
 par.OriHistThresh = 0.8;
 -replace "36" by an external paramater ?
 -replace "0.8" by an external parameter ?
+
+TODO:
+-Memory optimization
+	--Use less registers (re-use, calculation instead of assignation)
+	--Use local memory for float histogram[36]
+-Speed-up
+	--Less access to global memory (k.s1 is OK because this is a register)
+	--leave the loops as soon as possible
+	--Avoid divisions
+
+TODO: QUESTION :
+keypoint k = keypoints[gid0];
+keypoint is float4.
+Is this a copy (register) or a pointer ? would explain bad performances...
 
 */
 
@@ -437,45 +449,19 @@ __kernel void orientation_assignment(
 	int old;
 	float distsq, gval, angle, interp=0.0;
 	float hist[36] = { 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f, 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f, 0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  0.0f};
-	__local int start_read[WORKGROUP_SIZE];
-	__local float local_grad[NEIGHB*NEIGHB*WORKGROUP_SIZE];// 6x6 neigbourhood or 7x7?
-	__local float local_ori[NEIGHB*NEIGHB*WORKGROUP_SIZE]; // 6x6 neigbourhood or 7x7 ?
 	int isValid = ((keypoints_start <= gid0) && (gid0 < keypoints_end) && (k.s1 != -1.0f));//do not use *counter, for it will be modified below
-	if (isValid) {
-		start_read[lid0] = rmin*grad_width+cmin;
-	}
-	else{
-		start_read[lid0]=-1;
-	}
-	barrier(CLK_LOCAL_MEM_FENCE);
-	//collaborative reading in global memory
-	for (i=0;i<WORKGROUP_SIZE;i++){
-		if (start_read[i]>-1){
-			for (r = 0; r <= 2*radius; r++){
-				if (lid0<=(2*radius)){
-					local_grad[NEIGHB*NEIGHB*i+NEIGHB*r+lid0] = grad[start_read[i]+r*grad_width+lid0];
-					local_ori[NEIGHB*NEIGHB*i+NEIGHB*r+lid0] = ori[start_read[i]+r*grad_width+lid0];
-				}
-				else{
-					local_grad[NEIGHB*NEIGHB*i+NEIGHB*r+lid0] = 0.0f;
-					local_ori[NEIGHB*NEIGHB*i+NEIGHB*r+lid0] = 0.0f;
-				}
-			}
-		}
-	}
-	barrier(CLK_LOCAL_MEM_FENCE);
 	if (isValid) {
 			/* Look at pixels within 3 sigma around the point and sum their
 			  Gaussian weighted gradient magnitudes into the histogram. */
-			for (r = 0; r <= 2*radius; r++) {
-				for (c = 0; c <= 2*radius; c++) {
-					gval = local_grad[r*NEIGHB+c];
+			for (r = rmin; r <= rmax; r++) {
+				for (c = cmin; c <= cmax; c++) {
+					gval = grad[r*grad_width+c];
 					distsq = (r-k.s1)*(r-k.s1) + (c-k.s2)*(c-k.s2);
 
 					if (gval > 0.0f  &&  distsq < ((float) (radius*radius)) + 0.5f) {
 						/* Ori is in range of -PI to PI. */
-						angle = local_ori[r*NEIGHB+c];
-						bin = (int) (36 * (angle + M_PI_F ) / (2.0f * M_PI_F));
+						angle = ori[r*grad_width+c];
+						bin = (int) (36.0f * (angle + M_PI_F ) / (2.0f * M_PI_F));
 						if (bin<0) bin+=36;
 						else if (bin>35) bin-=36;
 						hist[bin] += exp(- distsq / (2.0f*sigma*sigma)) * gval;
@@ -485,11 +471,12 @@ __kernel void orientation_assignment(
 
 			/* Apply smoothing 6 times for accurate Gaussian approximation. */
 			float prev2, temp2;
+//			int i2 = 0
 			for (j = 0; j < 6; j++) {
 				prev2 = hist[35];
 				for (i = 0; i < 36; i++) {
 					temp2 = hist[i];
-					hist[i] = ( prev2 + hist[i] + hist[(i + 1 == 36) ? 0 : i + 1] ) / 3.0f;
+					hist[i] = ( prev2 + hist[i] + hist[((i + 1 == 36) ? 0 : i + 1)] ) / 3.0f;
 					prev2 = temp2;
 				}
 			}
@@ -498,7 +485,9 @@ __kernel void orientation_assignment(
 			float maxval = 0.0f;
 			int argmax = 0;
 			for (i = 0; i < 36; i++)
-				if (hist[i] > maxval) { maxval = hist[i]; argmax = i; }
+				if (hist[i] > maxval) { 
+					maxval = hist[i]; 
+					argmax = i; }
 
 			/*
 				This maximum value in the histogram is defined as the orientation of our current keypoint
@@ -512,7 +501,7 @@ __kernel void orientation_assignment(
 				hist[next] = -hist[next];
 			}
 			interp = 0.5f * (hist[prev] - hist[next]) / (hist[prev] - 2.0f * maxval + hist[next]);
-			angle = 2.0f * M_PI_F * (argmax + 0.5f + interp) / 36 - M_PI_F;
+			angle = M_PI_F * (2.0f * (argmax + 0.5f + interp) / 36.0f - 1.0f);
 
 
 			k.s0 = k.s2 * octsize; //c
@@ -527,7 +516,7 @@ __kernel void orientation_assignment(
 				We can create new keypoints of same (x,y,sigma) but a different angle.
 			 	For every local peak in histogram, every peak of value >= 80% of maxval generates a new keypoint
 			*/
-
+//			return;
 			keypoint k2 = 0.0; k2.s0 = k.s0; k2.s1 = k.s1; k2.s2 = k.s2;
 			for (i = 0; i < 36; i++) {
 				prev = (i == 0 ? 36 -1 : i - 1);
