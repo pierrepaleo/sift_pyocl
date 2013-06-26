@@ -15,7 +15,7 @@ __authors__ = ["Jérôme Kieffer"]
 __contact__ = "jerome.kieffer@esrf.eu"
 __license__ = "BSD"
 __copyright__ = "European Synchrotron Radiation Facility, Grenoble, France"
-__date__ = "2013-06-12"
+__date__ = "2013-06-26"
 __status__ = "beta"
 __license__ = """
 Permission is hereby granted, free of charge, to any person
@@ -60,7 +60,12 @@ class SiftPlan(object):
     kp is a nx132 array. the second dimension is composed of x,y, scale and angle as well as 128 floats describing the keypoint
 
     """
-    kernels = ["convolution", "preprocess", "algebra", "image", "gaussian", "reductions"]
+    kernels = {"convolution":1024, #key: name value max local workgroup size
+               "preprocess": 1024,
+               "algebra": 1024,
+               "image":128, 
+               "gaussian":1024, 
+               "reductions":1024}
     converter = {numpy.dtype(numpy.uint8):"u8_to_float",
                  numpy.dtype(numpy.uint16):"u16_to_float",
                  numpy.dtype(numpy.int32):"s32_to_float",
@@ -277,7 +282,7 @@ class SiftPlan(object):
             kernel_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), kernel + ".cl")
             kernel_src = open(kernel_file).read()
             try:
-                program = pyopencl.Program(self.ctx, kernel_src).build('-D WORKGROUP_SIZE=%s' % self.max_workgroup_size)
+                program = pyopencl.Program(self.ctx, kernel_src).build('-D WORKGROUP_SIZE=%s' % min(self.max_workgroup_size, self.kernels[kernel]))
             except pyopencl.MemoryError as error:
                 raise MemoryError(error)
             self.programs[kernel] = program
@@ -328,10 +333,10 @@ class SiftPlan(object):
 
         if self.dtype == numpy.float32:
             evt = pyopencl.enqueue_copy(self.queue, self.buffers[(0, 0)].data, image)
-            if self.profile:self.events.append(("copy", evt))
+            if self.profile:self.events.append(("copy H->D", evt))
         elif (image.ndim == 3) and (self.dtype == numpy.uint8) and (self.RGB):
             evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
-            if self.profile:self.events.append(("copy", evt))
+            if self.profile:self.events.append(("copy H->D", evt))
             evt = self.programs["preprocess"].rgb_to_float(self.queue, self.procsize[0], self.wgsize[0],
                                                          self.buffers["raw"].data, self.buffers[(0, 0) ].data, *self.scales[0])
             if self.profile:self.events.append(("RGB->float", evt))
@@ -339,7 +344,7 @@ class SiftPlan(object):
         elif self.dtype in self.converter:
             program = self.programs["preprocess"].__getattr__(self.converter[self.dtype])
             evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
-            if self.profile:self.events.append(("copy", evt))
+            if self.profile:self.events.append(("copy H->D", evt))
             evt = program(self.queue, self.procsize[0], self.wgsize[0],
                     self.buffers["raw"].data, self.buffers[(0, 0)].data, *self.scales[0])
             if self.profile:self.events.append(("convert ->float", evt))
@@ -517,8 +522,11 @@ class SiftPlan(object):
                                                 self.buffers[(octave, par.Scales)].data, self.buffers[(octave + 1, 0)].data,
                                                 numpy.int32(2), numpy.int32(2), *self.scales[octave + 1])
              if self.profile:self.events.append(("shrink %s->%s" % (self.scales[octave], self.scales[octave + 1]), evt))
-
-        return self.buffers["Kp_1"].get()[:last_start]
+        results = numpy.empty((last_start, 4))
+        if last_start:
+            evt = pyopencl.enqueue_copy(self.queue, results, self.buffers["Kp_1"].data)
+            if self.profile:self.events.append(("copy D->H", evt))
+        return results
 
     def compact(self, start=numpy.int32(0)):
         """

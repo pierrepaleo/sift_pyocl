@@ -34,6 +34,10 @@
  * 
  **/
 
+#ifndef WORKGROUP_SIZE
+	#define WORKGROUP_SIZE 1024
+#endif
+
 
 /**
  * \brief gaussian: Initialize a vector with a gaussian function.

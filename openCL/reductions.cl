@@ -36,18 +36,6 @@
  */
 
 
-//OpenCL extensions are silently defined by opencl compiler at compile-time:
-#ifdef cl_amd_printf
-  #pragma OPENCL EXTENSION cl_amd_printf : enable
-  //#define printf(...)
-#elif defined(cl_intel_printf)
-  #pragma OPENCL EXTENSION cl_intel_printf : enable
-#else
-  #define printf(...)
-#endif
-//#pragma OPENCL EXTENSION all : enable
-//#pragma OPENCL EXTENSION cl_khr_local_float32_base_atomics : enable
-
 #ifndef WORKGROUP_SIZE
 	#define WORKGROUP_SIZE 1024
 #endif
