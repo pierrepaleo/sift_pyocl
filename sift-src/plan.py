@@ -427,7 +427,7 @@ class SiftPlan(object):
         """
         prevSigma = par.InitSigma
         print("Calculating octave %i" % octave)
-        wgsize = (8,)  # (max(self.wgsize[octave]),) #TODO: optimize
+        wgsize = (128,)  # (max(self.wgsize[octave]),) #TODO: optimize
         kpsize32 = numpy.int32(self.kpsize)
         self._reset_keypoints()
         octsize = numpy.int32(2 ** octave)
@@ -498,7 +498,8 @@ class SiftPlan(object):
 
     #           Orientation assignement: 1D kernel, rather heavy kernel
                 if newcnt:  # launch kernel only if needed
-                    procsize = calc_size((int(newcnt),), wgsize)
+#                    procsize = calc_size((int(newcnt),), wgsize)
+                    procsize = int(newcnt*wgsize[0]),
                     print procsize, wgsize
                     evt = self.programs["image"].orientation_assignment(self.queue, procsize, wgsize,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
