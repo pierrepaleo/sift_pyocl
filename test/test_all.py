@@ -60,6 +60,7 @@ def test_suite_all():
     testSuite.addTest(test_suite_convol())
     testSuite.addTest(test_suite_algebra())
     testSuite.addTest(test_suite_image())
+    testSuite.addTest(test_suite_keypoints())
     return testSuite
 
 if __name__ == '__main__':

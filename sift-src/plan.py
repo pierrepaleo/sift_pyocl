@@ -63,8 +63,8 @@ class SiftPlan(object):
     kernels = {"convolution":1024, #key: name value max local workgroup size
                "preprocess": 1024,
                "algebra": 1024,
-               "image":128, 
-               "gaussian":1024, 
+               "image":128,
+               "gaussian":1024,
                "reductions":1024}
     converter = {numpy.dtype(numpy.uint8):"u8_to_float",
                  numpy.dtype(numpy.uint16):"u16_to_float",
@@ -427,7 +427,7 @@ class SiftPlan(object):
         """
         prevSigma = par.InitSigma
         print("Calculating octave %i" % octave)
-        wgsize = (32,)  # (max(self.wgsize[octave]),) #TODO: optimize
+        wgsize = (128,)  # (max(self.wgsize[octave]),) #TODO: optimize
         kpsize32 = numpy.int32(self.kpsize)
         self._reset_keypoints()
         octsize = numpy.int32(2 ** octave)
@@ -498,9 +498,9 @@ class SiftPlan(object):
 
     #           Orientation assignement: 1D kernel, rather heavy kernel
                 if newcnt and newcnt > last_start:  # launch kernel only if needed
-                    procsize = calc_size((int(newcnt),), wgsize)
-                    print procsize, wgsize
-                    evt = self.programs["image"].orientation_assignment(self.queue, procsize, wgsize,
+                    procsize = int(newcnt * wgsize[0]),
+                    print "orientation_assignment:", procsize, wgsize
+                    evt = self.programs["keypoints"].orientation_assignment(self.queue, procsize, wgsize,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
                                           grad.data,  # __global float* grad,
                                           ori.data,  # __global float* ori,

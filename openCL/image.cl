@@ -1,6 +1,8 @@
 /**
  *
- * Functions on images
+ * Kernels for images processing
+ *
+ * A thread handles one keypoint -- any group size can do
  *
  *
 */
@@ -369,8 +371,7 @@ __kernel void interp_keypoint(
 }
 
 
-
-
+// DEPRECATED
 
 
 
@@ -765,38 +766,6 @@ __kernel void descriptor(
 		} //end "valid keypoint"
 	} //end "in the keypoints"
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
