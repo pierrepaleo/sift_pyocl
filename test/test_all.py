@@ -50,7 +50,7 @@ from test_reductions import test_suite_reductions
 from test_convol import test_suite_convol
 from test_algebra import test_suite_algebra
 from test_image import test_suite_image
-
+from test_keypoints import test_suite_keypoints
 
 def test_suite_all():
     testSuite = unittest.TestSuite()
