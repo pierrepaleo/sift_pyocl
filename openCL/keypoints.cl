@@ -299,12 +299,19 @@ __kernel void orientation_assignment(
 		k.s0 = k.s2 *octsize; //c
 		k.s1 = k.s1 *octsize; //r
 		k.s2 = k.s3 *octsize; //sigma
-		k.s3 = maxval; //angle; //(angle - 1.0f) * M_PI_F;	   	  //angle
+		k.s3 = angle; 		  //angle
 		keypoints[groupid] = k;
+		
+		pos[0] = argmax;
+		hist2[0] = maxval;
+		hist2[1] = k.s0; hist2[2] = k.s1; hist2[3] = k.s2; hist2[4] = k.s3; //to avoid central memory access below
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
-	return;
-	
+
+	//sync all threads for these values
+	k = (float4) (hist2[1], hist2[2], hist2[3], hist2[4]);
+	argmax = pos[0];
+	maxval = hist2[0];
 	
 	/*
 		An orientation is now assigned to our current keypoint.
@@ -312,31 +319,32 @@ __kernel void orientation_assignment(
 		For every local peak in histogram, every peak of value >= 80% of maxval generates a new keypoint
 	*/
 
-	if (lid0<36){
-		prev = (lid0 == 0 ? 35 : lid0 - 1);
-		next = (lid0 == 35 ? 0 : lid0 + 1);
+	if (lid0 < 36) {
+		i = lid0;
+		prev = (i == 0 ? 35 : i - 1);
+		next = (i == 35 ? 0 : i + 1);
 		hist_prev = hist[prev];
-		hist_curr = hist[lid0];
+		hist_curr = hist[i];
 		hist_next = hist[next];
-		if (hist_curr > hist_prev  &&  hist_curr > hist_next && hist_curr >= 0.8f * maxval && lid0 != argmax) {
+		if (hist_curr > hist_prev  &&  hist_curr > hist_next && hist_curr >= 0.8f * maxval && i != argmax) {
 			/* Use parabolic fit to interpolate peak location from 3 samples. Set angle in range -PI to PI. */
+		/* //all values are positive...
 			if (hist_curr < 0.0f) {
 				hist_prev = -hist_prev;
 				hist_curr = -hist_curr;
 				hist_next = -hist_next;
 			}
-			if (hist_curr >= hist_prev  &&  hist_curr >= hist_next)
-				interp = 0.5f * (hist_prev - hist_next) / (hist_prev - 2.0f * hist_curr + hist_next);
+		*/
+			interp = 0.5f * (hist_prev - hist_next) / (hist_prev - 2.0f * hist_curr + hist_next);
 
-			angle = (lid0 + 0.5f + interp) / 18.0f;
-			if (angle>=2)angle-=2;
-			else if (angle<0)angle+=2;
+			angle = (i + 0.5f + interp) / 18.0f;
+			if (angle >= 0  &&  angle <= 2) {
 				k.s3 = (angle-1.0f)*M_PI_F;
 				old  = atomic_inc(counter);
-				if (old < nb_keypoints)
-					keypoints[old] = k;
+				if (old < nb_keypoints) keypoints[old] = k;
+			}
 		} //end "val >= 80%*maxval"
-	} //end loop in histogram
+	}
 }
 
 
