@@ -84,8 +84,8 @@ __kernel void orientation_assignment(
 	__local volatile float hist[36];
 	__local volatile float hist2[WORKGROUP_SIZE];
 	__local volatile int pos[WORKGROUP_SIZE];
-	float ONE_3 = 1.0f/3.0f;
-	float ONE_18 = 1.0f/18.0f;
+	float ONE_3 = 1.0f / 3.0f;
+	float ONE_18 = 1.0f / 18.0f;
 	//memset for "pos" and "hist2"
 	pos[lid0] = -1;
 	hist2[lid0] = 0.0f;
@@ -141,55 +141,44 @@ __kernel void orientation_assignment(
 	/*
 		Apply smoothing 6 times for accurate Gaussian approximation
 	*/
-/*
+
+
 	for (j=0; j<6; j++) {
 		if (lid0 == 0) {
 			hist2[0] = hist[0]; //save unmodified hist
-			hist[0] = (hist[35] + hist[0] + hist[1]) * ONE_3;
+			hist[0] = (hist[35] + hist[0] + hist[1]) / 3.0f;
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
 		if (0 < lid0 && lid0 < 35) {
 			hist2[lid0]=hist[lid0];
-			hist[lid0] = (hist2[lid0-1] + hist[lid0] + hist[lid0+1]) * ONE_3;
+			hist[lid0] = (hist2[lid0-1] + hist[lid0] + hist[lid0+1]) / 3.0f;
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
 		if (lid0 == 35) {
-			hist[35] = (hist2[34] + hist[35] + hist[0]) * ONE_3;
+			hist[35] = (hist2[34] + hist[35] + hist[0]) / 3.0f;
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
 	}
-*/
 
 
+/*
 	for (j=0; j<3; j++) {
-		if (lid0 == 0) {
-			hist2[0] = (hist[35] + hist[0] + hist[1]) * ONE_3;
+		if (lid0 < 36 ) {
+			prev = (lid0 == 0 ? 35 : lid0 - 1);
+			next = (lid0 == 35 ? 0 : lid0 + 1);
+			hist2[0] = (hist[prev] + hist[lid0] + hist[next]) / 3.0f;
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
-		if (0 < lid0 && lid0 < 35) {
-			hist2[lid0] = (hist[lid0-1] + hist[lid0] + hist[lid0+1]) * ONE_3;
-		}
-		barrier(CLK_LOCAL_MEM_FENCE);
-
-		if (lid0 == 35) {
-			hist2[35] = (hist[34] + hist[35] + hist[0]) * ONE_3;
-		}
-		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid0 == 0) {
-			hist[0] = (hist2[35] + hist2[0] + hist2[1]) * ONE_3;
-		}
-		barrier(CLK_LOCAL_MEM_FENCE);
-		if (0 < lid0 && lid0 < 35) {
-			hist[lid0] = (hist2[lid0-1] + hist2[lid0] + hist2[lid0+1]) * ONE_3;
-		}
-		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid0 == 35) {
-			hist[35] = (hist2[34] + hist2[35] + hist2[0]) * ONE_3;
+		if (lid0 < 36 ) {
+			prev = (lid0 == 0 ? 35 : lid0 - 1);
+			next = (lid0 == 35 ? 0 : lid0 + 1);
+			hist[0] = (hist2[prev] + hist2[lid0] + hist2[next]) / 3.0f;
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
 	}
 
-
+	hist2 = 0.0f
+*/
 
 
 	/* Find maximum value in histogram */
@@ -275,9 +264,13 @@ __kernel void orientation_assignment(
 		k.s2 = k.s3 *octsize; 			//sigma
 		k.s3 = (angle-1.0f)*M_PI_F; 	//angle
 		keypoints[groupid] = k;
+//		use local memory to communicate with other threads
 		pos[0] = argmax;
 		hist2[0] = maxval;
-		hist2[1] = k.s0; hist2[2] = k.s1; hist2[3] = k.s2; hist2[4] = k.s3; //to avoid central memory access below
+		hist2[1] = k.s0;
+		hist2[2] = k.s1;
+		hist2[3] = k.s2;
+		hist2[4] = k.s3;
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
 	//broadcast these values to all threads
