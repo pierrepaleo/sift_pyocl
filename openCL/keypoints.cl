@@ -71,12 +71,16 @@ __kernel void orientation_assignment(
 	int grad_width,
 	int grad_height)
 {
-	//int gid0 = (int) get_global_id(0);
 	int lid0 = get_local_id(0);
 	int groupid = get_group_id(0);
-	keypoint k = keypoints[groupid];
-	if (!(keypoints_start <= groupid && groupid < keypoints_end && k.s1 >=0.0f ))
+
+//	Process only valid points
+	if ((groupid< keypoints_start) || (groupid >= keypoints_end))
 		return;
+	keypoint k = keypoints[groupid];
+	if (k.s1 < 0.0f )
+		return;
+
 	int	bin, prev=0, next=0;
 	int old;
 	float distsq, gval, angle, interp=0.0;
@@ -143,42 +147,41 @@ __kernel void orientation_assignment(
 	*/
 
 
+
 	for (j=0; j<6; j++) {
 		if (lid0 == 0) {
 			hist2[0] = hist[0]; //save unmodified hist
-			hist[0] = (hist[35] + hist[0] + hist[1]) / 3.0f;
+			hist[0] = (hist[35] + hist[0] + hist[1]) * ONE_3;
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
 		if (0 < lid0 && lid0 < 35) {
 			hist2[lid0]=hist[lid0];
-			hist[lid0] = (hist2[lid0-1] + hist[lid0] + hist[lid0+1]) / 3.0f;
+			hist[lid0] = (hist2[lid0-1] + hist[lid0] + hist[lid0+1]) * ONE_3;
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
 		if (lid0 == 35) {
-			hist[35] = (hist2[34] + hist[35] + hist[0]) / 3.0f;
+			hist[35] = (hist2[34] + hist[35] + hist[0]) * ONE_3;
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
 	}
 
+//WHY not working
+//	for (j=0; j<3; j++) {
+//		if (lid0 < 36 ) {
+//			prev = (lid0 == 0 ? 35 : lid0 - 1);
+//			next = (lid0 == 35 ? 0 : lid0 + 1);
+//			hist2[lid0] = (hist[prev] + hist[lid0] + hist[next]) * ONE_3;
+//		}
+//		barrier(CLK_LOCAL_MEM_FENCE);
+//		if (lid0 < 36 ) {
+//			prev = (lid0 == 0 ? 35 : lid0 - 1);
+//			next = (lid0 == 35 ? 0 : lid0 + 1);
+//			hist[lid0] = (hist2[prev] + hist2[lid0] + hist2[next]) * ONE_3;
+//		}
+//		barrier(CLK_LOCAL_MEM_FENCE);
+//	}
 
-/*
-	for (j=0; j<3; j++) {
-		if (lid0 < 36 ) {
-			prev = (lid0 == 0 ? 35 : lid0 - 1);
-			next = (lid0 == 35 ? 0 : lid0 + 1);
-			hist2[0] = (hist[prev] + hist[lid0] + hist[next]) / 3.0f;
-		}
-		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid0 < 36 ) {
-			prev = (lid0 == 0 ? 35 : lid0 - 1);
-			next = (lid0 == 35 ? 0 : lid0 + 1);
-			hist[0] = (hist2[prev] + hist2[lid0] + hist2[next]) / 3.0f;
-		}
-		barrier(CLK_LOCAL_MEM_FENCE);
-	}
-
-	hist2 = 0.0f
-*/
+	hist2[lid0] = 0.0f;
 
 
 	/* Find maximum value in histogram */
