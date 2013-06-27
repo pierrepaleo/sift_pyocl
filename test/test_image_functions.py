@@ -235,9 +235,9 @@ def my_orientation(keypoints, nb_keypoints, keypoints_start, keypoints_end, grad
 
             interp = 0.5 * (hist[prev] - hist[next]) / (hist[prev] - 2.0 * maxval + hist[next])
             angle = 2.0 * numpy.pi * (argmax + 0.5 + interp) / 36 - numpy.pi        
-            k[0] = k[2]
-            k[1] = k[1]
-            k[2] = k[3]
+            k[0] = k[2] *octsize
+            k[1] = k[1] *octsize
+            k[2] = k[3] *octsize
             k[3] = angle
             keypoints[index] = k 
             
@@ -389,74 +389,6 @@ def normalize(vec):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def keypoints_compare(ref,res):
     '''
     When using atomic instructions in kernels, the resulting keypoints are not in the same order as Python implementation
@@ -467,8 +399,8 @@ def keypoints_compare(ref,res):
     ref_r = ref[(ref[:,1].argsort(axis=0)),1]
     res_s = res[(res[:,2].argsort(axis=0)),2]
     ref_s = ref[(ref[:,2].argsort(axis=0)),2]
-    res_angle = res[(res[:,2].argsort(axis=0)),2]
-    ref_angle = ref[(ref[:,2].argsort(axis=0)),2]
+    res_angle = res[(res[:,3].argsort(axis=0)),3]
+    ref_angle = ref[(ref[:,3].argsort(axis=0)),3]
     
     return abs(res_c - ref_c).max(), abs(res_r - ref_r).max(), abs(res_s - ref_s).max(), abs(res_angle - ref_angle).max()
  
