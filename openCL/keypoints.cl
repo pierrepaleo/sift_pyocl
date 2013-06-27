@@ -1,9 +1,9 @@
 /*
-	
+
 	Kernels for keypoints processing
-	
+
 	A *group of threads* handles one keypoint, for additional information is required in the keypoint neighborhood
-	
+
 	WARNING: local workgroup size must be at least 128 for orientation_assignment
 
 */
@@ -26,7 +26,7 @@ typedef float4 keypoint;
  * However, calculations need to be on float, so we need a temporary descriptors vector in shared memory.
  *
  * In this kernel, we launch WG*nb_keypoints threads, so that one threads handles a 128-vector (grad and ori).
- * This enables to make coalescing global memory access for grad and ori. 
+ * This enables to make coalescing global memory access for grad and ori.
  * The 128 vector "hist2" is finally send in a 36 vector "hist"
  *
  * @param keypoints: Pointer to global memory with current keypoints vector
@@ -60,7 +60,7 @@ desc[W*i+gid0] with i in range(0,128) and W = keypoints_end-keypoints_start+1
  */
 __kernel void orientation_assignment(
 	__global keypoint* keypoints,
-	__global float* grad, 
+	__global float* grad,
 	__global float* ori,
 	__global int* counter,
 	int octsize,
@@ -72,73 +72,76 @@ __kernel void orientation_assignment(
 	int grad_height)
 {
 	//int gid0 = (int) get_global_id(0);
-	int lid0 = (int) get_local_id(0);
+	int lid0 = get_local_id(0);
 	int groupid = get_group_id(0);
 	keypoint k = keypoints[groupid];
-	
-	bool valid = (keypoints_start <= groupid && groupid < keypoints_end && k.s1 != -1.0f);
-	if (valid) {
-		int	bin, prev, next;
-		int old;
-		float distsq, gval, angle, interp=0.0;
-		__local float hist[36];
-		__local float hist2[WORKGROUP_SIZE];
-		__local int pos[WORKGROUP_SIZE];
-		//memset for "pos" and "hist2"
+	if (!(keypoints_start <= groupid && groupid < keypoints_end && k.s1 >=0.0f ))
+		return;
+	int	bin, prev=0, next=0;
+	int old;
+	float distsq, gval, angle, interp=0.0;
+	float hist_prev,hist_curr,hist_next;
+	__local volatile float hist[36];
+	__local volatile float hist2[WORKGROUP_SIZE];
+	__local volatile int pos[WORKGROUP_SIZE];
+	//memset for "pos" and "hist2"
+	pos[lid0] = -1;
+	hist2[lid0] = 0.0f;
+
+	//local memset
+	if (lid0 < 36) hist[lid0]=0.0f;
+
+	int	row = (int) (k.s1 + 0.5),
+		col = (int) (k.s2 + 0.5);
+
+	/* Look at pixels within 3 sigma around the point and sum their
+	  Gaussian weighted gradient magnitudes into the histogram. */
+
+	float sigma = OriSigma * k.s3;
+	int	radius = (int) (sigma * 3.0);
+	int rmin = MAX(0,row - radius);
+	int cmin = MAX(0,col - radius);
+	int rmax = MIN(row + radius,grad_height - 2);
+	int cmax = MIN(col + radius,grad_width - 2);
+	int i,j,r,c;
+	for (r = rmin; r <= rmax; r++) {
+		c = cmin + lid0;
 		pos[lid0] = -1;
-		hist[lid0] = 0.0f;
-		             		
-		//__local float local_grad[WORKGROUP_SIZE];
-		//__local float local_ori[WORKGROUP_SIZE];
-		//local memset
-		if (lid0 < 36) hist[lid0]=0.0f;
-		
-		int	row = (int) (k.s1 + 0.5),
-			col = (int) (k.s2 + 0.5);
+		hist2[lid0] = 0.0f; //do not forget to memset before each re-use...
+		if (c <= cmax){
+			gval = grad[r*grad_width+c];
+			distsq = (r-k.s1)*(r-k.s1) + (c-k.s2)*(c-k.s2);
 
-		/* Look at pixels within 3 sigma around the point and sum their
-		  Gaussian weighted gradient magnitudes into the histogram. */
-		  
-		float sigma = OriSigma * k.s3;
-		int	radius = (int) (sigma * 3.0);
-		int rmin = MAX(0,row - radius);
-		int cmin = MAX(0,col - radius);
-		int rmax = MIN(row + radius,grad_height - 2);
-		int cmax = MIN(col + radius,grad_width - 2);
-		int i,j,r,c;
-		for (r = rmin; r <= rmax; r++) {
-			for (c = cmin; c <= cmax; c++) {
-
-				gval = grad[r*grad_width+c];
-				distsq = (r-k.s1)*(r-k.s1) + (c-k.s2)*(c-k.s2);
-			
-				if (gval > 0.0f  &&  distsq < ((float) (radius*radius)) + 0.5f) {
-					/* Ori is in range of -PI to PI. */
-					angle = ori[r*grad_width+c];
-					bin = (int) (36 * (angle + M_PI_F + 0.001f) / (2.0f * M_PI_F)); //why this offset ?
-					if (bin >= 0 && bin <= 36) {
-						bin = MIN(bin, 35);
-						//hist[bin] += exp(- distsq / (2.0f*sigma*sigma)) * gval;
-						hist2[lid0] = exp(- distsq / (2.0f*sigma*sigma)) * gval;
-						pos[lid0] = bin;
-					}
+			if (gval > 0.0f  &&  distsq < (radius*radius) + 0.5f) {
+				// Ori is in range of -PI to PI.
+				angle = ori[r*grad_width+c];
+				bin = (int) (36 * (angle + M_PI_F + 0.001f) / (2.0f * M_PI_F)); //why this offset ?
+				//bin = (int) (18.0f * (angle + M_PI_F ) *  M_1_PI_F);
+				if (bin >= 0 && bin <= 36) {
+					bin = MIN(bin, 35);
+				//if (bin<0) bin+=36;
+				//else if (bin>35) bin-=36;
+					hist2[lid0] = exp(- distsq / (2.0f*sigma*sigma)) * gval;
+					pos[lid0] = bin;
 				}
 			}
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
-		/*
-			We do not have atomic operations on floats...
-		*/
-		if (lid0 == 0) {		
-			for (i=0; i < WORKGROUP_SIZE; i++) {
+
+		//We do not have atomic operations on floats...
+		if (lid0 == 0) {
+			for (i=0; i < WORKGROUP_SIZE; i++)
 				if (pos[i] != -1) hist[pos[i]] += hist2[i];
-			}
 		}
-		
-
-
-
-		/* Apply smoothing 6 times for accurate Gaussian approximation. */
+		barrier(CLK_LOCAL_MEM_FENCE);
+	}
+	
+	
+	
+	
+	
+	
+	if (lid0 == 0) {
 		float prev2, temp2;
 		for (j = 0; j < 6; j++) {
 			prev2 = hist[35];
@@ -148,62 +151,192 @@ __kernel void orientation_assignment(
 				prev2 = temp2;
 			}
 		}
-	    
-		/* Find maximum value in histogram. */
-		float maxval = 0.0f;
-		int argmax = 0;
+	}
+/*
+	hist2[lid0] = 0.0f; //do not forget to memset before each re-use...
+	barrier(CLK_LOCAL_MEM_FENCE);
+	// Apply smoothing 6 times for accurate Gaussian approximation.
+	if (lid0<36){
+//		prev = (lid0 == 0 ? 35 : lid0 - 1);
+//		next = (lid0 == 35 ? 0 : lid0 + 1);
+		if (lid0 == 0) prev = 35;
+		else prev = lid0 -1;
+		if (lid0 == 35) next = 0;
+		else next = lid0 +1;
+		hist2[lid0] = (hist[prev]+hist[lid0]+hist[next])/ 3.0f;
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	__local float hist3[WORKGROUP_SIZE];
+	hist3[lid0] = 0.0f;
+	
+	if (lid0<36){
+//		prev = (lid0 == 0 ? 35 : lid0 - 1);
+//		next = (lid0 == 35 ? 0 : lid0 + 1);
+		if (lid0 == 0) prev = 35;
+		else prev = lid0 -1;
+		if (lid0 == 35) next = 0;
+		else next = lid0 +1;		
+		hist3[lid0] = (hist2[prev]+hist2[lid0]+hist2[next])/ 3.0f;
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid0<36) hist[lid0] = hist3[lid0];
+	/*
+	if (lid0<36){
+		prev = (lid0 == 0 ? 35 : lid0 - 1);
+		next = (lid0 == 35 ? 0 : lid0 + 1);
+		hist2[lid0] = (hist[prev]+hist[lid0]+hist[next])/ 3.0f;
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid0<36){
+		prev = (lid0 == 0 ? 35 : lid0 - 1);
+		next = (lid0 == 35 ? 0 : lid0 + 1);
+		hist[lid0] = (hist2[prev]+hist2[lid0]+hist2[next])/ 3.0f;
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid0<36){
+		prev = (lid0 == 0 ? 35 : lid0 - 1);
+		next = (lid0 == 35 ? 0 : lid0 + 1);
+		hist2[lid0] = (hist[prev]+hist[lid0]+hist[next])/ 3.0f;
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid0<36){
+		prev = (lid0 == 0 ? 35 : lid0 - 1);
+		next = (lid0 == 35 ? 0 : lid0 + 1);
+		hist[lid0] = (hist2[prev]+hist2[lid0]+hist2[next])/ 3.0f;
+	}
+*/
+	barrier(CLK_LOCAL_MEM_FENCE);
+
+
+
+
+	
+	
+	/* Find maximum value in histogram */
+
+	float maxval = 0.0f;
+	int argmax = 0;
+
+/*
+	//	Parallel reduction
+	if (lid0<32){
+		if (lid0+32<36){
+			if (hist[lid0]>hist[lid0+32]){
+				hist2[lid0]=hist[lid0];
+				pos[lid0] = lid0;
+			}else{
+				hist2[lid0]=hist[lid0+32];
+				pos[lid0] = lid0+32;
+			}
+		}else{
+			hist2[lid0]=hist[lid0];
+			pos[lid0] = lid0;
+		}
+	} //now we have hist2[0..32[ that takes [32..36[ into account
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid0<16){
+		if (hist2[lid0+16]>hist2[lid0]){
+			hist2[lid0]=hist2[lid0+16];
+			pos[lid0] = pos[lid0+16];
+		}
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid0<8 ){
+		if (hist2[lid0+ 8]>hist2[lid0]){
+			hist2[lid0]=hist2[lid0+ 8];
+			pos[lid0] = pos[lid0+ 8];
+		}
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid0<04){
+		if (hist2[lid0+04]>hist2[lid0]){
+			hist2[lid0]=hist2[lid0+04];
+			pos[lid0] = pos[lid0+04];
+		}
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid0<02){
+		if (hist2[lid0+02]>hist2[lid0]){
+			hist2[lid0]=hist2[lid0+02];
+			pos[lid0] = pos[lid0+02];
+		}
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid0==0){
+		if (hist2[1]>hist2[0]){
+			hist2[0]=hist2[1];
+			pos[0] = pos[1];
+		}		
+		argmax = pos[0];
+		maxval = hist2[0];
+*/
+	if (lid0 == 0) { //avoid conflicts...
 		for (i = 0; i < 36; i++)
 			if (hist[i] > maxval) { maxval = hist[i]; argmax = i; }
+	
+	/*
+		This maximum value in the histogram is defined as the orientation of our current keypoint
+		NOTE: a "true" keypoint has his coordinates multiplied by "octsize" (cf. SIFT)
+	*/	
+		prev = (argmax == 0 ? 35 : argmax - 1);
+		next = (argmax == 35 ? 0 : argmax + 1);
+		hist_prev = hist[prev];
+		hist_next = hist[next];
 
-		/*
-			This maximum value in the histogram is defined as the orientation of our current keypoint
-			NOTE: a "true" keypoint has his coordinates multiplied by "octsize" (cf. SIFT)
-		*/
-		prev = (argmax == 0 ? 36 - 1 : argmax - 1);
-		next = (argmax == 36 - 1 ? 0 : argmax + 1);
 		if (maxval < 0.0f) {
-			hist[prev] = -hist[prev];
+			hist_prev = -hist_prev; //do not directly use hist[prev] which is shared
 			maxval = -maxval;
-			hist[next] = -hist[next];
+			hist_next = -hist_next;
 		}
-		interp = 0.5f * (hist[prev] - hist[next]) / (hist[prev] - 2.0f * maxval + hist[next]);
+		interp = 0.5f * (hist_prev - hist_next) / (hist_prev - 2.0f * maxval + hist_next);
+//		angle = (argmax + 0.5f + interp) / 18.0f;
+//		if (angle >= 2.0f) angle-=2.0f;
+//		else if (angle < 0.0f) angle += 2.0f;
+
 		angle = 2.0f * M_PI_F * (argmax + 0.5f + interp) / 36 - M_PI_F;
-	
-	
+
+
 		k.s0 = k.s2 *octsize; //c
 		k.s1 = k.s1 *octsize; //r
 		k.s2 = k.s3 *octsize; //sigma
-		k.s3 = angle;		   //angle
-	
+		k.s3 = maxval; //angle; //(angle - 1.0f) * M_PI_F;	   	  //angle
 		keypoints[groupid] = k;
-		return;
-		/*
-			An orientation is now assigned to our current keypoint.
-			We can create new keypoints of same (x,y,sigma) but a different angle.
-		 	For every local peak in histogram, every peak of value >= 80% of maxval generates a new keypoint	
-		*/
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	return;
 	
-		keypoint k2 = 0.0; k2.s0 = k.s0; k2.s1 = k.s1; k2.s2 = k.s2;
-		for (i = 0; i < 36; i++) {
-			prev = (i == 0 ? 36 -1 : i - 1);
-			next = (i == 36 -1 ? 0 : i + 1);
-			if (hist[i] > hist[prev]  &&  hist[i] > hist[next] && hist[i] >= 0.8f * maxval && i != argmax) {
-				/* Use parabolic fit to interpolate peak location from 3 samples. Set angle in range -PI to PI. */
-				if (hist[i] < 0.0f) {
-					hist[prev] = -hist[prev]; hist[i] = -hist[i]; hist[next] = -hist[next];
-				}
-				if (hist[i] >= hist[prev]  &&  hist[i] >= hist[next]) 
-		 			interp = 0.5f * (hist[prev] - hist[next]) / (hist[prev] - 2.0f * hist[i] + hist[next]);
-		
-				angle = 2.0f * M_PI_F * (i + 0.5f + interp) / 36 - M_PI_F;
-				if (angle >= -M_PI_F  &&  angle <= M_PI_F) {
-					k2.s3 = angle;
-					old  = atomic_inc(counter);
-					if (old < nb_keypoints) keypoints[old] = k2;
-				}
-			} //end "val >= 80%*maxval"
-		} //end loop in histogram
-	} //end "valid keypoint"
+	
+	/*
+		An orientation is now assigned to our current keypoint.
+		We can create new keypoints of same (x,y,sigma) but a different angle.
+		For every local peak in histogram, every peak of value >= 80% of maxval generates a new keypoint
+	*/
+
+	if (lid0<36){
+		prev = (lid0 == 0 ? 35 : lid0 - 1);
+		next = (lid0 == 35 ? 0 : lid0 + 1);
+		hist_prev = hist[prev];
+		hist_curr = hist[lid0];
+		hist_next = hist[next];
+		if (hist_curr > hist_prev  &&  hist_curr > hist_next && hist_curr >= 0.8f * maxval && lid0 != argmax) {
+			/* Use parabolic fit to interpolate peak location from 3 samples. Set angle in range -PI to PI. */
+			if (hist_curr < 0.0f) {
+				hist_prev = -hist_prev;
+				hist_curr = -hist_curr;
+				hist_next = -hist_next;
+			}
+			if (hist_curr >= hist_prev  &&  hist_curr >= hist_next)
+				interp = 0.5f * (hist_prev - hist_next) / (hist_prev - 2.0f * hist_curr + hist_next);
+
+			angle = (lid0 + 0.5f + interp) / 18.0f;
+			if (angle>=2)angle-=2;
+			else if (angle<0)angle+=2;
+				k.s3 = (angle-1.0f)*M_PI_F;
+				old  = atomic_inc(counter);
+				if (old < nb_keypoints)
+					keypoints[old] = k;
+		} //end "val >= 80%*maxval"
+	} //end loop in histogram
 }
 
 
@@ -393,5 +526,6 @@ __kernel void descriptor(
 		} //end "valid keypoint"
 	} //end "in the keypoints"
 }
+
 
 
