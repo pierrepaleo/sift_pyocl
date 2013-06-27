@@ -127,7 +127,6 @@ __kernel void orientation_assignment(
 			}
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
-
 		//We do not have atomic operations on floats...
 		if (lid0 == 0) {
 			for (i=0; i < WORKGROUP_SIZE; i++)
@@ -139,76 +138,25 @@ __kernel void orientation_assignment(
 	
 	
 	
-	
-	
-	if (lid0 == 0) {
-		float prev2, temp2;
-		for (j = 0; j < 6; j++) {
-			prev2 = hist[35];
-			for (i = 0; i < 36; i++) {
-				temp2 = hist[i];
-				hist[i] = ( prev2 + hist[i] + hist[(i + 1 == 36) ? 0 : i + 1] ) / 3.0f;
-				prev2 = temp2;
-			}
-		}
-	}
-/*
-	hist2[lid0] = 0.0f; //do not forget to memset before each re-use...
-	barrier(CLK_LOCAL_MEM_FENCE);
-	// Apply smoothing 6 times for accurate Gaussian approximation.
-	if (lid0<36){
-//		prev = (lid0 == 0 ? 35 : lid0 - 1);
-//		next = (lid0 == 35 ? 0 : lid0 + 1);
-		if (lid0 == 0) prev = 35;
-		else prev = lid0 -1;
-		if (lid0 == 35) next = 0;
-		else next = lid0 +1;
-		hist2[lid0] = (hist[prev]+hist[lid0]+hist[next])/ 3.0f;
-	}
-	barrier(CLK_LOCAL_MEM_FENCE);
-	__local float hist3[WORKGROUP_SIZE];
-	hist3[lid0] = 0.0f;
-	
-	if (lid0<36){
-//		prev = (lid0 == 0 ? 35 : lid0 - 1);
-//		next = (lid0 == 35 ? 0 : lid0 + 1);
-		if (lid0 == 0) prev = 35;
-		else prev = lid0 -1;
-		if (lid0 == 35) next = 0;
-		else next = lid0 +1;		
-		hist3[lid0] = (hist2[prev]+hist2[lid0]+hist2[next])/ 3.0f;
-	}
-	barrier(CLK_LOCAL_MEM_FENCE);
-	if (lid0<36) hist[lid0] = hist3[lid0];
 	/*
-	if (lid0<36){
-		prev = (lid0 == 0 ? 35 : lid0 - 1);
-		next = (lid0 == 35 ? 0 : lid0 + 1);
-		hist2[lid0] = (hist[prev]+hist[lid0]+hist[next])/ 3.0f;
+		Apply smoothing 6 times for accurate Gaussian approximation
+	*/
+	for (j=0; j<6; j++) {
+		if (lid0 == 0) {
+			hist2[0] = hist[0]; //save unmodified hist
+			hist[0] = (hist[35] + hist[0] + hist[1]) / 3.0f;
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);
+		if (0 < lid0 && lid0 < 35) {
+			hist2[lid0]=hist[lid0];
+			hist[lid0] = (hist2[lid0-1] + hist[lid0] + hist[lid0+1]) / 3.0f;
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);
+		if (lid0 == 35) {
+			hist[35] = (hist2[34] + hist[35] + hist[0]) / 3.0f;
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);
 	}
-	barrier(CLK_LOCAL_MEM_FENCE);
-	if (lid0<36){
-		prev = (lid0 == 0 ? 35 : lid0 - 1);
-		next = (lid0 == 35 ? 0 : lid0 + 1);
-		hist[lid0] = (hist2[prev]+hist2[lid0]+hist2[next])/ 3.0f;
-	}
-	barrier(CLK_LOCAL_MEM_FENCE);
-	if (lid0<36){
-		prev = (lid0 == 0 ? 35 : lid0 - 1);
-		next = (lid0 == 35 ? 0 : lid0 + 1);
-		hist2[lid0] = (hist[prev]+hist[lid0]+hist[next])/ 3.0f;
-	}
-	barrier(CLK_LOCAL_MEM_FENCE);
-	if (lid0<36){
-		prev = (lid0 == 0 ? 35 : lid0 - 1);
-		next = (lid0 == 35 ? 0 : lid0 + 1);
-		hist[lid0] = (hist2[prev]+hist2[lid0]+hist2[next])/ 3.0f;
-	}
-*/
-	barrier(CLK_LOCAL_MEM_FENCE);
-
-
-
 
 	
 	
@@ -216,8 +164,6 @@ __kernel void orientation_assignment(
 
 	float maxval = 0.0f;
 	int argmax = 0;
-
-/*
 	//	Parallel reduction
 	if (lid0<32){
 		if (lid0+32<36){
@@ -269,11 +215,8 @@ __kernel void orientation_assignment(
 		}		
 		argmax = pos[0];
 		maxval = hist2[0];
-*/
-	if (lid0 == 0) { //avoid conflicts...
-		for (i = 0; i < 36; i++)
-			if (hist[i] > maxval) { maxval = hist[i]; argmax = i; }
-	
+		
+		
 	/*
 		This maximum value in the histogram is defined as the orientation of our current keypoint
 		NOTE: a "true" keypoint has his coordinates multiplied by "octsize" (cf. SIFT)
@@ -282,17 +225,14 @@ __kernel void orientation_assignment(
 		next = (argmax == 35 ? 0 : argmax + 1);
 		hist_prev = hist[prev];
 		hist_next = hist[next];
-
+		/* //values are positive...
 		if (maxval < 0.0f) {
 			hist_prev = -hist_prev; //do not directly use hist[prev] which is shared
 			maxval = -maxval;
 			hist_next = -hist_next;
 		}
+		*/
 		interp = 0.5f * (hist_prev - hist_next) / (hist_prev - 2.0f * maxval + hist_next);
-//		angle = (argmax + 0.5f + interp) / 18.0f;
-//		if (angle >= 2.0f) angle-=2.0f;
-//		else if (angle < 0.0f) angle += 2.0f;
-
 		angle = 2.0f * M_PI_F * (argmax + 0.5f + interp) / 36 - M_PI_F;
 
 
@@ -307,7 +247,6 @@ __kernel void orientation_assignment(
 		hist2[1] = k.s0; hist2[2] = k.s1; hist2[3] = k.s2; hist2[4] = k.s3; //to avoid central memory access below
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
-
 	//sync all threads for these values
 	k = (float4) (hist2[1], hist2[2], hist2[3], hist2[4]);
 	argmax = pos[0];
@@ -319,15 +258,15 @@ __kernel void orientation_assignment(
 		For every local peak in histogram, every peak of value >= 80% of maxval generates a new keypoint
 	*/
 
-	if (lid0 < 36) {
+	if (lid0 < 36 && lid0 != argmax) {
 		i = lid0;
 		prev = (i == 0 ? 35 : i - 1);
 		next = (i == 35 ? 0 : i + 1);
 		hist_prev = hist[prev];
 		hist_curr = hist[i];
 		hist_next = hist[next];
-		if (hist_curr > hist_prev  &&  hist_curr > hist_next && hist_curr >= 0.8f * maxval && i != argmax) {
-			/* Use parabolic fit to interpolate peak location from 3 samples. Set angle in range -PI to PI. */
+		if (hist_curr > hist_prev  &&  hist_curr > hist_next && hist_curr >= 0.8f * maxval) {
+		/* Use parabolic fit to interpolate peak location from 3 samples. */
 		/* //all values are positive...
 			if (hist_curr < 0.0f) {
 				hist_prev = -hist_prev;
@@ -336,7 +275,6 @@ __kernel void orientation_assignment(
 			}
 		*/
 			interp = 0.5f * (hist_prev - hist_next) / (hist_prev - 2.0f * hist_curr + hist_next);
-
 			angle = (i + 0.5f + interp) / 18.0f;
 			if (angle >= 0  &&  angle <= 2) {
 				k.s3 = (angle-1.0f)*M_PI_F;
@@ -350,12 +288,16 @@ __kernel void orientation_assignment(
 
 
 
+
+
+
+
 __kernel void descriptor(
 	__global keypoint* keypoints,
 	__global unsigned char *descriptors,
-	__local float* tmp_descriptors,
 	__global float* grad,
 	__global float* orim,
+	int octsize,
 	int keypoints_start,
 	int keypoints_end,
 	int grad_width,
@@ -378,8 +320,7 @@ __kernel void descriptor(
 			/*
 				Local memory memset
 			*/
-			for (i=0; i < 128; i++)
-				tmp_descriptors[128*gid0+i] = 0.0f;
+			
 
 			float rx, cx;
 			int	irow = (int) (k.s1 + 0.5f), icol = (int) (k.s0 + 0.5f);
@@ -445,8 +386,8 @@ __kernel void descriptor(
 						if (ri >= -1  &&  ri < 4  && oi >=  0  &&  oi <= 8  && rfrac >= 0.0f  &&  rfrac <= 1.0f) {
 
 						/* Put appropriate fraction in each of 8 buckets around this point
-							in the (row,col,ori) dimensions.  This loop is written for
-							efficiency, as it is the inner loop of key sampling. */
+							in the (row,col,ori) dimensions.
+							 */
 							for (int r = 0; r < 2; r++) {
 								rindex = ri + r;
 								if (rindex >=0 && rindex < 4) {
