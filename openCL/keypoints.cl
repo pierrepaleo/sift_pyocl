@@ -5,6 +5,13 @@
 	A *group of threads* handles one keypoint, for additional information is required in the keypoint neighborhood
 
 	WARNING: local workgroup size must be at least 128 for orientation_assignment
+	
+	
+	For descriptors (so far) :
+	we use shared memory to store temporary 128-histogram (1 per keypoint)
+	  therefore, we need 128*N*4 bytes for N keypoints. We have
+	  -- 16 KB per multiprocessor for <=1.3 compute capability (GTX <= 295), that allows to process N<=30 keypoints per thread
+	  -- 48 KB per multiprocessor for >=2.x compute capability (GTX >= 465, Quadro 4000), that allows to process N<=95 keypoints per thread
 
 */
 
@@ -13,6 +20,7 @@ typedef float4 keypoint;
 #define MAX(i,j) ( (i)<(j) ? (j):(i) )
 #ifndef WORKGROUP_SIZE
 	#define WORKGROUP_SIZE 128
+	#define NB_KEYPOINTS_PROCESSED 30 //30*128*4 = 15360 ; also requires 1D kernel (see access to tmp_descriptors) 
 #endif
 
 
@@ -289,12 +297,10 @@ __kernel void orientation_assignment(
 
 
 
-
-
-
 __kernel void descriptor(
 	__global keypoint* keypoints,
 	__global unsigned char *descriptors,
+	__local float* tmp_descriptors,
 	__global float* grad,
 	__global float* orim,
 	int octsize,
@@ -305,175 +311,171 @@ __kernel void descriptor(
 {
 
 	int gid0 = (int) get_global_id(0);
-	if (keypoints_start <= gid0 && gid0 < keypoints_end) {
+	keypoint k = keypoints[gid0];
+	if (!(keypoints_start <= gid0 && gid0 < keypoints_end && k.s1 > 0.0f))
+		return;
 
-		keypoint k = keypoints[gid0];
-		if (k.s1 != -1.0f) {
+	/* Add features to vec obtained from sampling the grad and ori images
+	   for a particular scale.  Location of key is (scale,row,col) with respect
+	   to images at this scale.  We examine each pixel within a circular
+	   region containing the keypoint, and distribute the gradient for that
+	   pixel into the appropriate bins of the index array.
+	*/
+	int i,j;
+	//memset
+	for (i=0; i < 128; i++)
+		tmp_descriptors[128*gid0+i] = 0.0f;
 
-		/* Add features to vec obtained from sampling the grad and ori images
-		   for a particular scale.  Location of key is (scale,row,col) with respect
-		   to images at this scale.  We examine each pixel within a circular
-		   region containing the keypoint, and distribute the gradient for that
-		   pixel into the appropriate bins of the index array.
-		*/
-			int i,j;
-			/*
-				Local memory memset
-			*/
-			
+	float rx, cx;
+	float row = k.s1, col = k.s0, angle = k.s3;
+	int	irow = (int) (row + 0.5f), icol = (int) (col + 0.5f);
+	float sine = sin((float) angle), cosine = cos((float) angle);
 
-			float rx, cx;
-			int	irow = (int) (k.s1 + 0.5f), icol = (int) (k.s0 + 0.5f);
-			float sine = sin(k.s3), cosine = cos(k.s3);
+	/* The spacing of index samples in terms of pixels at this scale. */
+	float spacing = k.s2 * 3;
 
-			/* The spacing of index samples in terms of pixels at this scale. */
-			float spacing = k.s2 * 3;
+	/* Radius of index sample region must extend to diagonal corner of
+	index patch plus half sample for interpolation. */
+	int iradius = (int) ((1.414f * spacing * 2.5f) + 0.5f);
 
-			/* Radius of index sample region must extend to diagonal corner of
-			index patch plus half sample for interpolation. */
-			int iradius = (int) ((1.414f * spacing * 2.5f) + 0.5f);
+	/* Examine all points from the gradient image that could lie within the index square. */
 
-			/* Examine all points from the gradient image that could lie within the index square. */
+	for (i = -iradius; i <= iradius; i++) {
+		for (j = -iradius; j <= iradius; j++) {
 
-			for (i = -iradius; i <= iradius; i++) {
-				for (j = -iradius; j <= iradius; j++) {
+			/* Makes a rotation of -angle to achieve invariance to rotation */
+			 rx = ((cosine * i - sine * j) - (row - irow)) / spacing + 1.5f;
+			 cx = ((sine * i + cosine * j) - (col - icol)) / spacing + 1.5f;
 
-					/* Makes a rotation of -angle to achieve invariance to rotation */
-					 rx = ((cosine * i - sine * j) - (k.s1 - irow)) / spacing + 1.5f;
-					 cx = ((sine * i + cosine * j) - (k.s0 - icol)) / spacing + 1.5f;
+			 /* Compute location of sample in terms of real-valued index array
+			 coordinates.  Subtract 0.5 so that rx of 1.0 means to put full
+			 weight on index[1] (e.g., when rpos is 0 and 4 is 3. */
 
-					 /* Compute location of sample in terms of real-valued index array
-					 coordinates.  Subtract 0.5 so that rx of 1.0 means to put full
-					 weight on index[1] (e.g., when rpos is 0 and 4 is 3. */
+			/* Test whether this sample falls within boundary of index patch. */
+			if (rx > -1.0f && rx < 4.0f && cx > -1.0f && cx < 4.0f
+				 && (irow +i) >= 0  && (irow +i) < grad_height && (icol+j) >= 0 && (icol+j) < grad_width) {
 
-					/* Test whether this sample falls within boundary of index patch. */ //FIXME: cast to int for comparison
-					if (rx > -1.0f && rx < 4.0f && cx > -1.0f && cx < 4.0f
-						 && (irow +i) >= 0  && (irow +i) < grad_height && (icol+j) >= 0 && (icol+j) < grad_width) {
+				/* Compute Gaussian weight for sample, as function of radial distance
+		 		  from center.  Sigma is relative to half-width of index. */
+				float mag = grad[(int)(icol+j) + (int)(irow+i)*grad_width]
+							 * exp(- 0.125f*((rx - 1.5f) * (rx - 1.5f) + (cx - 1.5f) * (cx - 1.5f)) );
 
-						/* Compute Gaussian weight for sample, as function of radial distance
-				 		  from center.  Sigma is relative to half-width of index. */
-						float mag = grad[(int)(icol+j) + (int)(irow+i)*grad_width]
-									 * exp(- 0.125f*((rx - 1.5f) * (rx - 1.5f) + (cx - 1.5f) * (cx - 1.5f)) );
+				/* Subtract keypoint orientation to give ori relative to keypoint. */
+				float ori = orim[(int)(icol+j)+(int)(irow+i)*grad_width] -  angle;
 
-						/* Subtract keypoint orientation to give ori relative to keypoint. */
-						float ori = orim[(int)(icol+j)+(int)(irow+i)*grad_width] -  k.s3;
+				/* Put orientation in range [0, 2*PI]. */
+				while (ori > 2.0f*M_PI_F) ori -= 2.0f*M_PI_F;
+				while (ori < 0.0f) ori += 2.0f*M_PI_F;
 
-						/* Put orientation in range [0, 2*PI]. */
-						while (ori > 2.0f*M_PI_F) ori -= 2.0f*M_PI_F;
-						while (ori < 0.0f) ori += 2.0f*M_PI_F;
+				/* Increment the appropriate locations in the index to incorporate
+				 this image sample.  The location of the sample in the index is (rx,cx). */
+				int	orr, rindex, cindex, oindex;
+				float	rweight, cweight;
 
-						/* Increment the appropriate locations in the index to incorporate
-	  					 this image sample.  The location of the sample in the index is (rx,cx). */
-						int	orr, rindex, cindex, oindex;
-						float	rweight, cweight;
+				float oval = 4.0f*ori*M_1_PI_F; //8ori/(2pi)
 
-						float oval = 4.0f*ori*M_1_PI_F; //8ori/(2pi)
+				int	ri = (int)((rx >= 0.0f) ? rx : rx - 1.0f),
+					ci = (int)((cx >= 0.0f) ? cx : cx - 1.0f),
+					oi = (int)((oval >= 0.0f) ? oval : oval - 1.0f);
 
-						int	ri = (int)((rx >= 0.0f) ? rx : rx - 1.0f),
-							ci = (int)((cx >= 0.0f) ? cx : cx - 1.0f),
-							oi = (int)((oval >= 0.0f) ? oval : oval - 1.0f);
+				float rfrac = rx - ri,			// Fractional part of location.
+					cfrac = cx - ci,
+					ofrac = oval - oi;
+				/*
+				//alternative in OpenCL :
+				int ri,ci,oi;
+				float	rfrac = fract(rx,&ri),
+						cfrac = fract(cx,&ci),
+						ofrac = fract(oval,&oi);
+				*/
+				if (ri >= -1  &&  ri < 4  && oi >=  0  &&  oi <= 8  && rfrac >= 0.0f  &&  rfrac <= 1.0f) {
 
-						float rfrac = rx - ri,			// Fractional part of location.
-							cfrac = cx - ci,
-							ofrac = oval - oi;
-						/*
-						//alternative in OpenCL :
-						int ri,ci,oi;
-						float	rfrac = fract(rx,&ri),
-								cfrac = fract(cx,&ci),
-								ofrac = fract(oval,&oi);
-						*/
-						if (ri >= -1  &&  ri < 4  && oi >=  0  &&  oi <= 8  && rfrac >= 0.0f  &&  rfrac <= 1.0f) {
+				/* Put appropriate fraction in each of 8 buckets around this point
+					in the (row,col,ori) dimensions.  This loop is written for
+					efficiency, as it is the inner loop of key sampling. */
+					for (int r = 0; r < 2; r++) {
+						rindex = ri + r;
+						if (rindex >=0 && rindex < 4) {
+							rweight = mag * ((r == 0) ? 1.0f - rfrac : rfrac);
 
-						/* Put appropriate fraction in each of 8 buckets around this point
-							in the (row,col,ori) dimensions.
-							 */
-							for (int r = 0; r < 2; r++) {
-								rindex = ri + r;
-								if (rindex >=0 && rindex < 4) {
-									rweight = mag * ((r == 0) ? 1.0f - rfrac : rfrac);
+							for (int c = 0; c < 2; c++) {
+								cindex = ci + c;
+								if (cindex >=0 && cindex < 4) {
+									cweight = rweight * ((c == 0) ? 1.0f - cfrac : cfrac);
+									for (orr = 0; orr < 2; orr++) {
+										oindex = oi + orr;
+										if (oindex >= 8) {  /* Orientation wraps around at PI. */
+											oindex = 0;
+										}
+										/*
+											we want descriptors([rindex][cindex][oindex])[gid0]
+												rindex in [0,3]
+											 	cindex in [0,3]
+											 	oindex in [0,7]
+											so	rindex*4 + cindex is in [0,15]
+												i = (rindex*4+cindex)*8 + oindex is in [0,127]
+											finally : descriptors[128*gid0+i]
+												with a vertical representation
+										*/
 
-									for (int c = 0; c < 2; c++) {
-										cindex = ci + c;
-										if (cindex >=0 && cindex < 4) {
-											cweight = rweight * ((c == 0) ? 1.0f - cfrac : cfrac);
-											for (orr = 0; orr < 2; orr++) {
-												oindex = oi + orr;
-												if (oindex >= 8) {  /* Orientation wraps around at PI. */
-													oindex = 0;
-												}
-												/*
-													we want descriptors([rindex][cindex][oindex])[gid0]
-														rindex in [0,3]
-													 	cindex in [0,3]
-													 	oindex in [0,7]
-													so	rindex*4 + cindex is in [0,15]
-														i = (rindex*4+cindex)*8 + oindex is in [0,127]
-													finally : descriptors[128*gid0+i]
-														with a vertical representation
-												*/
-
-												tmp_descriptors[128*gid0+(rindex*4 + cindex)*8+oindex]
-													+= (cweight * ((orr == 0) ? 1.0f - ofrac : ofrac));
-
+										tmp_descriptors[128*gid0+(rindex*4 + cindex)*8+oindex]
+											+= (cweight * ((orr == 0) ? 1.0f - ofrac : ofrac));
 
 
-											} //end for
-										} //end "valid cindex"
-									}
-								} //end "valid rindex"
+
+									} //end for
+								} //end "valid cindex"
 							}
-						}
-					} //end "sample in boundaries"
-				} //end "j loop"
-			} //end "i loop"
-
-
-
-			/*
-				At this point, we have a descriptor associated with our keypoint.
-				We have to normalize it, then cast to 1-byte integer
-			*/
-
-
-			// Normalization
-			float norm = 0;
-			for (i = 0; i < 128; i++)
-				norm+=pow(tmp_descriptors[128*gid0+i],2); //warning: not the same as C "pow"
-			norm = rsqrt(norm); //norm = 1.0f/sqrt(norm); //half_rsqrt to speed-up
-			for (i = 0; i < 128; i++)
-				tmp_descriptors[128*gid0+i] *= norm;
-
-
-			//Threshold to 0.2 of the norm, for invariance to illumination
-			bool changed = false;
-			norm = 0;
-			for (i = 0; i < 128; i++) {
-				if (tmp_descriptors[128*gid0+i] > 0.2f) {
-					tmp_descriptors[128*gid0+i] = 0.2f;
-					changed = true;
+						} //end "valid rindex"
+					}
 				}
-				norm += pow(tmp_descriptors[128*gid0+i],2);
-			}
-
-			//if values have been changed, we have to normalize again...
-			if (changed) {
-				norm = rsqrt(norm);
-				for (i = 0; i < 128; i++)
-					tmp_descriptors[128*gid0+i] *= norm;
-			}
-
-			//finally, cast to integer
-			//store to global memory : tmp_descriptor[i][gid0] --> descriptors[i][gid0]
-			for (i = 0; i < 128; i++) {
-				descriptors[128*gid0+i]
-					= (unsigned char) MIN(255,(unsigned char)(512.0f*tmp_descriptors[128*gid0+i]));
-					//= (unsigned char) tmp_descriptors[128*gid0+i];
-			}
+			} //end "sample in boundaries"
+		} //end "j loop"
+	} //end "i loop"
 
 
-		} //end "valid keypoint"
-	} //end "in the keypoints"
+
+	/*
+		At this point, we have a descriptor associated with our keypoint.
+		We have to normalize it, then cast to 1-byte integer
+	*/
+
+
+	// Normalization
+	float norm = 0;
+	for (i = 0; i < 128; i++)
+		norm+=pow(tmp_descriptors[128*gid0+i],2); //warning: not the same as C "pow"
+	norm = rsqrt(norm); //norm = 1.0f/sqrt(norm); //half_rsqrt to speed-up
+	for (i = 0; i < 128; i++)
+		tmp_descriptors[128*gid0+i] *= norm;
+
+
+	//Threshold to 0.2 of the norm, for invariance to illumination
+	bool changed = false;
+	norm = 0;
+	for (i = 0; i < 128; i++) {
+		if (tmp_descriptors[128*gid0+i] > 0.2f) {
+			tmp_descriptors[128*gid0+i] = 0.2f;
+			changed = true;
+		}
+		norm += pow(tmp_descriptors[128*gid0+i],2);
+	}
+
+	//if values have been changed, we have to normalize again...
+	if (changed) {
+		norm = rsqrt(norm);
+		for (i = 0; i < 128; i++)
+			tmp_descriptors[128*gid0+i] *= norm;
+	}
+
+	//finally, cast to integer
+	//store to global memory : tmp_descriptor[i][gid0] --> descriptors[i][gid0]
+	for (i = 0; i < 128; i++) {
+		descriptors[128*gid0+i]
+			= (unsigned char) MIN(255,(unsigned char)(512.0f*tmp_descriptors[128*gid0+i]));
+	}
+
+
 }
 
 

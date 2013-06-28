@@ -150,16 +150,13 @@ class test_keypoints(unittest.TestCase):
         
 
 
-
-
-
     def test_descriptor(self):
         '''
         #tests keypoints descriptors creation kernel
         '''
 
         #descriptor_setup :
-        keypoints_o, nb_keypoints, actual_nb_keypoints, grad, ori = descriptor_setup()
+        keypoints_o, nb_keypoints, actual_nb_keypoints, grad, ori, octsize = descriptor_setup()
         #keypoints should be a compacted vector of keypoints
         keypoints_start, keypoints_end = 0, 80 #actual_nb_keypoints
         #keypoints_start, keypoints_end = 20, 30
@@ -180,7 +177,7 @@ class test_keypoints(unittest.TestCase):
 
         t0 = time.time()
         k1 = self.program.descriptor(queue, shape, wg,
-            gpu_keypoints.data, gpu_descriptors.data, local_mem, gpu_grad.data, gpu_ori.data,
+            gpu_keypoints.data, gpu_descriptors.data, local_mem, gpu_grad.data, gpu_ori.data, numpy.int32(octsize),
             keypoints_start, keypoints_end, grad_width, grad_height)
         res = gpu_descriptors.get()
         t1 = time.time()
@@ -216,12 +213,10 @@ class test_keypoints(unittest.TestCase):
 
 
 
-
-
 def test_suite_keypoints():
     testSuite = unittest.TestSuite()
-    testSuite.addTest(test_keypoints("test_orientation"))
-    #testSuite.addTest(test_keypoints("test_descriptor"))
+    #testSuite.addTest(test_keypoints("test_orientation"))
+    testSuite.addTest(test_keypoints("test_descriptor"))
     return testSuite
 
 if __name__ == '__main__':
