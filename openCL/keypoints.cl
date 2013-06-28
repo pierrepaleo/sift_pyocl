@@ -25,47 +25,47 @@ typedef float4 keypoint;
 
 
 
-
-
 /**
- * \brief Compute a SIFT descriptor for each keypoint.
+ * \brief Assign an orientation to the keypoints.  This is done by creating a Gaussian weighted histogram
+ *   of the gradient directions in the region.  The histogram is smoothed and the largest peak selected.
+ *    The results are in the range of -PI to PI.
  *
- * Like in sift.cpp, keypoints are eventually cast to 1-byte integer, for memory sake.
- * However, calculations need to be on float, so we need a temporary descriptors vector in shared memory.
+ * Warning:
+ * 			-At this stage, a keypoint is: (peak,r,c,sigma)
+ 			 After this function, it will be (c,r,sigma,angle)
  *
- * In this kernel, we launch WG*nb_keypoints threads, so that one threads handles a 128-vector (grad and ori).
- * This enables to make coalescing global memory access for grad and ori.
- * The 128 vector "hist2" is finally send in a 36 vector "hist"
- *
- * @param keypoints: Pointer to global memory with current keypoints vector
- * @param descriptor: Pointer to global memory with the output SIFT descriptor, cast to uint8
- * @param tmp_descriptor: Pointer to shared memory with temporary computed float descriptors
+ * @param keypoints: Pointer to global memory with current keypoints vector.
  * @param grad: Pointer to global memory with gradient norm previously calculated
- * @param oril: Pointer to global memory with gradient orientation previously calculated
- * @param keypoints_start : index start for keypoints
- * @param keypoints_end: end index for keypoints
+ * @param ori: Pointer to global memory with gradient orientation previously calculated
+ * @param counter: Pointer to global memory with actual number of keypoints previously found
+ * @param hist: Pointer to shared memory with histogram (36 values per thread)
+ * @param octsize: initially 1 then twiced at each octave
+ * @param OriSigma : a SIFT parameter, default is 1.5. Warning : it is not "InitSigma".
+ * @param nb_keypoints : maximum number of keypoints
  * @param grad_width: integer number of columns of the gradient
  * @param grad_height: integer num of lines of the gradient
-
-
- WARNING: scale, row and col must not have been multiplied by octsize/octscale here !
-
--par.MagFactor = 3 //"1.5 sigma"
--OriSize  = 8 //number of bins in the local histogram
--par.IndexSigma  = 1.0
-
- TODO:
--(c,r,sigma) are not multiplied by octsize yet. It can be done in this kernel.
--memory optimization
-
-
-Vertical keypoints (gid0) :
-desc[128*gid0 + i] with i in range(0,128)
-
-Horizontal keypoints (gid1) :
-desc[W*i+gid0] with i in range(0,128) and W = keypoints_end-keypoints_start+1
-
  */
+
+
+/*
+
+par.OriBins = 36
+par.OriHistThresh = 0.8;
+-replace "36" by an external paramater ?
+-replace "0.8" by an external parameter ?
+
+TODO:
+-Memory optimization
+	--Use less registers (re-use, calculation instead of assignation)
+	--Use local memory for float histogram[36]
+-Speed-up
+	--Less access to global memory (k.s1 is OK because this is a register)
+	--leave the loops as soon as possible
+	--Avoid divisions
+
+
+*/
+
 __kernel void orientation_assignment(
 	__global keypoint* keypoints,
 	__global float* grad,
@@ -79,7 +79,6 @@ __kernel void orientation_assignment(
 	int grad_width,
 	int grad_height)
 {
-	//int gid0 = (int) get_global_id(0);
 	int lid0 = get_local_id(0);
 	int groupid = get_group_id(0);
 	keypoint k = keypoints[groupid];
@@ -127,8 +126,6 @@ __kernel void orientation_assignment(
 				//bin = (int) (18.0f * (angle + M_PI_F ) *  M_1_PI_F);
 				if (bin >= 0 && bin <= 36) {
 					bin = MIN(bin, 35);
-				//if (bin<0) bin+=36;
-				//else if (bin>35) bin-=36;
 					hist2[lid0] = exp(- distsq / (2.0f*sigma*sigma)) * gval;
 					pos[lid0] = bin;
 				}
@@ -136,7 +133,7 @@ __kernel void orientation_assignment(
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
 		//We do not have atomic operations on floats...
-		if (lid0 == 0) {
+		if (lid0 == 0) { //this has to be done here ! if not, pos[] is erased !
 			for (i=0; i < WORKGROUP_SIZE; i++)
 				if (pos[i] != -1) hist[pos[i]] += hist2[i];
 		}
@@ -293,14 +290,64 @@ __kernel void orientation_assignment(
 	}
 }
 
+/*
+**
+ * \brief Compute a SIFT descriptor for each keypoint.
+ *		WARNING: the workgroup size must be at least 128 (128 is fine, this is the descriptor size)
+ *
+ *
+ *
+ *
+ * Like in sift.cpp, keypoints are eventually cast to 1-byte integer, for memory sake.
+ * However, calculations need to be on float, so we need a temporary descriptors vector in shared memory.
+ *
+ * In the fist step, the neighborhood of the keypoint is rotated by (-k.s3).
+ *   This neighborhood is quite huge ([-42,42]^2), therefore there are many access to global memory for each keypoint
+      (from 23^2 = 529 [s=1] to 85**2 = 7225 [s=3.9999] !).
+ * To speed this up, we consider a (1D) 128-workgroup for coalescing access to global mem :
+ *   -One line of 2*42+1=85 points is copied from global mem. to shared mem
+ *   -The rotation and the rest of the processing are made on these points ([k.s0-42,k.s0+42])
+ *   -For a given workgroup (that handles columns), a loop is made on the lines [k.s1-42,k.s1+42]
+ *
+ *
+ * PROS:
+ *   -coalesced memory access
+ *   -normalization/cast are actually done in parallel
+ *   -have to create *two* tmp_descriptors of size WORKGROUP_SIZE : one for the inner "i" loop, one for accumulating before casting to uint8. However, it still fits in local memory for all workgroup sizes (N*4*2+N < 10K for N <= 1024)
+ *
+ *
+ * CONS:
+ *   -heavy kernel launched once per keypoint
+ *   
+ *
+ *
+ * @param keypoints: Pointer to global memory with current keypoints vector
+ * @param descriptor: Pointer to global memory with the output SIFT descriptor, cast to uint8
+ * //@param tmp_descriptor: Pointer to shared memory with temporary computed float descriptors
+ * @param grad: Pointer to global memory with gradient norm previously calculated
+ * @param oril: Pointer to global memory with gradient orientation previously calculated
+ * @param keypoints_start : index start for keypoints
+ * @param keypoints_end: end index for keypoints
+ * @param grad_width: integer number of columns of the gradient
+ * @param grad_height: integer num of lines of the gradient
 
 
+ WARNING: scale, row and col must be processed without multiplication by "octsize" !
+
+-par.MagFactor = 3 //"1.5 sigma"
+-OriSize  = 8 //number of bins in the local histogram
+-par.IndexSigma  = 1.0
+
+ TODO:
+-memory optimization
+
+ */
 
 
 __kernel void descriptor(
 	__global keypoint* keypoints,
 	__global unsigned char *descriptors,
-	__local float* tmp_descriptors,
+	//__local float* tmp_descriptors,
 	__global float* grad,
 	__global float* orim,
 	int octsize,
@@ -310,22 +357,21 @@ __kernel void descriptor(
 	int grad_height)
 {
 
-	int gid0 = (int) get_global_id(0);
-	keypoint k = keypoints[gid0];
-	if (!(keypoints_start <= gid0 && gid0 < keypoints_end && k.s1 > 0.0f))
+	int lid0 = get_local_id(0);
+	int groupid = get_group_id(0);
+	keypoint k = keypoints[groupid];
+	if (!(keypoints_start <= groupid && groupid < keypoints_end && k.s1 >=0.0f))
 		return;
 
-	/* Add features to vec obtained from sampling the grad and ori images
-	   for a particular scale.  Location of key is (scale,row,col) with respect
-	   to images at this scale.  We examine each pixel within a circular
-	   region containing the keypoint, and distribute the gradient for that
-	   pixel into the appropriate bins of the index array.
-	*/
-	int i,j;
+	__local volatile float tmp_descriptors[WORKGROUP_SIZE]; //for temporary descriptors, one vector per keypoint i.e per workgroup
+	__local volatile float tmp_descriptors_2[WORKGROUP_SIZE];
+	__local volatile int pos[WORKGROUP_SIZE]; //for positions (see below)
 	//memset
-	for (i=0; i < 128; i++)
-		tmp_descriptors[128*gid0+i] = 0.0f;
-
+	tmp_descriptors[lid0] = 0.0f;
+	tmp_descriptors_2[lid0] = 0.0f;
+	pos[lid0] = -1;
+	
+	int i,j;
 	float rx, cx;
 	float row = k.s1, col = k.s0, angle = k.s3;
 	int	irow = (int) (row + 0.5f), icol = (int) (col + 0.5f);
@@ -339,9 +385,11 @@ __kernel void descriptor(
 	int iradius = (int) ((1.414f * spacing * 2.5f) + 0.5f);
 
 	/* Examine all points from the gradient image that could lie within the index square. */
-
-	for (i = -iradius; i <= iradius; i++) {
-		for (j = -iradius; j <= iradius; j++) {
+	for (i = -iradius; i <= iradius; i++) { //loop on rows
+		j = -iradius + lid0; //current column
+		pos[lid0] = -1;
+		tmp_descriptors[lid0] = 0.0f; //do not forget to memset before each re-use...
+		if (j <= iradius) {
 
 			/* Makes a rotation of -angle to achieve invariance to rotation */
 			 rx = ((cosine * i - sine * j) - (row - irow)) / spacing + 1.5f;
@@ -350,11 +398,9 @@ __kernel void descriptor(
 			 /* Compute location of sample in terms of real-valued index array
 			 coordinates.  Subtract 0.5 so that rx of 1.0 means to put full
 			 weight on index[1] (e.g., when rpos is 0 and 4 is 3. */
-
 			/* Test whether this sample falls within boundary of index patch. */
 			if (rx > -1.0f && rx < 4.0f && cx > -1.0f && cx < 4.0f
 				 && (irow +i) >= 0  && (irow +i) < grad_height && (icol+j) >= 0 && (icol+j) < grad_width) {
-
 				/* Compute Gaussian weight for sample, as function of radial distance
 		 		  from center.  Sigma is relative to half-width of index. */
 				float mag = grad[(int)(icol+j) + (int)(irow+i)*grad_width]
@@ -388,13 +434,13 @@ __kernel void descriptor(
 						cfrac = fract(cx,&ci),
 						ofrac = fract(oval,&oi);
 				*/
+			
+				//why are we taking only positive orientations ?
 				if (ri >= -1  &&  ri < 4  && oi >=  0  &&  oi <= 8  && rfrac >= 0.0f  &&  rfrac <= 1.0f) {
 
-				/* Put appropriate fraction in each of 8 buckets around this point
-					in the (row,col,ori) dimensions.  This loop is written for
-					efficiency, as it is the inner loop of key sampling. */
+				/* Put appropriate fraction in each of 8 buckets around this point in the (row,col,ori) dimensions. */
 					for (int r = 0; r < 2; r++) {
-						rindex = ri + r;
+						rindex = ri + r; 
 						if (rindex >=0 && rindex < 4) {
 							rweight = mag * ((r == 0) ? 1.0f - rfrac : rfrac);
 
@@ -407,22 +453,26 @@ __kernel void descriptor(
 										if (oindex >= 8) {  /* Orientation wraps around at PI. */
 											oindex = 0;
 										}
-										/*
-											we want descriptors([rindex][cindex][oindex])[gid0]
-												rindex in [0,3]
-											 	cindex in [0,3]
-											 	oindex in [0,7]
-											so	rindex*4 + cindex is in [0,15]
-												i = (rindex*4+cindex)*8 + oindex is in [0,127]
-											finally : descriptors[128*gid0+i]
-												with a vertical representation
-										*/
-
-										tmp_descriptors[128*gid0+(rindex*4 + cindex)*8+oindex]
-											+= (cweight * ((orr == 0) ? 1.0f - ofrac : ofrac));
-
-
-
+									/*
+										we want descriptors[rindex][cindex][oindex]
+											rindex in [0,3]
+										 	cindex in [0,3]
+										 	oindex in [0,7]
+										so	rindex*4 + cindex is in [0,15]
+											idx = (rindex*4+cindex)*8 + oindex is in [0,127]
+										
+										BUT: two different threads can have a same idx (calculated in a non-predictable way),
+											 so an assignation here could lead to conflict... 
+											 and we do not have atomic operations on floats.
+										Solution: a vector of pos[WK_SIZE]
+											pos[lid0] = idx; //calculated position relative to the current thread lid0
+											Then the thread 0 (no atomic float add) does:
+											  descriptors[pos[i]] = (uint8) tmp_descriptors[i] for i in [0,128[
+									*/
+										pos[lid0] = ((rindex*4 + cindex)*8+oindex); //value in [0,128[
+										tmp_descriptors[lid0] = cweight * ((orr == 0) ? 1.0f - ofrac : ofrac);
+										tmp_descriptors_2[lid0] = 1; // pos[lid0];
+										
 									} //end for
 								} //end "valid cindex"
 							}
@@ -430,52 +480,77 @@ __kernel void descriptor(
 					}
 				}
 			} //end "sample in boundaries"
-		} //end "j loop"
+		}
+		
+		barrier(CLK_LOCAL_MEM_FENCE);
+		if (lid0 == 0) { //this has to be done here ! if not, pos[] is erased !
+			for (i=0; i < WORKGROUP_SIZE; i++)//I am lid0, my contribution is tmp_descriptors[lid0] at position pos[lid0]
+				if (pos[lid0] != -1) tmp_descriptors_2[pos[i]] =1.0f; //+= tmp_descriptors[i];
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);
+		
 	} //end "i loop"
-
 
 
 	/*
 		At this point, we have a descriptor associated with our keypoint.
 		We have to normalize it, then cast to 1-byte integer
+		
+		Notes:
+		-tmp_descriptors is re-used for communication between threads
+		-for tmp_descriptors_2, we use 128 instead of WORKGROUP_SIZE as upper bound,
+		   since tmp_descriptors_2 has its values indexed by pos[] whose values are in [0,128[ 
 	*/
 
-
 	// Normalization
+	/*
 	float norm = 0;
-	for (i = 0; i < 128; i++)
-		norm+=pow(tmp_descriptors[128*gid0+i],2); //warning: not the same as C "pow"
-	norm = rsqrt(norm); //norm = 1.0f/sqrt(norm); //half_rsqrt to speed-up
-	for (i = 0; i < 128; i++)
-		tmp_descriptors[128*gid0+i] *= norm;
-
+	if (lid0 == 0) { //no float atomic add...
+		for (i = 0; i < 128; i++) 
+			norm+=pow(tmp_descriptors_2[i],2); //warning: not the same as C "pow"
+		norm = rsqrt(norm); //norm = 1.0f/sqrt(norm);
+		tmp_descriptors[0] = norm; //broadcast
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	norm = tmp_descriptors[0];
+	if (lid0 < 128) {
+		tmp_descriptors_2[lid0] *= norm;
+	}
 
 	//Threshold to 0.2 of the norm, for invariance to illumination
+	//this can be parallelized, but with atomic_add (on descriptors[128*groupid+0] for example), which is slow
 	bool changed = false;
 	norm = 0;
-	for (i = 0; i < 128; i++) {
-		if (tmp_descriptors[128*gid0+i] > 0.2f) {
-			tmp_descriptors[128*gid0+i] = 0.2f;
-			changed = true;
+	if (lid0 == 0) {
+		for (i = 0; i < 128; i++) {
+			if (tmp_descriptors_2[i] > 0.2f) {
+				tmp_descriptors_2[i] = 0.2f;
+				changed = true;
+			}
+			norm += pow(tmp_descriptors_2[i],2);
 		}
-		norm += pow(tmp_descriptors[128*gid0+i],2);
+		tmp_descriptors[1] = (changed == true ? 1.0f : -1.0f); //broadcast
+		tmp_descriptors[2] = norm; 
 	}
-
+	barrier(CLK_LOCAL_MEM_FENCE);
+	norm = tmp_descriptors[2];
 	//if values have been changed, we have to normalize again...
-	if (changed) {
+	if (tmp_descriptors[1] > 0.0f) {
 		norm = rsqrt(norm);
-		for (i = 0; i < 128; i++)
-			tmp_descriptors[128*gid0+i] *= norm;
+		if (lid0 < 128)
+			tmp_descriptors_2[lid0] *= norm;
 	}
-
+	barrier(CLK_LOCAL_MEM_FENCE);
+*/
 	//finally, cast to integer
-	//store to global memory : tmp_descriptor[i][gid0] --> descriptors[i][gid0]
-	for (i = 0; i < 128; i++) {
-		descriptors[128*gid0+i]
-			= (unsigned char) MIN(255,(unsigned char)(512.0f*tmp_descriptors[128*gid0+i]));
+	//store to global memory : tmp_descriptor_2[lid0] --> descriptors[i][lid0]
+	if (lid0 < 128) {
+		descriptors[128*groupid+lid0]
+			//= (unsigned char) MIN(255,(unsigned char)(512.0f*tmp_descriptors_2[lid0]));
+			= (unsigned char) tmp_descriptors_2[lid0];
+			
+			
 	}
-
-
 }
 
 
