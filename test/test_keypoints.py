@@ -158,26 +158,23 @@ class test_keypoints(unittest.TestCase):
         #descriptor_setup :
         keypoints_o, nb_keypoints, actual_nb_keypoints, grad, ori, octsize = descriptor_setup()
         #keypoints should be a compacted vector of keypoints
-        keypoints_start, keypoints_end = 0, 80 #actual_nb_keypoints
+        keypoints_start, keypoints_end = 0, 11 #actual_nb_keypoints
         #keypoints_start, keypoints_end = 20, 30
         keypoints = keypoints_o[keypoints_start:keypoints_end]
-        print("Working on keypoints : [%s,%s]" % (keypoints_start, keypoints_end))
-        wg = max(self.wg),
-        shape = calc_size((keypoints_o.shape[0],), wg)
+        print("Working on keypoints : [%s,%s]" % (keypoints_start, keypoints_end-1))
+        wg = 128, #FIXME : have to choose it for histograms #wg = max(self.wg),
+        shape = keypoints.shape[0]*wg[0],
         gpu_keypoints = pyopencl.array.to_device(queue, keypoints_o)
-        gpu_descriptors = pyopencl.array.empty(queue, (keypoints_end - keypoints_start + 1, 128), dtype=numpy.uint8, order="C")
+        gpu_descriptors = pyopencl.array.empty(queue, (keypoints_end - keypoints_start, 128), dtype=numpy.uint8, order="C")
         gpu_grad = pyopencl.array.to_device(queue, grad)
         gpu_ori = pyopencl.array.to_device(queue, ori)
-
-        local_size = (keypoints_end - keypoints_start + 1) * 128 * 4
-        local_mem = pyopencl.LocalMemory(local_size)
 
         keypoints_start, keypoints_end = numpy.int32(keypoints_start), numpy.int32(keypoints_end)
         grad_height, grad_width = numpy.int32(grad.shape)
 
         t0 = time.time()
         k1 = self.program.descriptor(queue, shape, wg,
-            gpu_keypoints.data, gpu_descriptors.data, local_mem, gpu_grad.data, gpu_ori.data, numpy.int32(octsize),
+            gpu_keypoints.data, gpu_descriptors.data, gpu_grad.data, gpu_ori.data, numpy.int32(octsize),
             keypoints_start, keypoints_end, grad_width, grad_height)
         res = gpu_descriptors.get()
         t1 = time.time()
@@ -186,9 +183,9 @@ class test_keypoints(unittest.TestCase):
         t2 = time.time()
 
         print res[0:30,0:15]#keypoints_end-keypoints_start,0:15]
-        #print ""
-        #print ref[0:keypoints_end-keypoints_start,0:15]
-
+        print ""
+        print ref[0:30,0:15]#[0:keypoints_end-keypoints_start,0:15]
+        print res[0,:].sum(), ref[0,:].sum()
 
         #print keypoints_before_orientation[0:33]
         #if (PRINT_KEYPOINTS):

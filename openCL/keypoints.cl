@@ -20,7 +20,6 @@ typedef float4 keypoint;
 #define MAX(i,j) ( (i)<(j) ? (j):(i) )
 #ifndef WORKGROUP_SIZE
 	#define WORKGROUP_SIZE 128
-	#define NB_KEYPOINTS_PROCESSED 30 //30*128*4 = 15360 ; also requires 1D kernel (see access to tmp_descriptors) 
 #endif
 
 
@@ -371,26 +370,33 @@ __kernel void descriptor(
 	tmp_descriptors_2[lid0] = 0.0f;
 	pos[lid0] = -1;
 	
-	int i,j;
+	int i,j,u;
 	float rx, cx;
-	float row = k.s1, col = k.s0, angle = k.s3;
+	float row = k.s1/octsize, col = k.s0/octsize, angle = k.s3;
 	int	irow = (int) (row + 0.5f), icol = (int) (col + 0.5f);
 	float sine = sin((float) angle), cosine = cos((float) angle);
 
 	/* The spacing of index samples in terms of pixels at this scale. */
-	float spacing = k.s2 * 3;
+	float spacing = k.s2/octsize * 3.0f;
 
 	/* Radius of index sample region must extend to diagonal corner of
 	index patch plus half sample for interpolation. */
 	int iradius = (int) ((1.414f * spacing * 2.5f) + 0.5f);
 
+
+
+//if (lid0 == 0) { //debug
+
+
+
 	/* Examine all points from the gradient image that could lie within the index square. */
 	for (i = -iradius; i <= iradius; i++) { //loop on rows
-		j = -iradius + lid0; //current column
+		
 		pos[lid0] = -1;
 		tmp_descriptors[lid0] = 0.0f; //do not forget to memset before each re-use...
+		j = -iradius + lid0; //current column... can be done before
 		if (j <= iradius) {
-
+//for (j = -iradius; j <= iradius; j++) { //debug
 			/* Makes a rotation of -angle to achieve invariance to rotation */
 			 rx = ((cosine * i - sine * j) - (row - irow)) / spacing + 1.5f;
 			 cx = ((sine * i + cosine * j) - (col - icol)) / spacing + 1.5f;
@@ -434,7 +440,6 @@ __kernel void descriptor(
 						cfrac = fract(cx,&ci),
 						ofrac = fract(oval,&oi);
 				*/
-			
 				//why are we taking only positive orientations ?
 				if (ri >= -1  &&  ri < 4  && oi >=  0  &&  oi <= 8  && rfrac >= 0.0f  &&  rfrac <= 1.0f) {
 
@@ -467,11 +472,13 @@ __kernel void descriptor(
 										Solution: a vector of pos[WK_SIZE]
 											pos[lid0] = idx; //calculated position relative to the current thread lid0
 											Then the thread 0 (no atomic float add) does:
-											  descriptors[pos[i]] = (uint8) tmp_descriptors[i] for i in [0,128[
+											  descriptors[pos[i]] += tmp_descriptors[i] for i in [0,WK_SIZE[
 									*/
-										pos[lid0] = ((rindex*4 + cindex)*8+oindex); //value in [0,128[
-										tmp_descriptors[lid0] = cweight * ((orr == 0) ? 1.0f - ofrac : ofrac);
-										tmp_descriptors_2[lid0] = 1; // pos[lid0];
+									 //FIXME: got it... on est dans des *boucles*, il faut *tout* sauvegarder !
+										pos[lid0] = (rindex*4 + cindex)*8+oindex; //value in [0,128[
+										tmp_descriptors[lid0] = 1.0f; //cweight * ((orr == 0) ? 1.0f - ofrac : ofrac);
+	//tmp_descriptors[(rindex*4 + cindex)*8+oindex] += 1.0f;//debug
+										
 										
 									} //end for
 								} //end "valid cindex"
@@ -483,14 +490,16 @@ __kernel void descriptor(
 		}
 		
 		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid0 == 0) { //this has to be done here ! if not, pos[] is erased !
-			for (i=0; i < WORKGROUP_SIZE; i++)//I am lid0, my contribution is tmp_descriptors[lid0] at position pos[lid0]
-				if (pos[lid0] != -1) tmp_descriptors_2[pos[i]] =1.0f; //+= tmp_descriptors[i];
+		if (lid0 == 0) { //this has to be done here ! if not, pos[] is erased
+			for (u=0; u < WORKGROUP_SIZE; u++)//contribution of lid0 is tmp_descriptors[lid0] at position pos[lid0]
+				//tmp_descriptors_2[u] = tmp_descriptors[u];
+				if (pos[u] != -1) tmp_descriptors_2[pos[u]] += tmp_descriptors[u];
+				
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
 		
 	} //end "i loop"
-
+//}//debug
 
 	/*
 		At this point, we have a descriptor associated with our keypoint.
@@ -503,7 +512,7 @@ __kernel void descriptor(
 	*/
 
 	// Normalization
-	/*
+/*
 	float norm = 0;
 	if (lid0 == 0) { //no float atomic add...
 		for (i = 0; i < 128; i++) 
@@ -547,7 +556,7 @@ __kernel void descriptor(
 	if (lid0 < 128) {
 		descriptors[128*groupid+lid0]
 			//= (unsigned char) MIN(255,(unsigned char)(512.0f*tmp_descriptors_2[lid0]));
-			= (unsigned char) tmp_descriptors_2[lid0];
+			= (unsigned char) (tmp_descriptors_2[lid0] > 255 ? 255 : tmp_descriptors_2[lid0]);
 			
 			
 	}
