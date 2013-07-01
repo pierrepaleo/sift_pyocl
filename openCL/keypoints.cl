@@ -361,16 +361,27 @@ __kernel void descriptor(
 	keypoint k = keypoints[groupid];
 	if (!(keypoints_start <= groupid && groupid < keypoints_end && k.s1 >=0.0f))
 		return;
-
-	__local volatile float tmp_descriptors[WORKGROUP_SIZE]; //for temporary descriptors, one vector per keypoint i.e per workgroup
-	__local volatile float tmp_descriptors_2[WORKGROUP_SIZE];
-	__local volatile int pos[WORKGROUP_SIZE]; //for positions (see below)
-	//memset
-	tmp_descriptors[lid0] = 0.0f;
-	tmp_descriptors_2[lid0] = 0.0f;
-	pos[lid0] = -1;
+		
+	int i,j,u,v,old;
 	
-	int i,j,u;
+	__local volatile float tmp_descriptors[WORKGROUP_SIZE]; //for temporary descriptors, one vector per keypoint i.e per workgroup
+	__local volatile float tmp_descriptors_2[WORKGROUP_SIZE*8];
+	__local volatile int pos[WORKGROUP_SIZE*8]; //can be replaced by unsigned char to spare memory... but need a memset of "-1"
+	
+	__local volatile int* flag_compute;
+	
+	//memset
+	tmp_descriptors_2[lid0] = 0.0f;
+	tmp_descriptors[lid0] = 0.0f;
+	pos[lid0] = -1;
+//	for (i=0; i < 8; i++) {
+//		tmp_descriptors[8*lid0+i] = 0.0f;
+//		pos[8*lid0+i] = -1;
+//	}
+	if (lid0 == 0) *flag_compute = -1;
+	old = -1;
+
+	
 	float rx, cx;
 	float row = k.s1/octsize, col = k.s0/octsize, angle = k.s3;
 	int	irow = (int) (row + 0.5f), icol = (int) (col + 0.5f);
@@ -391,9 +402,12 @@ __kernel void descriptor(
 
 	/* Examine all points from the gradient image that could lie within the index square. */
 	for (i = -iradius; i <= iradius; i++) { //loop on rows
-		
+//		for (v=0; v < 8; v++) {
+//			tmp_descriptors[8*lid0+v] = 1.0f;
+//			pos[8*lid0+v] = -1;
+//		}
 		pos[lid0] = -1;
-		tmp_descriptors[lid0] = 0.0f; //do not forget to memset before each re-use...
+		tmp_descriptors[lid0] = 0.0f;
 		j = -iradius + lid0; //current column... can be done before
 		if (j <= iradius) {
 //for (j = -iradius; j <= iradius; j++) { //debug
@@ -474,29 +488,50 @@ __kernel void descriptor(
 											Then the thread 0 (no atomic float add) does:
 											  descriptors[pos[i]] += tmp_descriptors[i] for i in [0,WK_SIZE[
 									*/
-									 //FIXME: got it... on est dans des *boucles*, il faut *tout* sauvegarder !
 										pos[lid0] = (rindex*4 + cindex)*8+oindex; //value in [0,128[
 										tmp_descriptors[lid0] = 1.0f; //cweight * ((orr == 0) ? 1.0f - ofrac : ofrac);
+										//pos[8*lid0+(r*2+c)*2+orr] = (rindex*4 + cindex)*8+oindex;
+										//tmp_descriptors[8*lid0+(r*2+c)*2+orr] = 1.0f;
 	//tmp_descriptors[(rindex*4 + cindex)*8+oindex] += 1.0f;//debug
+	
+	
+		barrier(CLK_LOCAL_MEM_FENCE); //no need ?
+	   //lid0 == 0 or lid0 == N does not always reach this point.
+	   //The first thread to reach this point will compute the vector
+		old = atomic_inc(flag_compute);
+		if (old == -1) { //lid0 is the first thread to reach this point
+			for (u=0; u < WORKGROUP_SIZE; u++)//contribution of lid0 is tmp_descriptors[lid0] at position pos[lid0]
+				if (pos[u] != -1) tmp_descriptors_2[pos[u]] += tmp_descriptors[u];
+			old = atomic_dec(flag_compute);
+			old = -1;
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);							
 										
 										
-									} //end for
+										
+										
+									} //end "for orr"
 								} //end "valid cindex"
-							}
+							} //end "for c"
 						} //end "valid rindex"
-					}
+					} //end "for r"
 				}
 			} //end "sample in boundaries"
 		}
 		
-		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid0 == 0) { //this has to be done here ! if not, pos[] is erased
-			for (u=0; u < WORKGROUP_SIZE; u++)//contribution of lid0 is tmp_descriptors[lid0] at position pos[lid0]
-				//tmp_descriptors_2[u] = tmp_descriptors[u];
-				if (pos[u] != -1) tmp_descriptors_2[pos[u]] += tmp_descriptors[u];
-				
-		}
-		barrier(CLK_LOCAL_MEM_FENCE);
+//		barrier(CLK_LOCAL_MEM_FENCE);
+//		if (lid0 == 0) {
+//			for (u=0; u < WORKGROUP_SIZE; u++)//contribution of lid0 is tmp_descriptors[lid0] at position pos[lid0]
+//				//tmp_descriptors_2[u] = tmp_descriptors[u];
+//				//if (pos[u] != -1) tmp_descriptors_2[pos[u]] += tmp_descriptors[u];
+//				for (int r = 0; r < 2; r++)
+//					for (int c = 0; c < 2; c++)
+//						for (int orr = 0; orr < 2; orr++) 
+//							if (pos[8*u+(r*2+c)*2+orr] != -1) tmp_descriptors_2[pos[8*u+(r*2+c)*2+orr]] += tmp_descriptors[8*u+(r*2+c)*2+orr];		
+//				
+//				
+//		}
+//		barrier(CLK_LOCAL_MEM_FENCE);
 		
 	} //end "i loop"
 //}//debug
