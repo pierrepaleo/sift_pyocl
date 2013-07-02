@@ -185,7 +185,7 @@ class test_keypoints(unittest.TestCase):
         print res[0:30,0:15]#keypoints_end-keypoints_start,0:15]
         print ""
         print ref[0:30,0:15]#[0:keypoints_end-keypoints_start,0:15]
-        print res[0,:].sum(), ref[0,:].sum()
+        print res[1,:].sum(), ref[1,:].sum()
 
         #print keypoints_before_orientation[0:33]
         #if (PRINT_KEYPOINTS):

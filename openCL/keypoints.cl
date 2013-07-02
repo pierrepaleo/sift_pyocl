@@ -343,10 +343,10 @@ __kernel void orientation_assignment(
  */
 
 
+
 __kernel void descriptor(
 	__global keypoint* keypoints,
 	__global unsigned char *descriptors,
-	//__local float* tmp_descriptors,
 	__global float* grad,
 	__global float* orim,
 	int octsize,
@@ -364,149 +364,101 @@ __kernel void descriptor(
 		
 	int i,j,u,v,old;
 	
-	__local volatile float tmp_descriptors[WORKGROUP_SIZE]; //for temporary descriptors, one vector per keypoint i.e per workgroup
-	__local volatile float tmp_descriptors_2[WORKGROUP_SIZE*8];
-	__local volatile int pos[WORKGROUP_SIZE*8]; //can be replaced by unsigned char to spare memory... but need a memset of "-1"
-	
-	__local volatile int* flag_compute;
+	__local volatile float tmp_descriptors[8*WORKGROUP_SIZE];
+	__local volatile float tmp_descriptors_2[WORKGROUP_SIZE];
+	__local volatile int pos[8*WORKGROUP_SIZE]; 
 	
 	//memset
 	tmp_descriptors_2[lid0] = 0.0f;
-	tmp_descriptors[lid0] = 0.0f;
-	pos[lid0] = -1;
-//	for (i=0; i < 8; i++) {
-//		tmp_descriptors[8*lid0+i] = 0.0f;
-//		pos[8*lid0+i] = -1;
-//	}
-	if (lid0 == 0) *flag_compute = -1;
-	old = -1;
+	for (v=0; v < 8; v++) { pos[8*lid0+v] = -1; tmp_descriptors[8*lid0+v] = 0.0f; }
 
-	
 	float rx, cx;
 	float row = k.s1/octsize, col = k.s0/octsize, angle = k.s3;
 	int	irow = (int) (row + 0.5f), icol = (int) (col + 0.5f);
 	float sine = sin((float) angle), cosine = cos((float) angle);
-
-	/* The spacing of index samples in terms of pixels at this scale. */
-	float spacing = k.s2/octsize * 3.0f;
-
-	/* Radius of index sample region must extend to diagonal corner of
-	index patch plus half sample for interpolation. */
+	float spacing = k.s2/octsize * 3.0f; //The spacing of index samples in terms of pixels at this scale
+	//Radius of index sample region must extend to diagonal corner of index patch plus half sample for interpolation
 	int iradius = (int) ((1.414f * spacing * 2.5f) + 0.5f);
 
-
-
-//if (lid0 == 0) { //debug
-
-
-
-	/* Examine all points from the gradient image that could lie within the index square. */
-	for (i = -iradius; i <= iradius; i++) { //loop on rows
-//		for (v=0; v < 8; v++) {
-//			tmp_descriptors[8*lid0+v] = 1.0f;
-//			pos[8*lid0+v] = -1;
-//		}
-		pos[lid0] = -1;
-		tmp_descriptors[lid0] = 0.0f;
+	/* Examine all points from the gradient image that could lie within the index square */
+	for (i = -iradius; i <= iradius; i++) { 
+		for (v=0; v < 8; v++) { pos[8*lid0+v] = -1; tmp_descriptors[8*lid0+v] = 0.0f; }
 		j = -iradius + lid0; //current column... can be done before
+		old = -1;
+		
 		if (j <= iradius) {
-//for (j = -iradius; j <= iradius; j++) { //debug
-			/* Makes a rotation of -angle to achieve invariance to rotation */
+			/* Makes a rotation of -(angle) to achieve invariance to rotation */
 			 rx = ((cosine * i - sine * j) - (row - irow)) / spacing + 1.5f;
 			 cx = ((sine * i + cosine * j) - (col - icol)) / spacing + 1.5f;
-
 			 /* Compute location of sample in terms of real-valued index array
-			 coordinates.  Subtract 0.5 so that rx of 1.0 means to put full
-			 weight on index[1] (e.g., when rpos is 0 and 4 is 3. */
+				coordinates. Subtract 0.5 so that rx of 1.0 means to put full
+				weight on index[1] (e.g., when rpos is 0 and 4 is 3. */
 			/* Test whether this sample falls within boundary of index patch. */
-			if (rx > -1.0f && rx < 4.0f && cx > -1.0f && cx < 4.0f
-				 && (irow +i) >= 0  && (irow +i) < grad_height && (icol+j) >= 0 && (icol+j) < grad_width) {
-				/* Compute Gaussian weight for sample, as function of radial distance
-		 		  from center.  Sigma is relative to half-width of index. */
+			if ((rx > -1.0f && rx < 4.0f && cx > -1.0f && cx < 4.0f
+				 && (irow +i) >= 0  && (irow +i) < grad_height && (icol+j) >= 0 && (icol+j) < grad_width)) {
+				 /* Compute Gaussian weight for sample, as function of radial distance
+					from center. Sigma is relative to half-width of index. */
 				float mag = grad[(int)(icol+j) + (int)(irow+i)*grad_width]
 							 * exp(- 0.125f*((rx - 1.5f) * (rx - 1.5f) + (cx - 1.5f) * (cx - 1.5f)) );
-
 				/* Subtract keypoint orientation to give ori relative to keypoint. */
 				float ori = orim[(int)(icol+j)+(int)(irow+i)*grad_width] -  angle;
-
 				/* Put orientation in range [0, 2*PI]. */
 				while (ori > 2.0f*M_PI_F) ori -= 2.0f*M_PI_F;
 				while (ori < 0.0f) ori += 2.0f*M_PI_F;
-
 				/* Increment the appropriate locations in the index to incorporate
-				 this image sample.  The location of the sample in the index is (rx,cx). */
+					this image sample. The location of the sample in the index is (rx,cx). */
 				int	orr, rindex, cindex, oindex;
 				float	rweight, cweight;
 
-				float oval = 4.0f*ori*M_1_PI_F; //8ori/(2pi)
+				float oval = 4.0f*ori*M_1_PI_F; 
 
 				int	ri = (int)((rx >= 0.0f) ? rx : rx - 1.0f),
 					ci = (int)((cx >= 0.0f) ? cx : cx - 1.0f),
 					oi = (int)((oval >= 0.0f) ? oval : oval - 1.0f);
 
-				float rfrac = rx - ri,			// Fractional part of location.
+				float rfrac = rx - ri,	
 					cfrac = cx - ci,
 					ofrac = oval - oi;
 				/*
-				//alternative in OpenCL :
-				int ri,ci,oi;
-				float	rfrac = fract(rx,&ri),
-						cfrac = fract(cx,&ci),
-						ofrac = fract(oval,&oi);
+					//alternative in OpenCL :
+					int ri,ci,oi;
+					float rfrac = fract(rx,&ri), cfrac = fract(cx,&ci), ofrac = fract(oval,&oi);
 				*/
 				//why are we taking only positive orientations ?
-				if (ri >= -1  &&  ri < 4  && oi >=  0  &&  oi <= 8  && rfrac >= 0.0f  &&  rfrac <= 1.0f) {
-
-				/* Put appropriate fraction in each of 8 buckets around this point in the (row,col,ori) dimensions. */
+				if ((ri >= -1  &&  ri < 4  && oi >=  0  &&  oi <= 8  && rfrac >= 0.0f  &&  rfrac <= 1.0f)) {
+					/* Put appropriate fraction in each of 8 buckets around this point in the (row,col,ori) dimensions. */
 					for (int r = 0; r < 2; r++) {
 						rindex = ri + r; 
-						if (rindex >=0 && rindex < 4) {
+						if ((rindex >=0 && rindex < 4)) {
 							rweight = mag * ((r == 0) ? 1.0f - rfrac : rfrac);
 
 							for (int c = 0; c < 2; c++) {
 								cindex = ci + c;
-								if (cindex >=0 && cindex < 4) {
+								if ((cindex >=0 && cindex < 4)) {
 									cweight = rweight * ((c == 0) ? 1.0f - cfrac : cfrac);
 									for (orr = 0; orr < 2; orr++) {
 										oindex = oi + orr;
 										if (oindex >= 8) {  /* Orientation wraps around at PI. */
 											oindex = 0;
 										}
-									/*
-										we want descriptors[rindex][cindex][oindex]
-											rindex in [0,3]
-										 	cindex in [0,3]
-										 	oindex in [0,7]
-										so	rindex*4 + cindex is in [0,15]
-											idx = (rindex*4+cindex)*8 + oindex is in [0,127]
+										int idx = (r*2+c)*2+orr;
+										pos[8*lid0+idx] = (rindex*4 + cindex)*8+oindex;
+										tmp_descriptors[8*lid0+idx] = cweight * ((orr == 0) ? 1.0f - ofrac : ofrac); //1.0f;
 										
-										BUT: two different threads can have a same idx (calculated in a non-predictable way),
-											 so an assignation here could lead to conflict... 
-											 and we do not have atomic operations on floats.
-										Solution: a vector of pos[WK_SIZE]
-											pos[lid0] = idx; //calculated position relative to the current thread lid0
-											Then the thread 0 (no atomic float add) does:
-											  descriptors[pos[i]] += tmp_descriptors[i] for i in [0,WK_SIZE[
-									*/
-										pos[lid0] = (rindex*4 + cindex)*8+oindex; //value in [0,128[
-										tmp_descriptors[lid0] = 1.0f; //cweight * ((orr == 0) ? 1.0f - ofrac : ofrac);
-										//pos[8*lid0+(r*2+c)*2+orr] = (rindex*4 + cindex)*8+oindex;
-										//tmp_descriptors[8*lid0+(r*2+c)*2+orr] = 1.0f;
-	//tmp_descriptors[(rindex*4 + cindex)*8+oindex] += 1.0f;//debug
-	
-	
-		barrier(CLK_LOCAL_MEM_FENCE); //no need ?
-	   //lid0 == 0 or lid0 == N does not always reach this point.
-	   //The first thread to reach this point will compute the vector
-		old = atomic_inc(flag_compute);
-		if (old == -1) { //lid0 is the first thread to reach this point
-			for (u=0; u < WORKGROUP_SIZE; u++)//contribution of lid0 is tmp_descriptors[lid0] at position pos[lid0]
-				if (pos[u] != -1) tmp_descriptors_2[pos[u]] += tmp_descriptors[u];
-			old = atomic_dec(flag_compute);
-			old = -1;
-		}
-		barrier(CLK_LOCAL_MEM_FENCE);							
 										
+	
+			
+		//almost works... but *not* reliable
+//		if (old == -1) {
+//			old = atomic_xchg(flag_compute,lid0);
+//			barrier(CLK_LOCAL_MEM_FENCE);
+//			for (u=0; u < WORKGROUP_SIZE; u++)//contribution of lid0 is tmp_descriptors[lid0] at position pos[lid0]
+//				if (pos[u] != -1)
+//					tmp_descriptors_2[pos[u]] += tmp_descriptors[u];
+//			old = atomic_xchg(flag_compute,-1);
+//			old = -1;
+//		}
+//		barrier(CLK_LOCAL_MEM_FENCE);							
 										
 										
 										
@@ -519,22 +471,16 @@ __kernel void descriptor(
 			} //end "sample in boundaries"
 		}
 		
-//		barrier(CLK_LOCAL_MEM_FENCE);
-//		if (lid0 == 0) {
-//			for (u=0; u < WORKGROUP_SIZE; u++)//contribution of lid0 is tmp_descriptors[lid0] at position pos[lid0]
-//				//tmp_descriptors_2[u] = tmp_descriptors[u];
-//				//if (pos[u] != -1) tmp_descriptors_2[pos[u]] += tmp_descriptors[u];
-//				for (int r = 0; r < 2; r++)
-//					for (int c = 0; c < 2; c++)
-//						for (int orr = 0; orr < 2; orr++) 
-//							if (pos[8*u+(r*2+c)*2+orr] != -1) tmp_descriptors_2[pos[8*u+(r*2+c)*2+orr]] += tmp_descriptors[8*u+(r*2+c)*2+orr];		
-//				
-//				
-//		}
-//		barrier(CLK_LOCAL_MEM_FENCE);
+		barrier(CLK_LOCAL_MEM_FENCE);
+		if (lid0 == 0) {
+			for (u=0; u < WORKGROUP_SIZE; u++)
+				for (v=0; v < 8; v++)
+					if (pos[8*u+v] != -1) tmp_descriptors_2[pos[8*u+v]] += tmp_descriptors[8*u+v];
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);
 		
 	} //end "i loop"
-//}//debug
+
 
 	/*
 		At this point, we have a descriptor associated with our keypoint.
@@ -547,7 +493,7 @@ __kernel void descriptor(
 	*/
 
 	// Normalization
-/*
+
 	float norm = 0;
 	if (lid0 == 0) { //no float atomic add...
 		for (i = 0; i < 128; i++) 
@@ -585,15 +531,12 @@ __kernel void descriptor(
 			tmp_descriptors_2[lid0] *= norm;
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
-*/
+
 	//finally, cast to integer
 	//store to global memory : tmp_descriptor_2[lid0] --> descriptors[i][lid0]
 	if (lid0 < 128) {
 		descriptors[128*groupid+lid0]
-			//= (unsigned char) MIN(255,(unsigned char)(512.0f*tmp_descriptors_2[lid0]));
-			= (unsigned char) (tmp_descriptors_2[lid0] > 255 ? 255 : tmp_descriptors_2[lid0]);
-			
-			
+			= (unsigned char) MIN(255,(unsigned char)(512.0f*tmp_descriptors_2[lid0]));
 	}
 }
 
