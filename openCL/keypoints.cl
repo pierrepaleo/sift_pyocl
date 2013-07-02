@@ -293,7 +293,8 @@ __kernel void orientation_assignment(
 **
  * \brief Compute a SIFT descriptor for each keypoint.
  *		WARNING: the workgroup size must be at least 128 (128 is fine, this is the descriptor size)
- *
+ *		UPDATE: the workgroup size MUST BE EXACTLY 128 for if local mem. size is 16kB (GTX <= 295), due to WORKGROUP_SIZE*8 
+ * 		 vectors allocating
  *
  *
  *
@@ -303,16 +304,13 @@ __kernel void orientation_assignment(
  * In the fist step, the neighborhood of the keypoint is rotated by (-k.s3).
  *   This neighborhood is quite huge ([-42,42]^2), therefore there are many access to global memory for each keypoint
       (from 23^2 = 529 [s=1] to 85**2 = 7225 [s=3.9999] !).
- * To speed this up, we consider a (1D) 128-workgroup for coalescing access to global mem :
- *   -One line of 2*42+1=85 points is copied from global mem. to shared mem
- *   -The rotation and the rest of the processing are made on these points ([k.s0-42,k.s0+42])
- *   -For a given workgroup (that handles columns), a loop is made on the lines [k.s1-42,k.s1+42]
+ * To speed this up, we consider a (1D) 128-workgroup for coalescing access to global mem.
  *
  *
  * PROS:
  *   -coalesced memory access
  *   -normalization/cast are actually done in parallel
- *   -have to create *two* tmp_descriptors of size WORKGROUP_SIZE : one for the inner "i" loop, one for accumulating before casting to uint8. However, it still fits in local memory for all workgroup sizes (N*4*2+N < 10K for N <= 1024)
+ *   -have to create *two* tmp_descriptors : one for the inner "i" loop, one for accumulating before casting to uint8. However, it still fits in local memory for all workgroup sizes (N*4*2+N < 10K for N <= 1024)
  *
  *
  * CONS:
@@ -365,11 +363,11 @@ __kernel void descriptor(
 	int i,j,u,v,old;
 	
 	__local volatile float tmp_descriptors[8*WORKGROUP_SIZE];
-	__local volatile float tmp_descriptors_2[WORKGROUP_SIZE];
+	__local volatile float tmp_descriptors_2[128];
 	__local volatile int pos[8*WORKGROUP_SIZE]; 
 	
 	//memset
-	tmp_descriptors_2[lid0] = 0.0f;
+	if (lid0 < 128) tmp_descriptors_2[lid0] = 0.0f;
 	for (v=0; v < 8; v++) { pos[8*lid0+v] = -1; tmp_descriptors[8*lid0+v] = 0.0f; }
 
 	float rx, cx;

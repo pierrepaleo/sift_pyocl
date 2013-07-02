@@ -289,22 +289,22 @@ def smooth_histogram(hist):
 
 
 
-def my_descriptor(keypoints, grad, orim, keypoints_start, keypoints_end):
+def my_descriptor(keypoints, grad, orim, octsize, keypoints_start, keypoints_end):
     '''
     Python implementation of keypoint descriptor computation
     '''
     #a descriptor is a 128-vector (4,4,8) ; we need keypoints_end-keypoints_start+1  descriptors
-    descriptors = numpy.zeros((keypoints_end-keypoints_start+1,4,4,8),dtype=numpy.float32)
+    descriptors = numpy.zeros((keypoints_end-keypoints_start,4,4,8),dtype=numpy.float32)
     for index,k in enumerate(keypoints[keypoints_start:keypoints_end]):
         if (k[1] != -1.0):
-            irow, icol = int(k[1] + 0.5), int(k[0] + 0.5)
+            irow, icol = int(k[1]/octsize + 0.5), int(k[0]/octsize + 0.5)
             sine, cosine = numpy.sin(k[3]), numpy.cos(k[3])
-            spacing = k[2] * 3
+            spacing = k[2]/octsize * 3
             iradius = int((1.414 * spacing * (5) / 2.0) + 0.5)
             for i in range(-iradius,iradius+1):
                 for j in range(-iradius,iradius+1):
                     (rx, cx) = (numpy.dot(numpy.array([[cosine,-sine],[sine,cosine]]),numpy.array([i,j]))
-                                -numpy.array([k[1]-irow,k[0]-icol]))/spacing + 1.5
+                                -numpy.array([k[1]/octsize-irow,k[0]/octsize-icol]))/spacing + 1.5
                         
                     if (rx > -1.0 and rx < 4.0 and cx > -1.0 and cx < 4.0
                          and (irow +i) >= 0  and (irow +i) < grad.shape[0] and (icol+j) >= 0 and (icol+j) < grad.shape[1]):
@@ -344,7 +344,7 @@ def my_descriptor(keypoints, grad, orim, keypoints_start, keypoints_end):
     #end loop in keypoints
    
     #unwrap and normalize the 128-vector
-    descriptors = descriptors.reshape(keypoints_end-keypoints_start+1,128)
+    descriptors = descriptors.reshape(keypoints_end-keypoints_start,128)
     
     for i in range(0,keypoints_end-keypoints_start): descriptors[i] = normalize(descriptors[i])
      
