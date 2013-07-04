@@ -61,7 +61,7 @@ else:
     queue = pyopencl.CommandQueue(ctx)
 
 SHOW_FIGURES = False
-PRINT_KEYPOINTS = True
+PRINT_KEYPOINTS = False
 
 
 print "working on %s" % ctx.devices[0].name
@@ -150,65 +150,51 @@ class test_keypoints(unittest.TestCase):
         
 
 
-
-
-
     def test_descriptor(self):
         '''
         #tests keypoints descriptors creation kernel
         '''
 
         #descriptor_setup :
-        keypoints_o, nb_keypoints, actual_nb_keypoints, grad, ori = descriptor_setup()
+        keypoints_o, nb_keypoints, actual_nb_keypoints, grad, ori, octsize = descriptor_setup()
         #keypoints should be a compacted vector of keypoints
-        keypoints_start, keypoints_end = 0, 80 #actual_nb_keypoints
+        keypoints_start, keypoints_end = 0, actual_nb_keypoints
         #keypoints_start, keypoints_end = 20, 30
         keypoints = keypoints_o[keypoints_start:keypoints_end]
-        print("Working on keypoints : [%s,%s]" % (keypoints_start, keypoints_end))
-        wg = max(self.wg),
-        shape = calc_size((keypoints_o.shape[0],), wg)
+        print("Working on keypoints : [%s,%s] (octave = %s)" % (keypoints_start, keypoints_end-1,int(numpy.log2(octsize)+1)))
+        wg = 128, #FIXME : have to choose it for histograms #wg = max(self.wg),
+        shape = keypoints.shape[0]*wg[0],
         gpu_keypoints = pyopencl.array.to_device(queue, keypoints_o)
-        gpu_descriptors = pyopencl.array.empty(queue, (keypoints_end - keypoints_start + 1, 128), dtype=numpy.uint8, order="C")
+        #NOTE: for the following line, use pyopencl.array.empty instead of pyopencl.array.zeros if the keypoints are compacted
+        gpu_descriptors = pyopencl.array.zeros(queue, (keypoints_end - keypoints_start, 128), dtype=numpy.uint8, order="C")
         gpu_grad = pyopencl.array.to_device(queue, grad)
         gpu_ori = pyopencl.array.to_device(queue, ori)
-
-        local_size = (keypoints_end - keypoints_start + 1) * 128 * 4
-        local_mem = pyopencl.LocalMemory(local_size)
 
         keypoints_start, keypoints_end = numpy.int32(keypoints_start), numpy.int32(keypoints_end)
         grad_height, grad_width = numpy.int32(grad.shape)
 
         t0 = time.time()
         k1 = self.program.descriptor(queue, shape, wg,
-            gpu_keypoints.data, gpu_descriptors.data, local_mem, gpu_grad.data, gpu_ori.data,
+            gpu_keypoints.data, gpu_descriptors.data, gpu_grad.data, gpu_ori.data, numpy.int32(octsize),
             keypoints_start, keypoints_end, grad_width, grad_height)
         res = gpu_descriptors.get()
         t1 = time.time()
 
-        ref = my_descriptor(keypoints_o, grad, ori, keypoints_start, keypoints_end)
+        ref = my_descriptor(keypoints_o, grad, ori, octsize, keypoints_start, keypoints_end)
         t2 = time.time()
+        
+        if (PRINT_KEYPOINTS):
+            print res[0:30,0:15]#keypoints_end-keypoints_start,0:15]
+            print ""
+            print ref[0:30,0:15]#[0:keypoints_end-keypoints_start,0:15]
+#            print res[1,:].sum(), ref[1,:].sum()
 
-        print res[0:30,0:15]#keypoints_end-keypoints_start,0:15]
-        #print ""
-        #print ref[0:keypoints_end-keypoints_start,0:15]
-
-
-        #print keypoints_before_orientation[0:33]
-        #if (PRINT_KEYPOINTS):
-
-
-#        TODO
-#        #sort to compare added keypoints
-#        d1,d2,d3,d4 = keypoints_compare(ref,res)
-#        self.assert_(d1 < 1e-4, "delta_cols=%s" % (d1))
-#        self.assert_(d2 < 1e-4, "delta_rows=%s" % (d2))
-#        self.assert_(d3 < 1e-4, "delta_sigma=%s" % (d3))
-#        self.assert_(d4 < 1e-4, "delta_angle=%s" % (d4))
-#        logger.info("delta_cols=%s" % d1)
-#        logger.info("delta_rows=%s" % d2)
-#        logger.info("delta_sigma=%s" % d3)
-#        logger.info("delta_angle=%s" % d4)
-
+            #print keypoints_before_orientation[0:33]
+        
+        #sort to compare added keypoints
+        delta = (res-ref).max()
+        self.assert_(delta == 0, "delta=%s" % (delta)) #integers
+        logger.info("delta=%s" % delta)
 
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
@@ -216,12 +202,10 @@ class test_keypoints(unittest.TestCase):
 
 
 
-
-
 def test_suite_keypoints():
     testSuite = unittest.TestSuite()
-    testSuite.addTest(test_keypoints("test_orientation"))
-    #testSuite.addTest(test_keypoints("test_descriptor"))
+    #testSuite.addTest(test_keypoints("test_orientation"))
+    testSuite.addTest(test_keypoints("test_descriptor"))
     return testSuite
 
 if __name__ == '__main__':
