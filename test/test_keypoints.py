@@ -61,7 +61,7 @@ else:
     queue = pyopencl.CommandQueue(ctx)
 
 SHOW_FIGURES = False
-PRINT_KEYPOINTS = False
+PRINT_KEYPOINTS = True
 
 
 print "working on %s" % ctx.devices[0].name
@@ -125,7 +125,6 @@ class test_keypoints(unittest.TestCase):
 
         t2 = time.time()
 
-        #print keypoints_before_orientation[0:33]
         if (PRINT_KEYPOINTS):
             print("Keypoints after orientation assignment :")
             print res[0:actual_nb_keypoints]#[0:10]
@@ -134,8 +133,9 @@ class test_keypoints(unittest.TestCase):
 
         print("Total keypoints for kernel : %s -- For Python : %s \t [octsize = %s]" % (cnt, updated_nb_keypoints, octsize))
 
+        
         #sort to compare added keypoints
-        d1, d2, d3, d4 = keypoints_compare(ref[0:actual_nb_keypoints], res[0:actual_nb_keypoints]) #FIXME: our sift finds one additional keypoint for "lena"
+        d1, d2, d3, d4 = keypoints_compare(ref[0:cnt], res[0:updated_nb_keypoints]) #FIXME: our sift finds one additional keypoint for "lena".
         self.assert_(d1 < 1e-4, "delta_cols=%s" % (d1))
         self.assert_(d2 < 1e-4, "delta_rows=%s" % (d2))
         self.assert_(d3 < 1e-4, "delta_sigma=%s" % (d3))
@@ -147,7 +147,7 @@ class test_keypoints(unittest.TestCase):
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
             logger.info("Orientation assignment took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
-
+        
 
 
 

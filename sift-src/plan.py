@@ -60,7 +60,7 @@ class SiftPlan(object):
     kp is a nx132 array. the second dimension is composed of x,y, scale and angle as well as 128 floats describing the keypoint
 
     """
-    kernels = {"convolution":1024, #key: name value max local workgroup size
+    kernels = {"convolution":1024,  # key: name value max local workgroup size
                "preprocess": 1024,
                "algebra": 1024,
                "image":1024,
@@ -165,7 +165,7 @@ class SiftPlan(object):
             self.memory += size * (nr_blur + nr_dogs) * size_of_float
         self.kpsize = int(self.shape[0] * self.shape[1] // self.PIX_PER_KP)  # Is the number of kp independant of the octave ? int64 causes problems with pyopencl
         self.memory += self.kpsize * size_of_float * 4 * 2  # those are array of float4 to register keypoints, we need two of them
-        self.memory += self.kpsize * 128 #stores the descriptors: 128 unsigned chars
+        self.memory += self.kpsize * 128  # stores the descriptors: 128 unsigned chars
         self.memory += 4  # keypoint index Counter
         wg_float = min(self.max_workgroup_size, numpy.sqrt(self.shape[0] * self.shape[1]))
         self.red_size = 2 ** (int(math.ceil(math.log(wg_float, 2))))
@@ -564,7 +564,7 @@ class SiftPlan(object):
                         kp_counter)  # int nbkeypoints
         if self.profile:self.events.append(("compact", evt))
         newcnt = self.buffers["cnt"].get()[0]
-        print("After compaction, %i (-%i)" % (newcnt, kp_counter - newcnt))
+        # print("After compaction, %i (-%i)" % (newcnt, kp_counter - newcnt))
         # swap keypoints:
         self.buffers["Kp_1"], self.buffers["Kp_2"] = self.buffers["Kp_2"], self.buffers["Kp_1"]
         self.buffers["Kp_2"].fill(-1, self.queue)
@@ -606,4 +606,5 @@ if __name__ == "__main__":
     lena = scipy.lena()
     s = SiftPlan(template=lena)
     s.keypoints(lena)
+
 
