@@ -217,8 +217,8 @@ class test_keypoints(unittest.TestCase):
         #keypoints_start, keypoints_end = 20, 30
         keypoints = keypoints_o[keypoints_start:keypoints_end]
         print("Working on keypoints : [%s,%s] (octave = %s)" % (keypoints_start, keypoints_end-1,int(numpy.log2(octsize)+1)))
-        wg = 4,4 #FIXME : have to choose it for histograms #wg = max(self.wg),
-        shape = keypoints.shape[0]*wg[0],keypoints.shape[0]*wg[1]
+        wg = 4,4,8 #FIXME : have to choose it for histograms #wg = max(self.wg),
+        shape = keypoints.shape[0]*wg[0],wg[1],wg[2]
         #shape = calc_size(self.mat.shape, self.wg)
         gpu_keypoints = pyopencl.array.to_device(queue, keypoints_o)
         #NOTE: for the following line, use pyopencl.array.empty instead of pyopencl.array.zeros if the keypoints are compacted
@@ -261,8 +261,8 @@ class test_keypoints(unittest.TestCase):
 
 def test_suite_keypoints():
     testSuite = unittest.TestSuite()
-#    testSuite.addTest(test_keypoints("test_orientation"))
-    testSuite.addTest(test_keypoints("test_descriptor_old"))
+    testSuite.addTest(test_keypoints("test_orientation"))
+#    testSuite.addTest(test_keypoints("test_descriptor_old"))
     testSuite.addTest(test_keypoints("test_descriptor"))
     return testSuite
 

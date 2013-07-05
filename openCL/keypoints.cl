@@ -604,12 +604,14 @@ __kernel void descriptor(
 
 	int lid0 = get_local_id(0);
 	int lid1 = get_local_id(1);
+	int lid2 = get_local_id(2);
+	int lid = lid2+8*lid1+32*lid0;
 	int groupid = get_group_id(0);
 	keypoint k = keypoints[groupid];
 	if (!(keypoints_start <= groupid && groupid < keypoints_end && k.s1 >=0.0f))
 		return;
 		
-	int i,j;
+	int i,j,j2;
 	
 //	__local volatile float tmp_hist[128]; //4x4x8 : [lid0][lid1][r][c][o] where r,c,o are the most inner loops
 //	__local volatile int pos[128];
@@ -619,6 +621,7 @@ __kernel void descriptor(
 	
 	
 	__local volatile float histogram[128];
+	__local volatile float hist2[128*8];
 			
 
 	float rx, cx;
@@ -636,21 +639,28 @@ __kernel void descriptor(
 	int low_bound = 8*lid1+32*lid0;
 	int up_bound = low_bound+8;
 	//memset
-	for (i=low_bound; i < up_bound; i++) {
-		histogram[i] = 0.0f;
-	}
-		
+//	for (i=low_bound; i < up_bound; i++) {
+//		histogram[i] = 0.0f;
+//	}
+	histogram[lid] = 0.0f;
+	for (i=0; i < 8; i++) hist2[lid*8+i] = 0.0f;
+	
+	
 	
 	for (i=imin; i < imax; i++) {
-		for (j=jmin; j < jmax; j++) {	
+		for (j2=jmin/8; j2 < jmax/8; j2++) {	
+			j=j2*8+lid2;
 			
 			 rx = ((cosine * i - sine * j) - (row - irow)) / spacing + 1.5f;
 			 cx = ((sine * i + cosine * j) - (col - icol)) / spacing + 1.5f;
 			if ((rx > -1.0f && rx < 4.0f && cx > -1.0f && cx < 4.0f
 				 && (irow +i) >= 0  && (irow +i) < grad_height && (icol+j) >= 0 && (icol+j) < grad_width)) {
-				float mag = grad[(int)(icol+j) + (int)(irow+i)*grad_width]
+				
+				float mag = grad[icol+j + (irow+i)*grad_width]
 							 * exp(- 0.125f*((rx - 1.5f) * (rx - 1.5f) + (cx - 1.5f) * (cx - 1.5f)) );
-				float ori = orim[(int)(icol+j)+(int)(irow+i)*grad_width] -  angle;
+				float ori = orim[icol+j+(irow+i)*grad_width] -  angle;
+				
+				
 				while (ori > 2.0f*M_PI_F) ori -= 2.0f*M_PI_F;
 				while (ori < 0.0f) ori += 2.0f*M_PI_F;
 				int	orr, rindex, cindex, oindex;
@@ -681,7 +691,10 @@ __kernel void descriptor(
 											oindex = 0;
 										}
 										int bin = (rindex*4 + cindex)*8+oindex; //value in [0,128[
-										histogram[bin] += cweight * ((orr == 0) ? 1.0f - ofrac : ofrac); //works... conflicts ?
+										
+										hist2[lid2+8*bin] += cweight * ((orr == 0) ? 1.0f - ofrac : ofrac);
+										
+//										histogram[bin] += cweight * ((orr == 0) ? 1.0f - ofrac : ofrac); //works... conflicts ?
 //histogram[lid0][lid1][bin]
 //histogram[(lid0*4+lid1)*8+oindex] += 1.0f; // cweight * ((orr == 0) ? 1.0f - ofrac : ofrac); //not working ! (lid0,lid1) is not the position to write at !
 
@@ -708,6 +721,14 @@ if (lid0 == 1 && lid1 == 1) {
 }
 barrier(CLK_LOCAL_MEM_FENCE);			
 */
+
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid2 == 0) {
+		histogram[lid0*4+lid1] 
+			+= hist2[lid*8]+hist2[lid*8+1]+hist2[lid*8+2]+hist2[lid*8+3]+hist2[lid*8+4]+hist2[lid*8+5]+hist2[lid*8+6]+hist2[lid*8+7];
+	}
+
+
 	barrier(CLK_LOCAL_MEM_FENCE);
 	// Normalization -- work shared by the 16 threads (8 values per thread)
 
@@ -720,7 +741,7 @@ barrier(CLK_LOCAL_MEM_FENCE);
 	tmp_vals[lid0*4+lid1] = norm;
 	barrier(CLK_LOCAL_MEM_FENCE);
 	norm = 0.0f;
-	if (lid0 == 0 && lid1 == 0) { //thread (0,0) collects all contributions
+	if (lid0 == 0 && lid1 == 0 && lid2 == 0) { //thread (0,0) collects all contributions
 		for(i=0; i<4; i++)
 			for(j=0; j<4; j++)
 				norm+= tmp_vals[i*4+j];
@@ -737,7 +758,7 @@ barrier(CLK_LOCAL_MEM_FENCE);
 	//Threshold to 0.2 of the norm, for invariance to illumination
 	bool changed = false;
 	norm = 0;
-	if (lid0 == 0 && lid1 == 0) {
+	if (lid0 == 0 && lid1 == 0 && lid2 == 0) {
 		for (i = 0; i < 128; i++) {
 			if (histogram[i] > 0.2f) {
 				histogram[i] = 0.2f;
@@ -757,14 +778,15 @@ barrier(CLK_LOCAL_MEM_FENCE);
 	}
 //	barrier(CLK_LOCAL_MEM_FENCE);
 	//finally, cast to integer
-	for (i=low_bound; i < up_bound; i++)
-		descriptors[128*groupid+i]
-		= (unsigned char) MIN(255,(unsigned char)(512.0f*histogram[i]));
-		//= (unsigned char) histogram[i];
-//end of parallel version
 	
+	if (lid2 == 0) {
+	for (i=low_bound; i < up_bound; i++)
+			descriptors[128*groupid+i]
+			= (unsigned char) MIN(255,(unsigned char)(512.0f*histogram[i]));
+			//= (unsigned char) histogram[i];
+	}
 
-
+//end of parallel version
 
 
 /*
