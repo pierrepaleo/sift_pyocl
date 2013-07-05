@@ -150,7 +150,7 @@ class test_keypoints(unittest.TestCase):
         
 
 
-    def test_descriptor(self):
+    def test_descriptor_old(self):
         '''
         #tests keypoints descriptors creation kernel
         '''
@@ -174,7 +174,7 @@ class test_keypoints(unittest.TestCase):
         grad_height, grad_width = numpy.int32(grad.shape)
 
         t0 = time.time()
-        k1 = self.program.descriptor(queue, shape, wg,
+        k1 = self.program.descriptor_old(queue, shape, wg,
             gpu_keypoints.data, gpu_descriptors.data, gpu_grad.data, gpu_ori.data, numpy.int32(octsize),
             keypoints_start, keypoints_end, grad_width, grad_height)
         res = gpu_descriptors.get()
@@ -183,6 +183,7 @@ class test_keypoints(unittest.TestCase):
         ref = my_descriptor(keypoints_o, grad, ori, octsize, keypoints_start, keypoints_end)
         t2 = time.time()
         
+        PRINT_KEYPOINTS=True
         if (PRINT_KEYPOINTS):
             print res[0:30,0:15]#keypoints_end-keypoints_start,0:15]
             print ""
@@ -202,9 +203,66 @@ class test_keypoints(unittest.TestCase):
 
 
 
+
+
+    def test_descriptor(self):
+        '''
+        #tests keypoints descriptors creation kernel
+        '''
+
+        #descriptor_setup :
+        keypoints_o, nb_keypoints, actual_nb_keypoints, grad, ori, octsize = descriptor_setup()
+        #keypoints should be a compacted vector of keypoints
+        keypoints_start, keypoints_end = 0, actual_nb_keypoints
+        #keypoints_start, keypoints_end = 20, 30
+        keypoints = keypoints_o[keypoints_start:keypoints_end]
+        print("Working on keypoints : [%s,%s] (octave = %s)" % (keypoints_start, keypoints_end-1,int(numpy.log2(octsize)+1)))
+        wg = 4,4 #FIXME : have to choose it for histograms #wg = max(self.wg),
+        shape = keypoints.shape[0]*wg[0],keypoints.shape[0]*wg[1]
+        #shape = calc_size(self.mat.shape, self.wg)
+        gpu_keypoints = pyopencl.array.to_device(queue, keypoints_o)
+        #NOTE: for the following line, use pyopencl.array.empty instead of pyopencl.array.zeros if the keypoints are compacted
+        gpu_descriptors = pyopencl.array.zeros(queue, (keypoints_end - keypoints_start, 128), dtype=numpy.uint8, order="C")
+        gpu_grad = pyopencl.array.to_device(queue, grad)
+        gpu_ori = pyopencl.array.to_device(queue, ori)
+
+        keypoints_start, keypoints_end = numpy.int32(keypoints_start), numpy.int32(keypoints_end)
+        grad_height, grad_width = numpy.int32(grad.shape)
+
+        t0 = time.time()
+        k1 = self.program.descriptor(queue, shape, wg,
+            gpu_keypoints.data, gpu_descriptors.data, gpu_grad.data, gpu_ori.data, numpy.int32(octsize),
+            keypoints_start, keypoints_end, grad_width, grad_height)
+        res = gpu_descriptors.get()
+        t1 = time.time()
+
+        ref = my_descriptor(keypoints_o, grad, ori, octsize, keypoints_start, keypoints_end)
+        t2 = time.time()
+        
+        PRINT_KEYPOINTS=True
+        if (PRINT_KEYPOINTS):
+#            print res[0:30,0:15]#keypoints_end-keypoints_start,0:15]
+            print res[1,:]
+            print ""
+#            print ref[0:30,0:15]#[0:keypoints_end-keypoints_start,0:15]
+            print ref[1,:]
+            print res[1,:].sum(),ref[1,:].sum()
+#            print res[1,:].sum(), ref[1,:].sum()
+            #print keypoints_before_orientation[0:33]
+        
+        #sort to compare added keypoints
+#        delta = (res-ref).max()
+#        self.assert_(delta == 0, "delta=%s" % (delta)) #integers
+#        logger.info("delta=%s" % delta)
+
+        if PROFILE:
+            logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
+            logger.info("Descriptors computation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+
 def test_suite_keypoints():
     testSuite = unittest.TestSuite()
-    #testSuite.addTest(test_keypoints("test_orientation"))
+#    testSuite.addTest(test_keypoints("test_orientation"))
+    testSuite.addTest(test_keypoints("test_descriptor_old"))
     testSuite.addTest(test_keypoints("test_descriptor"))
     return testSuite
 
