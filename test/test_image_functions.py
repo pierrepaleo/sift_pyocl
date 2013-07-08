@@ -346,6 +346,7 @@ def my_descriptor(keypoints, grad, orim, octsize, keypoints_start, keypoints_end
     #unwrap and normalize the 128-vector
     descriptors = descriptors.reshape(keypoints_end-keypoints_start,128)
     
+    
     for i in range(0,keypoints_end-keypoints_start): descriptors[i] = normalize(descriptors[i])
      
     #threshold to 0.2 like in sift.cpp

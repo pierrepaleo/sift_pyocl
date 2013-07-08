@@ -75,7 +75,12 @@ class SiftPlan(object):
                       }
     sigmaRatio = 2.0 ** (1.0 / par.Scales)
     PIX_PER_KP = 10  # pre_allocate buffers for keypoints
-
+    dtype_kp = numpy.dtype([('x', numpy.float32),
+                                ('y', numpy.float32),
+                                ('scale', numpy.float32),
+                                ('angle', numpy.float32),
+                                ('desc', (numpy.uint8, 128))
+                                ])
     def __init__(self, shape=None, dtype=None, devicetype="GPU", template=None, profile=False, device=None, PIX_PER_KP=None, max_workgroup_size=128):
         """
         Contructor of the class
@@ -123,6 +128,8 @@ class SiftPlan(object):
         self._compile_kernels()
         self._allocate_buffers()
         self.debug = []
+
+
 
 
     def __del__(self):
@@ -201,6 +208,7 @@ class SiftPlan(object):
         self.buffers[ "Kp_2" ] = pyopencl.array.empty(self.queue, (self.kpsize, 4), dtype=numpy.float32)
         self.buffers[ "descr" ] = pyopencl.array.empty(self.queue, (self.kpsize, 128), dtype=numpy.uint8)
         self.buffers["cnt" ] = pyopencl.array.empty(self.queue, 1, dtype=numpy.int32)
+        self.buffers["descriptors"] = pyopencl.array.empty(self.queue, (self.kpsize, 128), dtype=numpy.uint8)
 
         for octave in range(self.octave_max):
             self.buffers[(octave, "tmp") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32)
@@ -385,24 +393,28 @@ class SiftPlan(object):
 #            pyopencl.enqueue_copy(self.queue, dest=self.buffers[(0, "G_1")].data, src=self.buffers["input"].data)
 
         for octave in range(self.octave_max):
-            kp = self.one_octave(octave)
+            kp, descriptors = self.one_octave(octave)
             print("in octave %i found %i kp" % (octave, kp.shape[0]))
 
             if kp.shape[0] > 0:
                 keypoints.append(kp)
+                descriptors.append(descriptors)
                 total_size += kp.shape[0]
 
         ########################################################################
         # Merge keypoints in central memory
         ########################################################################
-        output = numpy.zeros((total_size, 4), dtype=numpy.float32)
+        output = numpy.recarray(shape=(total_size,), dtype=self.dtype_kp)
         last = 0
-        for ds in keypoints:
+        for ds, desc in zip(keypoints, descriptors):
             l = ds.shape[0]
             if l > 0:
-                output[last:last + l] = ds
+                output[last:last + l].x = ds[0]
+                output[last:last + l].y = ds[1]
+                output[last:last + l].scale = ds[2]
+                output[last:last + l].angle = ds[3]
+                output[last:last + l].desc = kp
                 last += l
-
         print("Execution time: %.3fms" % (1000 * (time.time() - t0)))
 #        self.count_kp(output)
         return output
@@ -500,7 +512,7 @@ class SiftPlan(object):
                 if self.profile:self.events.append(("compute_gradient_orientation %s %s" % (octave, scale), evt))
 
     #           Orientation assignement: 1D kernel, rather heavy kernel
-                if newcnt and newcnt > last_start:  # launch kernel only if needed
+                if newcnt and newcnt > last_start:  # launch kernel only if neededwgsize = (128,)
                     procsize = int(newcnt * wgsize[0]),
                     print "orientation_assignment:", procsize, wgsize
                     evt = self.programs["keypoints"].orientation_assignment(self.queue, procsize, wgsize,
@@ -514,18 +526,25 @@ class SiftPlan(object):
                                           numpy.int32(last_start),  # int keypoints_start,
                                           newcnt,  # int keypoints_end,
                                           *self.scales[octave])  # int grad_width, int grad_height)
-                    if self.profile:self.events.append(("orientation_assignment %s %s" % (octave, scale), evt))
-                    newcnt = self.buffers["cnt"].get()[0]
-#                    evt = self.programs["descriptor"].orientation_assignment(self.queue, procsize, wgsize,
-#                                     self.buffers["Kp_1"].data,  #    __global keypoint* keypoints,
-#                                     self.buffers["descr"].data,  #   __global unsigned char *descriptors,
-#                                     grad.data,  # __global float* grad,
-#                                     ori.data,  # __global float* ori,
-#                                     numpy.int32(last_start),  # int keypoints_start,
-#                                     newcnt,  # int keypoints_end,
-#                                     *self.scales[octave])  # int grad_width, int grad_height)
-#                    if self.profile:self.events.append(("descriptor %s %s" % (octave, scale), evt))
-                last_start = newcnt
+                    wgsize2 = (4, 4, 8) # hard-coded for this kernel, do not modify these values !
+                    procsize2 = int(newcnt * wgsize2[0]), 4, 8
+                    evt2 = self.programs["keypoints"].descriptor(self.queue, procsize2, wgsize2,
+                                          self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
+                                          self.buffers["descriptors"].data, #___global unsigned char *descriptors
+                                          grad.data,  # __global float* grad,
+                                          ori.data,  # __global float* ori,
+                                          octsize,   #int octsize,
+                                          numpy.int32(last_start),  # int keypoints_start,
+                                          newcnt,  # int keypoints_end,
+                                          *self.scales[octave])  # int grad_width, int grad_height)
+
+                    if self.profile:
+                        self.events.append(("orientation_assignment %s %s" % (octave, scale), evt))
+                        self.events.append(("descriptors %s %s" % (octave, scale), evt2))
+
+#                self.debug_holes("After orientation %s %s" % (octave, scale))
+                last_start = self.buffers["cnt"].get()[0]
+
         ########################################################################
         # Rescale all images to populate all octaves TODO: scale G3 -> G'0
         ########################################################################
@@ -535,10 +554,16 @@ class SiftPlan(object):
                                                 numpy.int32(2), numpy.int32(2), *self.scales[octave + 1])
              if self.profile:self.events.append(("shrink %s->%s" % (self.scales[octave], self.scales[octave + 1]), evt))
         results = numpy.empty((last_start, 4), dtype=numpy.float32)
+        descriptors = numpy.empty((last_start, 128), dtype=numpy.uint8)
         if last_start:
             evt = pyopencl.enqueue_copy(self.queue, results, self.buffers["Kp_1"].data)
-            if self.profile:self.events.append(("copy D->H", evt))
-        return results
+            evt2 = pyopencl.enqueue_copy(self.queue, descriptors, self.buffers["descriptors"].data)
+            if self.profile:
+                self.events.append(("copy D->H", evt))
+                self.events.append(("copy D->H", evt2))
+
+
+        return results, descriptors
 
     def compact(self, start=numpy.int32(0)):
         """
@@ -589,6 +614,7 @@ class SiftPlan(object):
     def log_profile(self):
         t = 0.0
         orient = 0.0
+        descr = 0.0
         if self.profile:
             for e in self.events:
                 if "__len__" in dir(e) and len(e) >= 2:
@@ -597,9 +623,13 @@ class SiftPlan(object):
                     t += et
                     if "orient" in e[0]:
                         orient += et
+                    if "descriptors" in e[0]:
+                        descr += et
+
         print("_"*80)
         print("%50s:\t%.3fms" % ("Total execution time", t))
         print("%50s:\t%.3fms" % ("Total Orientation assignment", orient))
+        print("%50s:\t%.3fms" % ("Total Descriptors", descr))
 if __name__ == "__main__":
     # Prepare debugging
     import scipy.misc

@@ -149,7 +149,6 @@ class test_keypoints(unittest.TestCase):
             logger.info("Orientation assignment took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
         
 
-
     def test_descriptor(self):
         '''
         #tests keypoints descriptors creation kernel
@@ -162,8 +161,9 @@ class test_keypoints(unittest.TestCase):
         #keypoints_start, keypoints_end = 20, 30
         keypoints = keypoints_o[keypoints_start:keypoints_end]
         print("Working on keypoints : [%s,%s] (octave = %s)" % (keypoints_start, keypoints_end-1,int(numpy.log2(octsize)+1)))
-        wg = 128, #FIXME : have to choose it for histograms #wg = max(self.wg),
-        shape = keypoints.shape[0]*wg[0],
+        wg = 4,4,8 #FIXME : have to choose it for histograms #wg = max(self.wg),
+        shape = keypoints.shape[0]*wg[0],wg[1],wg[2]
+        #shape = calc_size(self.mat.shape, self.wg)
         gpu_keypoints = pyopencl.array.to_device(queue, keypoints_o)
         #NOTE: for the following line, use pyopencl.array.empty instead of pyopencl.array.zeros if the keypoints are compacted
         gpu_descriptors = pyopencl.array.zeros(queue, (keypoints_end - keypoints_start, 128), dtype=numpy.uint8, order="C")
@@ -183,15 +183,18 @@ class test_keypoints(unittest.TestCase):
         ref = my_descriptor(keypoints_o, grad, ori, octsize, keypoints_start, keypoints_end)
         t2 = time.time()
         
+        PRINT_KEYPOINTS=True
         if (PRINT_KEYPOINTS):
-            print res[0:30,0:15]#keypoints_end-keypoints_start,0:15]
+#            print res[0:30,0:15]#keypoints_end-keypoints_start,0:15]
+            print res[1,:]
             print ""
-            print ref[0:30,0:15]#[0:keypoints_end-keypoints_start,0:15]
+#            print ref[0:30,0:15]#[0:keypoints_end-keypoints_start,0:15]
+            print ref[1,:]
+            print res[1,:].sum(),ref[1,:].sum()
 #            print res[1,:].sum(), ref[1,:].sum()
-
             #print keypoints_before_orientation[0:33]
         
-        #sort to compare added keypoints
+#        sort to compare added keypoints
         delta = (res-ref).max()
         self.assert_(delta == 0, "delta=%s" % (delta)) #integers
         logger.info("delta=%s" % delta)
@@ -199,12 +202,14 @@ class test_keypoints(unittest.TestCase):
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
             logger.info("Descriptors computation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
-
-
+            
+            
+            
+            
 
 def test_suite_keypoints():
     testSuite = unittest.TestSuite()
-    #testSuite.addTest(test_keypoints("test_orientation"))
+#    testSuite.addTest(test_keypoints("test_orientation"))
     testSuite.addTest(test_keypoints("test_descriptor"))
     return testSuite
 

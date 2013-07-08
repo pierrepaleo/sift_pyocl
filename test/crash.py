@@ -9,7 +9,9 @@ import sift
 import numpy
 import scipy.misc
 import pylab
-lena = scipy.misc.lena()
+lena2 = scipy.misc.lena()
+lena2 = scipy.misc.imread("../aerial.tiff") #for other tests
+lena = numpy.ascontiguousarray(lena2[0:512,0:512])
 # lena[:] = 0
 # lena[100:110, 100:110] = 255
 s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128)
@@ -20,7 +22,6 @@ sp1 = fig.add_subplot(1, 2, 1)
 im = sp1.imshow(lena, cmap="gray")
 sp1.set_title("OpenCL: %s keypoint" % kp.shape[0])
 sp2 = fig.add_subplot(1, 2, 2)
-
 im = sp2.imshow(lena, cmap="gray")
 
 
@@ -72,6 +73,8 @@ fig.show()
 #        print kp[r1]
 #        print ref[r2]
 #        print kp[r1] - ref[r2]
+
+'''
 for p0 in range(kp.shape[0]):
     best = sys.maxint
     best_id = -1
@@ -88,7 +91,7 @@ for p0 in range(kp.shape[0]):
 
     sp1.annotate("", xy=kpi[:2], xytext=ref[best_id][:2], color="green",
                      arrowprops=dict(facecolor='green', edgecolor='green', width=1),)
-
+'''
 
 
 
