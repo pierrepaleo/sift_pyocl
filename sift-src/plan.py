@@ -292,10 +292,14 @@ class SiftPlan(object):
         for kernel in self.kernels:
             kernel_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), kernel + ".cl")
             kernel_src = open(kernel_file).read()
+            wg_size = min(self.max_workgroup_size, self.kernels[kernel])
             try:
-                program = pyopencl.Program(self.ctx, kernel_src).build('-D WORKGROUP_SIZE=%s' % min(self.max_workgroup_size, self.kernels[kernel]))
+                program = pyopencl.Program(self.ctx, kernel_src).build('-D WORKGROUP_SIZE=%s' % wg_size)
             except pyopencl.MemoryError as error:
                 raise MemoryError(error)
+            except pyopencl.RuntimeError as error:
+                logger.error("Failed compiling kernel %s with workgroup size %s: %s", kernel, wg_size, error)
+                raise error
             self.programs[kernel] = program
 
     def _free_kernels(self):
@@ -413,7 +417,7 @@ class SiftPlan(object):
                 output[last:last + l].y = ds[:, 1]
                 output[last:last + l].scale = ds[:, 2]
                 output[last:last + l].angle = ds[:, 3]
-                output[last:last + l].desc = kp
+                output[last:last + l].desc = desc
                 last += l
         print("Execution time: %.3fms" % (1000 * (time.time() - t0)))
 #        self.count_kp(output)
@@ -527,7 +531,7 @@ class SiftPlan(object):
                                           newcnt,  # int keypoints_end,
                                           *self.scales[octave])  # int grad_width, int grad_height)
                     wgsize2 = (4, 4, 8) # hard-coded for this kernel, do not modify these values !
-                    procsize2 = int(newcnt * wgsize2[0]), 4, 8
+                    procsize2 = int(newcnt) * wgsize2[0], wgsize2[1], wgsize2[2]
                     evt2 = self.programs["keypoints"].descriptor(self.queue, procsize2, wgsize2,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
                                           self.buffers["descriptors"].data, #___global unsigned char *descriptors
