@@ -515,7 +515,7 @@ class SiftPlan(object):
                                           *self.scales[octave])  # int grad_width, int grad_height)
                                           
                                           
-                    wgsize2 = (4,4,8)
+                    wgsize2 = (4,4,8) #do not modify these values !
                     procsize2 = int(newcnt * wgsize2[0]),4,8
                     evt2 = self.programs["keypoints"].descriptor(self.queue, procsize2, wgsize2,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,

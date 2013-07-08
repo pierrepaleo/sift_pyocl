@@ -10,7 +10,7 @@ import numpy
 import scipy.misc
 import pylab
 lena2 = scipy.misc.lena()
-lena2 = scipy.misc.imread("../aerial.tiff")
+lena2 = scipy.misc.imread("../aerial.tiff") #for other tests
 lena = numpy.ascontiguousarray(lena2[0:512,0:512])
 # lena[:] = 0
 # lena[100:110, 100:110] = 255
