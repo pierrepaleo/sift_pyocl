@@ -256,8 +256,6 @@ def test_suite_image():
     testSuite.addTest(test_image("test_gradient"))
     testSuite.addTest(test_image("test_local_maxmin"))
     testSuite.addTest(test_image("test_interpolation"))
-    #testSuite.addTest(test_image("test_orientation")) #moved to another kernel file
-    #testSuite.addTest(test_image("test_descriptor"))  #moved to another kernel file
     return testSuite
 
 if __name__ == '__main__':
