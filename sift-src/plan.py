@@ -393,12 +393,12 @@ class SiftPlan(object):
 #            pyopencl.enqueue_copy(self.queue, dest=self.buffers[(0, "G_1")].data, src=self.buffers["input"].data)
 
         for octave in range(self.octave_max):
-            kp, descriptors = self.one_octave(octave)
+            kp, descriptor = self.one_octave(octave)
             print("in octave %i found %i kp" % (octave, kp.shape[0]))
 
             if kp.shape[0] > 0:
                 keypoints.append(kp)
-                descriptors.append(descriptors)
+                descriptors.append(descriptor)
                 total_size += kp.shape[0]
 
         ########################################################################
@@ -409,10 +409,10 @@ class SiftPlan(object):
         for ds, desc in zip(keypoints, descriptors):
             l = ds.shape[0]
             if l > 0:
-                output[last:last + l].x = ds[0]
-                output[last:last + l].y = ds[1]
-                output[last:last + l].scale = ds[2]
-                output[last:last + l].angle = ds[3]
+                output[last:last + l].x = ds[:, 0]
+                output[last:last + l].y = ds[:, 1]
+                output[last:last + l].scale = ds[:, 2]
+                output[last:last + l].angle = ds[:, 3]
                 output[last:last + l].desc = kp
                 last += l
         print("Execution time: %.3fms" % (1000 * (time.time() - t0)))
