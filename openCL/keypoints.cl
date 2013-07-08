@@ -289,6 +289,32 @@ __kernel void orientation_assignment(
 	}
 }
 
+
+
+
+
+
+/*
+
+	Descriptors... new version with 4x4 workgroup
+		
+*/
+	
+	/*
+		We have to examine the [-iradius,iradius]^2 zone, maximum [-43,43]^2
+		To the next power of two, this is a 128*128 zone !
+		Hence, we cannot use one thread per pixel.
+		
+		Like in SIFT, we divide the patch in 4x4 subregions, each being handled by one thread.
+		This is, one thread handles at most 32x32=1024 pixels
+		
+		
+		For memory, we take 16x16=256 pixels per thread, so we can use a 2D shared memory (32*32*4=4096).
+		
+		
+		WARNING: WORKGROUP SIZE MUST BE (4,4,8)
+		
+	*/
 /*
 **
  * \brief Compute a SIFT descriptor for each keypoint.
@@ -341,255 +367,6 @@ __kernel void orientation_assignment(
  */
 
 
-__kernel void descriptor_old(
-	__global keypoint* keypoints,
-	__global unsigned char *descriptors,
-	__global float* grad,
-	__global float* orim,
-	int octsize,
-	int keypoints_start,
-	int keypoints_end,
-	int grad_width,
-	int grad_height)
-{
-
-	int lid0 = get_local_id(0);
-	int groupid = get_group_id(0);
-	keypoint k = keypoints[groupid];
-	if (!(keypoints_start <= groupid && groupid < keypoints_end && k.s1 >=0.0f))
-		return;
-		
-	int i,j,u,v,old;
-	
-	__local volatile float tmp_descriptors[8*WORKGROUP_SIZE];
-	__local volatile float tmp_descriptors_2[128];
-	__local volatile int pos[8*WORKGROUP_SIZE];
-//	__local volatile int* sem;
-	
-	//__local volatile int pos2[128];
-	//__local volatile int tmp_descriptors3[WORKGROUP_SIZE];
-	//if (lid0 < 128) pos2[lid0] = -1;
-	//if (lid0 < WORKGROUP_SIZE) tmp_descriptors3[lid0] = 0.0f;
-	//if (lid0 == 0) *sem = -1;
-	
-	//memset
-	if (lid0 < 128) tmp_descriptors_2[lid0] = 0.0f;
-	for (v=0; v < 8; v++) { pos[8*lid0+v] = -1; tmp_descriptors[8*lid0+v] = 0.0f; }
-
-	float rx, cx;
-	float row = k.s1/octsize, col = k.s0/octsize, angle = k.s3;
-	int	irow = (int) (row + 0.5f), icol = (int) (col + 0.5f);
-	float sine = sin((float) angle), cosine = cos((float) angle);
-	float spacing = k.s2/octsize * 3.0f; //The spacing of index samples in terms of pixels at this scale
-	//Radius of index sample region must extend to diagonal corner of index patch plus half sample for interpolation
-	int iradius = (int) ((1.414f * spacing * 2.5f) + 0.5f);
-
-	/* Examine all points from the gradient image that could lie within the index square */
-	for (i = -iradius; i <= iradius; i++) { 
-		for (v=0; v < 8; v++) { pos[8*lid0+v] = -1; tmp_descriptors[8*lid0+v] = 0.0f; }
-
-		j = -iradius + lid0; //current column... can be done before
-		
-		if (j <= iradius) {
-			/* Makes a rotation of -(angle) to achieve invariance to rotation */
-			 rx = ((cosine * i - sine * j) - (row - irow)) / spacing + 1.5f;
-			 cx = ((sine * i + cosine * j) - (col - icol)) / spacing + 1.5f;
-			 /* Compute location of sample in terms of real-valued index array
-				coordinates. Subtract 0.5 so that rx of 1.0 means to put full
-				weight on index[1] (e.g., when rpos is 0 and 4 is 3. */
-			/* Test whether this sample falls within boundary of index patch. */
-			if ((rx > -1.0f && rx < 4.0f && cx > -1.0f && cx < 4.0f
-				 && (irow +i) >= 0  && (irow +i) < grad_height && (icol+j) >= 0 && (icol+j) < grad_width)) {
-				 /* Compute Gaussian weight for sample, as function of radial distance
-					from center. Sigma is relative to half-width of index. */
-				float mag = grad[(int)(icol+j) + (int)(irow+i)*grad_width]
-							 * exp(- 0.125f*((rx - 1.5f) * (rx - 1.5f) + (cx - 1.5f) * (cx - 1.5f)) );
-				/* Subtract keypoint orientation to give ori relative to keypoint. */
-				float ori = orim[(int)(icol+j)+(int)(irow+i)*grad_width] -  angle;
-				/* Put orientation in range [0, 2*PI]. */
-				while (ori > 2.0f*M_PI_F) ori -= 2.0f*M_PI_F;
-				while (ori < 0.0f) ori += 2.0f*M_PI_F;
-				/* Increment the appropriate locations in the index to incorporate
-					this image sample. The location of the sample in the index is (rx,cx). */
-				int	orr, rindex, cindex, oindex;
-				float	rweight, cweight;
-
-				float oval = 4.0f*ori*M_1_PI_F; 
-
-				int	ri = (int)((rx >= 0.0f) ? rx : rx - 1.0f),
-					ci = (int)((cx >= 0.0f) ? cx : cx - 1.0f),
-					oi = (int)((oval >= 0.0f) ? oval : oval - 1.0f);
-
-				float rfrac = rx - ri,	
-					cfrac = cx - ci,
-					ofrac = oval - oi;
-				/*
-					//alternative in OpenCL :
-					int ri,ci,oi;
-					float rfrac = fract(rx,&ri), cfrac = fract(cx,&ci), ofrac = fract(oval,&oi);
-				*/
-				if ((ri >= -1  &&  ri < 4  && oi >=  0  &&  oi <= 8  && rfrac >= 0.0f  &&  rfrac <= 1.0f)) {
-					/* Put appropriate fraction in each of 8 buckets around this point in the (row,col,ori) dimensions. */
-					for (int r = 0; r < 2; r++) {
-						rindex = ri + r; 
-						if ((rindex >=0 && rindex < 4)) {
-							rweight = mag * ((r == 0) ? 1.0f - rfrac : rfrac);
-
-							for (int c = 0; c < 2; c++) {
-								cindex = ci + c;
-								if ((cindex >=0 && cindex < 4)) {
-									cweight = rweight * ((c == 0) ? 1.0f - cfrac : cfrac);
-									for (orr = 0; orr < 2; orr++) {
-										oindex = oi + orr;
-										if (oindex >= 8) {  /* Orientation wraps around at PI. */
-											oindex = 0;
-										}
-										int idx = (r*2+c)*2+orr;
-										pos[8*lid0+idx] = (rindex*4 + cindex)*8+oindex;
-										tmp_descriptors[8*lid0+idx] = cweight * ((orr == 0) ? 1.0f - ofrac : ofrac);
-			
-		//almost works... but *not* reliable
-//		if (old == -1) {
-//			old = atomic_xchg(flag_compute,lid0);
-//			barrier(CLK_LOCAL_MEM_FENCE);
-//			for (u=0; u < WORKGROUP_SIZE; u++)//contribution of lid0 is tmp_descriptors[lid0] at position pos[lid0]
-//				if (pos[u] != -1)
-//					tmp_descriptors_2[pos[u]] += tmp_descriptors[u];
-//			old = atomic_xchg(flag_compute,-1);
-//			old = -1;
-//		}
-//		barrier(CLK_LOCAL_MEM_FENCE);							
-										
-										
-										
-									} //end "for orr"
-								} //end "valid cindex"
-							} //end "for c"
-						} //end "valid rindex"
-					} //end "for r"
-				}
-			} //end "sample in boundaries"
-		}
-	
-		//working but slooooow version
-		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid0 == 0) {
-			for (u=0; u < WORKGROUP_SIZE; u++)
-				for (v=0; v < 8; v++) {
-					int old1 = 8*u+v;
-					int old2 = pos[old1];
-					if (old2 != -1) tmp_descriptors_2[old2] += tmp_descriptors[old1];
-				}
-		}
-		barrier(CLK_LOCAL_MEM_FENCE);
-
-
-
-	
-/* //does not work...
-		if (lid0 < 128) {
-			while ((old = atomic_xchg(sem,lid0)) != -1) { //knock knock, is the door open ?
-				;
-			}
-			for (v=0; v < 8; v++) 
-				tmp_descriptors_2[pos[8*lid0+v]] += tmp_descriptors[8*lid0+v];
-			old = atomic_xchg(sem,-1);
-			old = -1;
-		}
-		barrier(CLK_LOCAL_MEM_FENCE);
-*/
-
-
-
-
-
-
-	} //end "i loop"
-
-
-	/*
-		At this point, we have a descriptor associated with our keypoint.
-		We have to normalize it, then cast to 1-byte integer
-		
-		Notes:
-		-tmp_descriptors is re-used for communication between threads
-		-for tmp_descriptors_2, we use 128 instead of WORKGROUP_SIZE as upper bound,
-		   since tmp_descriptors_2 has its values indexed by pos[] whose values are in [0,128[ 
-	*/
-
-	// Normalization
-
-	float norm = 0;
-	if (lid0 == 0) { //no float atomic add...
-		for (i = 0; i < 128; i++) 
-			norm+=pow(tmp_descriptors_2[i],2); //warning: not the same as C "pow"
-		norm = rsqrt(norm); //norm = 1.0f/sqrt(norm);
-		tmp_descriptors[0] = norm; //broadcast
-	}
-	barrier(CLK_LOCAL_MEM_FENCE);
-	norm = tmp_descriptors[0];
-	if (lid0 < 128) {
-		tmp_descriptors_2[lid0] *= norm;
-	}
-
-	//Threshold to 0.2 of the norm, for invariance to illumination
-	//this can be parallelized, but with atomic_add (on descriptors[128*groupid+0] for example), which is slow
-	bool changed = false;
-	norm = 0;
-	if (lid0 == 0) {
-		for (i = 0; i < 128; i++) {
-			if (tmp_descriptors_2[i] > 0.2f) {
-				tmp_descriptors_2[i] = 0.2f;
-				changed = true;
-			}
-			norm += pow(tmp_descriptors_2[i],2);
-		}
-		tmp_descriptors[1] = (changed == true ? 1.0f : -1.0f); //broadcast
-		tmp_descriptors[2] = norm; 
-	}
-	barrier(CLK_LOCAL_MEM_FENCE);
-	norm = tmp_descriptors[2];
-	//if values have been changed, we have to normalize again...
-	if (tmp_descriptors[1] > 0.0f) {
-		norm = rsqrt(norm);
-		if (lid0 < 128)
-			tmp_descriptors_2[lid0] *= norm;
-	}
-	barrier(CLK_LOCAL_MEM_FENCE);
-
-	//finally, cast to integer
-	//store to global memory : tmp_descriptor_2[lid0] --> descriptors[i][lid0]
-	if (lid0 < 128) {
-		descriptors[128*groupid+lid0]
-			= (unsigned char) MIN(255,(unsigned char)(512.0f*tmp_descriptors_2[lid0]));
-	}
-}
-
-
-
-
-
-
-/*
-
-	Descriptors... new version with 4x4 workgroup
-		
-*/
-	
-	/*
-		We have to examine the [-iradius,iradius]^2 zone, maximum [-43,43]^2
-		To the next power of two, this is a 128*128 zone !
-		Hence, we cannot use one thread per pixel.
-		
-		Like in SIFT, we divide the patch in 4x4 subregions, each being handled by one thread.
-		This is, one thread handles at most 32x32=1024 pixels
-		
-		
-		For memory, we take 16x16=256 pixels per thread, so we can use a 2D shared memory (32*32*4=4096)
-	*/
-
-
-
 __kernel void descriptor(
 	__global keypoint* keypoints,
 	__global unsigned char *descriptors,
@@ -605,7 +382,7 @@ __kernel void descriptor(
 	int lid0 = get_local_id(0);
 	int lid1 = get_local_id(1);
 	int lid2 = get_local_id(2);
-	int lid = lid2+8*lid1+32*lid0;
+	int lid = (lid0*4+lid1)*8+lid2;
 	int groupid = get_group_id(0);
 	keypoint k = keypoints[groupid];
 	if (!(keypoints_start <= groupid && groupid < keypoints_end && k.s1 >=0.0f))
@@ -639,13 +416,8 @@ __kernel void descriptor(
 	int low_bound = 8*lid1+32*lid0;
 	int up_bound = low_bound+8;
 	//memset
-//	for (i=low_bound; i < up_bound; i++) {
-//		histogram[i] = 0.0f;
-//	}
 	histogram[lid] = 0.0f;
 	for (i=0; i < 8; i++) hist2[lid*8+i] = 0.0f;
-	
-	
 	
 	for (i=imin; i < imax; i++) {
 		for (j2=jmin/8; j2 < jmax/8; j2++) {	
@@ -723,68 +495,113 @@ barrier(CLK_LOCAL_MEM_FENCE);
 */
 
 	barrier(CLK_LOCAL_MEM_FENCE);
-	if (lid2 == 0) {
-		histogram[lid0*4+lid1] 
-			+= hist2[lid*8]+hist2[lid*8+1]+hist2[lid*8+2]+hist2[lid*8+3]+hist2[lid*8+4]+hist2[lid*8+5]+hist2[lid*8+6]+hist2[lid*8+7];
-	}
+	histogram[lid] 
+		+= hist2[lid*8]+hist2[lid*8+1]+hist2[lid*8+2]+hist2[lid*8+3]+hist2[lid*8+4]+hist2[lid*8+5]+hist2[lid*8+6]+hist2[lid*8+7];
+
+
+
 
 
 	barrier(CLK_LOCAL_MEM_FENCE);
+	
+	//memset of 128 values of hist2 before re-use
+	hist2[lid] = histogram[lid]*histogram[lid];
+	
+	
 	// Normalization -- work shared by the 16 threads (8 values per thread)
+	float inorm = 0.0f;
+	
+	
+	if (lid < 64) {
+		hist2[lid] += hist2[lid+64];
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid < 32) {
+		hist2[lid] += hist2[lid+32];
+	}
+	
+	
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid < 16) {
+		hist2[lid] += hist2[lid+16];
+	}
 
-	float norm = 0.0f;
-	__local volatile float tmp_vals[16];
-	
-	
-	for (i=low_bound; i < up_bound; i++)
-		norm += pow(histogram[i],2);
-	tmp_vals[lid0*4+lid1] = norm;
 	barrier(CLK_LOCAL_MEM_FENCE);
-	norm = 0.0f;
-	if (lid0 == 0 && lid1 == 0 && lid2 == 0) { //thread (0,0) collects all contributions
-		for(i=0; i<4; i++)
-			for(j=0; j<4; j++)
-				norm+= tmp_vals[i*4+j];
-		tmp_vals[0] = rsqrt(norm); //broadcast
+	if (lid < 8) {
+		hist2[lid] += hist2[lid+8];
+	}
+
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid < 4) {
+		hist2[lid] += hist2[lid+4];
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
-	norm = tmp_vals[0];
-	for (i=low_bound; i < up_bound; i++)
-		histogram[i] *= norm;
-		
+	if (lid < 2) {
+		hist2[lid] += hist2[lid+2];
+	}
 	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid == 0) hist2[0] = rsqrt(hist2[1]+hist2[0]);
+	barrier(CLK_LOCAL_MEM_FENCE);
+	//now we have hist2[0] = 1/sqrt(sum(hist[i]^2))
+	
+	histogram[lid] *= hist2[0];
 	
 	
+	
+	
+
 	//Threshold to 0.2 of the norm, for invariance to illumination
-	bool changed = false;
-	norm = 0;
-	if (lid0 == 0 && lid1 == 0 && lid2 == 0) {
-		for (i = 0; i < 128; i++) {
-			if (histogram[i] > 0.2f) {
-				histogram[i] = 0.2f;
-				changed = true;
-			}
-			norm += pow(histogram[i],2);
-		}
-		tmp_vals[0] = rsqrt(norm);
-		tmp_vals[1] = (changed == true ? 1.0f : -1.0f);
+	__local int changed[1];
+	if (lid == 0) changed[0] = 0;
+	
+	if (histogram[lid] > 0.2f) {
+		histogram[lid] = 0.2f;
+		atomic_inc(changed);
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
-	//if values have been changed, we have to normalize again...
-	if (tmp_vals[1] > 0.0f) {
-		norm = tmp_vals[0];
-		for (i=low_bound; i < up_bound; i++)
-			histogram[i] *= norm;
+	if (changed[0]) { //if values have changed, we have to re-normalize
+		hist2[lid] = histogram[lid]*histogram[lid];
+		if (lid < 64) {
+			hist2[lid] += hist2[lid+64];
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);
+		if (lid < 32) {
+			hist2[lid] += hist2[lid+32];
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);
+		if (lid < 16) {
+			hist2[lid] += hist2[lid+16];
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);
+		if (lid < 8) {
+			hist2[lid] += hist2[lid+8];
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);
+		if (lid < 4) {
+			hist2[lid] += hist2[lid+4];
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);
+		if (lid < 2) {
+			hist2[lid] += hist2[lid+2];
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);
+		if (lid == 0) hist2[0] = rsqrt(hist2[0]+hist2[1]);
+		barrier(CLK_LOCAL_MEM_FENCE);
+		histogram[lid] *= hist2[0];
 	}
-//	barrier(CLK_LOCAL_MEM_FENCE);
-	//finally, cast to integer
+
 	
-	if (lid2 == 0) {
-	for (i=low_bound; i < up_bound; i++)
-			descriptors[128*groupid+i]
-			= (unsigned char) MIN(255,(unsigned char)(512.0f*histogram[i]));
-			//= (unsigned char) histogram[i];
-	}
+	
+	
+	
+	
+	
+//	if (lid2 == 0) {
+//	for (i=low_bound; i < up_bound; i++)
+		descriptors[128*groupid+lid]
+		= (unsigned char) MIN(255,(unsigned char)(512.0f*histogram[lid]));
+		//= (unsigned char) histogram[i];
+//	}
 
 //end of parallel version
 
