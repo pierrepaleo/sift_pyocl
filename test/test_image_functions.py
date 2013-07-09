@@ -404,6 +404,36 @@ def keypoints_compare(ref,res):
     ref_angle = ref[(ref[:,3].argsort(axis=0)),3]
     
     return abs(res_c - ref_c).max(), abs(res_r - ref_r).max(), abs(res_s - ref_s).max(), abs(res_angle - ref_angle).max()
+
+
+def descriptors_compare(ref,res):
+    #count null descriptors in "ref" (take care of the order in the arguments : (ref, res) and not (res, ref))
+    nulldesc = 0
+    for descriptor2 in res:
+        if abs(descriptor2).sum() == 0: nulldesc+=1
+    #count descriptors that are (exactly) equal
+    match = 0
+    delta = 0
+    for descriptor in ref:
+        for descriptor2 in res:
+            delta = abs(descriptor-descriptor2).sum()
+            if delta == 0: match+=1
+            
+    return match,nulldesc
+        
+
+def my_compact(keypoints,nbkeypoints):
+    '''
+    Reference compacting
+    '''
+    output = -numpy.ones_like(keypoints)
+    idx = numpy.where(keypoints[:,1]!=-1)[0]
+    length = idx.size
+    output[:length,0] = keypoints[idx,0]
+    output[:length,1] = keypoints[idx,1]
+    output[:length,2] = keypoints[idx,2]
+    output[:length,3] = keypoints[idx,3]
+    return output, length
  
 '''    
     
