@@ -234,16 +234,18 @@ shrink(const __global     float     *image_in,
             __global     float     *image_out,
             const             int scale_w,
             const             int scale_h,
-            const             int IMAGE_W,
-            const             int IMAGE_H
+            const             int LARGE_W,
+            const             int LARGE_H,
+            const             int SMALL_W,
+            const             int SMALL_H
 )
 {
     int gid0=get_global_id(0), gid1=get_global_id(1);
-    int j,i = gid0 * IMAGE_W + gid1;
+    int j,i = gid0 * SMALL_W + gid1;
     //Global memory guard for padding
-    if(i < IMAGE_W*IMAGE_H)
+    if(i < SMALL_W*SMALL_H)
     {
-        j = gid0*IMAGE_W*scale_w*scale_h + gid1*scale_w;
+        j = gid0*LARGE_W*scale_h + gid1*scale_w;
         image_out[i] = image_in[j];
     };//end if in IMAGE
 };//end kernel

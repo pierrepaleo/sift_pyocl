@@ -11,13 +11,14 @@ import scipy.misc
 import pylab
 lena2 = scipy.misc.lena()
 #lena2 = scipy.misc.imread("../aerial.tiff") #for other tests
-lena2 = scipy.misc.imread("/home/photo/2013-06-23-Monteynard/14h04m50-Canon_PowerShot_G11.jpg", flatten=True)
-lena = numpy.ascontiguousarray(lena2[0:2000, 0:2000])
+lena2 = scipy.misc.imread("/users/kieffer/Pictures/2010-01-21/17h51m32-Canon_PowerShot_G11.jpg", flatten=True)
+lena = numpy.ascontiguousarray(lena2[0:1001, 0:1599])
+#lena = lena2
 print lena.shape
 
 # lena[:] = 0
 # lena[100:110, 100:110] = 255
-s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128, device=(1, 0))
+s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128, device=(0, 0))
 kpg = s.keypoints(lena)
 kp = numpy.empty((kpg.size, 4), dtype=numpy.float32)
 kp[:, 0] = kpg.x

@@ -555,7 +555,8 @@ class SiftPlan(object):
         if octave < self.octave_max - 1:
              evt = self.programs["preprocess"].shrink(self.queue, self.procsize[octave + 1], self.wgsize[octave + 1],
                                                 self.buffers[(octave, par.Scales)].data, self.buffers[(octave + 1, 0)].data,
-                                                numpy.int32(2), numpy.int32(2), *self.scales[octave + 1])
+                                                numpy.int32(2), numpy.int32(2), self.scales[octave][0], self.scales[octave][1],
+                                                *self.scales[octave + 1])
              if self.profile:self.events.append(("shrink %s->%s" % (self.scales[octave], self.scales[octave + 1]), evt))
         results = numpy.empty((last_start, 4), dtype=numpy.float32)
         descriptors = numpy.empty((last_start, 128), dtype=numpy.uint8)

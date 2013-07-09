@@ -8,7 +8,6 @@ import sift
 import numpy
 import scipy.misc
 
-
 lena = scipy.misc.lena()
-s = sift.SiftPlan(template=lena, profile=True)
+s = sift.SiftPlan(template=lena, profile=False, device=(1, 0))
 kp = s.keypoints(lena)
