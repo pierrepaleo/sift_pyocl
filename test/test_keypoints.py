@@ -100,11 +100,11 @@ class test_keypoints(unittest.TestCase):
 
         #orientation_setup :
         keypoints, nb_keypoints, updated_nb_keypoints, grad, ori, octsize = orientation_setup()
-        #keypoints is a compacted vector of keypoints #not anymore
         keypoints, compact_cnt = my_compact(numpy.copy(keypoints),nb_keypoints)
         updated_nb_keypoints = compact_cnt
         
         if (USE_CPU):
+            print("Using CPU-optimized kernels")
             wg = 1,
             shape = keypoints.shape[0]*wg[0],
         else:
@@ -113,7 +113,7 @@ class test_keypoints(unittest.TestCase):
         
         gpu_keypoints = pyopencl.array.to_device(queue, keypoints)
         actual_nb_keypoints = numpy.int32(updated_nb_keypoints)
-        print("Max. number of keypoints before orientation assignment : %s" % actual_nb_keypoints)
+        print("Number of keypoints before orientation assignment : %s" % actual_nb_keypoints)
 
         gpu_grad = pyopencl.array.to_device(queue, grad)
         gpu_ori = pyopencl.array.to_device(queue, ori)
@@ -137,6 +137,12 @@ class test_keypoints(unittest.TestCase):
             sc = feature.SiftAlignment()
             ref2 = sc.sift(scipy.misc.lena()) #ref2.x, ref2.y, ref2.scale, ref2.angle, ref2.desc --- ref2[numpy.argsort(ref2.y)]).desc
             ref = ref2.angle
+            kp_ref = numpy.empty((ref2.size, 4), dtype=numpy.float32)
+            kp_ref[:, 0] = ref2.x
+            kp_ref[:, 1] = ref2.y
+            kp_ref[:, 2] = ref2.scale
+            kp_ref[:, 3] = ref2.angle
+            
         else:
             ref, updated_nb_keypoints = my_orientation(keypoints, nb_keypoints, keypoints_start, keypoints_end, grad, ori, octsize, orisigma)
        
@@ -145,11 +151,14 @@ class test_keypoints(unittest.TestCase):
         PRINT_KEYPOINTS = True
         if (PRINT_KEYPOINTS):
             print("Keypoints after orientation assignment :")
-            print res[numpy.argsort(res[0:compact_cnt,1])][0:15] #res[0:compact_cnt]
+            print res[numpy.argsort(res[0:cnt,1])][0:cnt+10,3] #res[0:compact_cnt]
             print " "
-            print ref[0:15]
+#            print kp_ref[0:cnt+10]
+#            print "Showing error (NOTE: significant error at position (i) should have its opposite at (i+1))"
+#            print res[numpy.argsort(res[0:compact_cnt,1])][0:compact_cnt,3] - ref[0:compact_cnt]
 
-        print("Total keypoints for kernel : %s -- For Python : %s \t [octsize = %s]" % (cnt, updated_nb_keypoints, octsize))
+#        print("Total keypoints for kernel : %s -- For Python : %s \t [octsize = %s]" % (cnt, updated_nb_keypoints, octsize))
+        print("Opencl found %s keypoints (%s added)" %(cnt,cnt-compact_cnt))
         
         #sort to compare added keypoints
         '''

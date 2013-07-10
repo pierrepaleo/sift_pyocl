@@ -75,12 +75,15 @@ __kernel void orientation_assignment(
 	for (r = rmin; r <= rmax; r++) {
 		for (c = cmin; c <= cmax; c++) {
 			gval = grad[r*grad_width+c];
-			distsq = (r-k.s1)*(r-k.s1) + (c-k.s2)*(c-k.s2);
+			
+			float dif = (r - k.s1);	distsq = dif*dif;
+			dif = (c - k.s2);	distsq += dif*dif;
+			
+			//distsq = (r-k.s1)*(r-k.s1) + (c-k.s2)*(c-k.s2);
 
-			if (gval > 0.0f  &&  distsq < (radius*radius) + 0.5f) {
+			if (gval > 0.0f  &&  distsq < ((float) (radius*radius)) + 0.5f) {
 				angle = ori[r*grad_width+c];
-				bin = (int) (36 * (angle + M_PI_F + 0.001f) / (2.0f * M_PI_F)); //why this offset ?
-				//bin = (int) (18.0f * (angle + M_PI_F ) *  M_1_PI_F);
+				bin = (int) (36.0f * (angle + M_PI_F + 0.001f) / (2.0f * M_PI_F)); //why this offset ?
 				if (bin >= 0 && bin <= 36) {
 					bin = MIN(bin, 35);
 					hist[bin] += exp(- distsq / (2.0f*sigma*sigma)) * gval;
@@ -128,13 +131,13 @@ __kernel void orientation_assignment(
 		hist_next = -hist_next;
 	}
 	interp = 0.5f * (hist_prev - hist_next) / (hist_prev - 2.0f * maxval + hist_next);
-	angle = 2.0f * M_PI_F * (argmax + 0.5f + interp) / 36 - M_PI_F;
+	angle = 2.0f * M_PI_F * (argmax + 0.5f + interp) / 36.0f - M_PI_F;
 
 
 	k.s0 = k.s2 *octsize; //c
 	k.s1 = k.s1 *octsize; //r
 	k.s2 = k.s3 *octsize; //sigma
-	k.s3 = angle; 		  //angle
+	k.s3 = (float) (radius*radius); //hist[0]; //angle; 		  //angle
 	keypoints[gid0] = k;
 	
 	/*
@@ -150,16 +153,15 @@ __kernel void orientation_assignment(
 		hist_curr = hist[i];
 		hist_next = hist[next];
 		if (hist_curr > hist_prev  &&  hist_curr > hist_next && hist_curr >= 0.8f * maxval) {
-		/* Use parabolic fit to interpolate peak location from 3 samples. */
 			if (hist_curr < 0.0f) {
 				hist_prev = -hist_prev;
 				hist_curr = -hist_curr;
 				hist_next = -hist_next;
 			}
 			interp = 0.5f * (hist_prev - hist_next) / (hist_prev - 2.0f * hist_curr + hist_next);
-			angle = (i + 0.5f + interp) / 18.0f;
-			if (angle >= 0  &&  angle <= 2) {
-				k.s3 = (angle-1.0f)*M_PI_F;
+			angle = 2.0f * M_PI_F * (i + 0.5f + interp) /36.0 - M_PI_F;
+			if (angle >= -M_PI_F && angle <= M_PI_F) {
+				k.s3 = (float) (radius*radius); //angle;
 				old  = atomic_inc(counter);
 				if (old < nb_keypoints) keypoints[old] = k;
 			}

@@ -95,11 +95,11 @@ class test_image(unittest.TestCase):
         """
         tests the gradient kernel (norm and orientation)
         """
+        
+        border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, scale, nb_keypoints, width, height, DOGS, g = local_maxmin_setup()
+        self.mat = g[1]
+        self.height, self.width = numpy.int32(self.mat.shape)
 
-        self.width = numpy.int32(15)
-        self.height = numpy.int32(14)
-
-        self.mat = numpy.random.rand(self.height, self.width).astype(numpy.float32)
         self.gpu_mat = pyopencl.array.to_device(queue, self.mat)
         self.gpu_grad = pyopencl.array.empty(queue, self.mat.shape, dtype=numpy.float32, order="C")
         self.gpu_ori = pyopencl.array.empty(queue, self.mat.shape, dtype=numpy.float32, order="C")
@@ -114,6 +114,16 @@ class test_image(unittest.TestCase):
         t2 = time.time()
         delta_norm = abs(ref_norm - res_norm).max()
         delta_ori = abs(ref_ori - res_ori).max()
+        PRINT_KEYPOINTS = True
+        if (PRINT_KEYPOINTS):
+            rmin, cmin = 0, 0
+            rmax, cmax = rmin+6, cmin+6
+            
+            print res_norm[rmin:rmax,cmin:cmax]
+            print ""
+            print res_ori[rmin:rmax,cmin:cmax]
+        
+        
         self.assert_(delta_norm < 1e-4, "delta_norm=%s" % (delta_norm))
         self.assert_(delta_ori < 1e-4, "delta_ori=%s" % (delta_ori))
         logger.info("delta_norm=%s" % delta_norm)
@@ -254,8 +264,8 @@ class test_image(unittest.TestCase):
 def test_suite_image():
     testSuite = unittest.TestSuite()
     testSuite.addTest(test_image("test_gradient"))
-    testSuite.addTest(test_image("test_local_maxmin"))
-    testSuite.addTest(test_image("test_interpolation"))
+#    testSuite.addTest(test_image("test_local_maxmin"))
+#    testSuite.addTest(test_image("test_interpolation"))
     return testSuite
 
 if __name__ == '__main__':

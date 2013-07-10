@@ -14,9 +14,11 @@ def my_gradient(mat):
     """
     numpy implementation of gradient :
     "The gradient is computed using central differences in the interior and first differences at the boundaries. The returned gradient hence has the same shape as the input array."
+    NOTE:
+        -with numpy.gradient, the amplitude is twice smaller than in SIFT.cpp, therefore we multiply the amplitude by two
     """
     g = numpy.gradient(mat)
-    return numpy.sqrt(g[0]**2+g[1]**2), numpy.arctan2(g[0],g[1]) #image.cl/compute_gradient_orientation() puts a "-" here
+    return 2.0*numpy.sqrt(g[0]**2+g[1]**2), numpy.arctan2(g[0],g[1]) #sift.cpp puts a "-" here
     
     
     
