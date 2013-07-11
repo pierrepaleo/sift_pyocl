@@ -215,6 +215,9 @@ class test_preproc(unittest.TestCase):
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
             logger.info("conversion int64->float took %.3fms and normalization took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start),
                                                                                              1e-6 * (k2.profile.end - k2.profile.start)))
+    def test_rgb(self):
+#        TODO
+        pass
 
     def test_shrink(self):
         """
