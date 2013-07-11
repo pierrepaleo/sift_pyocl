@@ -171,19 +171,26 @@ __kernel void orientation_assignment(
 		barrier(CLK_LOCAL_MEM_FENCE);
 	}
 
+
 /*
 //  WHY not working
 	for (j=0; j<3; j++) {
 		if (lid0 < 36 ) {
-			prev = (lid0 == 0 ? 35 : lid0 - 1);
-			next = (lid0 == 35 ? 0 : lid0 + 1);
-			hist2[lid0] = (hist[prev] + hist[lid0] + hist[next]) * ONE_3;
+			int prev = (lid0 == 0 ? 35 : lid0 - 1);
+			int next = (lid0 == 35 ? 0 : lid0 + 1);
+			float hist_cur = hist[lid0];
+			float hist_prev = hist[prev];
+			float hist_next = hist[next];
+			hist2[lid0] = (hist_prev + hist_cur + hist_next) * ONE_3;
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
 		if (lid0 < 36 ) {
-			prev = (lid0 == 0 ? 35 : lid0 - 1);
-			next = (lid0 == 35 ? 0 : lid0 + 1);
-			hist[lid0] = (hist2[prev] + hist2[lid0] + hist2[next]) * ONE_3;
+			int prev = (lid0 == 0 ? 35 : lid0 - 1);
+			int next = (lid0 == 35 ? 0 : lid0 + 1);
+			float hist_cur = hist2[lid0];
+			float hist_prev = hist2[prev];
+			float hist_next = hist2[next];
+			hist[lid0] = (hist_prev + hist_cur + hist_next) * ONE_3;
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
 	}
@@ -468,6 +475,7 @@ __kernel void descriptor(
 										}
 										int bin = (rindex*4 + cindex)*8+oindex; //value in [0,128[
 										
+										//FIXME: conflict ?
 										hist2[lid2+8*bin] += cweight * ((orr == 0) ? 1.0f - ofrac : ofrac);
 
 									} //end "for orr"

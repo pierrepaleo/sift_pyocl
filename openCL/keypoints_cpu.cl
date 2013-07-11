@@ -94,18 +94,20 @@ __kernel void orientation_assignment(
 	
 	
 	
-	
 	/*
 		Apply smoothing 6 times for accurate Gaussian approximation
 	*/
-	for (j=0; j < 6; j++) {
+
+	for (j = 0; j < 6; j++) {
+		float prev, temp; //it is CRUCIAL to re-define "prev" here, for the line below... otherwise, it won't work
 		prev = hist[35];
 		for (i = 0; i < 36; i++) {
-			float temp = hist[i];
-			hist[i] = ( prev + hist[i] + hist[(i == 35) ? 0 : i + 1] ) / 3.0;
+			temp = hist[i];
+			hist[i] = ( prev + hist[i] + hist[(i + 1 == 36) ? 0 : i + 1] ) / 3.0;
 			prev = temp;
 		}
 	}
+
 	
 	/* Find maximum value in histogram */
 
@@ -126,7 +128,7 @@ __kernel void orientation_assignment(
 	hist_prev = hist[prev];
 	hist_next = hist[next];
 	if (maxval < 0.0f) {
-		hist_prev = -hist_prev; //do not directly use hist[prev] which is shared
+		hist_prev = -hist_prev;
 		maxval = -maxval;
 		hist_next = -hist_next;
 	}
@@ -137,7 +139,7 @@ __kernel void orientation_assignment(
 	k.s0 = k.s2 *octsize; //c
 	k.s1 = k.s1 *octsize; //r
 	k.s2 = k.s3 *octsize; //sigma
-	k.s3 = (float) (radius*radius); //hist[0]; //angle; 		  //angle
+	k.s3 = angle; 		  //angle
 	keypoints[gid0] = k;
 	
 	/*
@@ -146,22 +148,22 @@ __kernel void orientation_assignment(
 		For every local peak in histogram, every peak of value >= 80% of maxval generates a new keypoint
 	*/
 	
-	for (i=0; i < 36 && i != argmax; i++) {
-		prev = (i == 0 ? 35 : i - 1);
-		next = (i == 35 ? 0 : i + 1);
-		hist_prev = hist[prev];
-		hist_curr = hist[i];
-		hist_next = hist[next];
-		if (hist_curr > hist_prev  &&  hist_curr > hist_next && hist_curr >= 0.8f * maxval) {
+	for (i=0; i < 36; i++) {
+		int prev = (i == 0 ? 35 : i - 1);
+		int next = (i == 35 ? 0 : i + 1);
+		float hist_prev = hist[prev];
+		float hist_curr = hist[i];
+		float hist_next = hist[next];
+		if (hist_curr > hist_prev  &&  hist_curr > hist_next && hist_curr >= 0.8f * maxval && i != argmax) {
 			if (hist_curr < 0.0f) {
 				hist_prev = -hist_prev;
 				hist_curr = -hist_curr;
 				hist_next = -hist_next;
 			}
-			interp = 0.5f * (hist_prev - hist_next) / (hist_prev - 2.0f * hist_curr + hist_next);
-			angle = 2.0f * M_PI_F * (i + 0.5f + interp) /36.0 - M_PI_F;
+			float interp = 0.5f * (hist_prev - hist_next) / (hist_prev - 2.0f * hist_curr + hist_next);
+			float angle = 2.0f * M_PI_F * (i + 0.5f + interp) /36.0 - M_PI_F;
 			if (angle >= -M_PI_F && angle <= M_PI_F) {
-				k.s3 = (float) (radius*radius); //angle;
+				k.s3 = angle;
 				old  = atomic_inc(counter);
 				if (old < nb_keypoints) keypoints[old] = k;
 			}
@@ -207,7 +209,8 @@ __kernel void descriptor(
 		
 	int i,j,u,v,old;
 	
-	float tmp_descriptors[128];
+	__local volatile float tmp_descriptors[128];
+	for (i=0; i<128; i++) tmp_descriptors[i] = 0.0f;
 
 	float rx, cx;
 	float row = k.s1/octsize, col = k.s0/octsize, angle = k.s3;
@@ -243,7 +246,7 @@ __kernel void descriptor(
 					for (int r = 0; r < 2; r++) {
 						rindex = ri + r; 
 						if ((rindex >=0 && rindex < 4)) {
-							rweight = mag * ((r == 0) ? 1.0f - rfrac : rfrac);
+							float rweight = (float) (mag * (float) ((r == 0) ? 1.0f - rfrac : rfrac));
 
 							for (int c = 0; c < 2; c++) {
 								cindex = ci + c;
@@ -279,12 +282,12 @@ __kernel void descriptor(
 
 	float norm = 0;
 	for (i = 0; i < 128; i++) 
-		norm+=pow(tmp_descriptors[i],2);
+		norm+=tmp_descriptors[i]*tmp_descriptors[i];
 	norm = rsqrt(norm);
-	norm = tmp_descriptors[0];
 	for (i=0; i < 128; i++) {
 		tmp_descriptors[i] *= norm;
 	}
+
 
 	//Threshold to 0.2 of the norm, for invariance to illumination
 	bool changed = false;
@@ -294,19 +297,35 @@ __kernel void descriptor(
 			tmp_descriptors[i] = 0.2f;
 			changed = true;
 		}
-		norm += pow(tmp_descriptors[i],2);
+		norm += tmp_descriptors[i]*tmp_descriptors[i];
 	}
+/*
 	//if values have been changed, we have to normalize again...
 	if (changed == true) {
 		norm = rsqrt(norm);
 		for (i=0; i < 128; i++)
 			tmp_descriptors[i] *= norm;
 	}
+*/
+
+	if (changed == true) {
+		float norm = 0;
+		for (int i = 0; i < 128; i++) {
+			norm+=tmp_descriptors[i]*tmp_descriptors[i];
+		}
+		norm = rsqrt(norm);
+		for (int i=0; i < 128; i++) {
+			tmp_descriptors[i] *= norm;
+		}
+	}
+
 
 	//finally, cast to integer
+	int intval;
 	for (i = 0; i < 128; i++) {
+		intval =  (int)(512.0 * tmp_descriptors[i]);
 		descriptors[128*gid0+i]
-			= (unsigned char) MIN(255,(unsigned char)(512.0f*tmp_descriptors[i]));
+			= (unsigned char) MIN(255, intval);
 	}
 }
 
