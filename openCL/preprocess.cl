@@ -89,10 +89,11 @@ u16_to_float(__global unsigned short  *array_int,
              const int IMAGE_H
 )
 {
-    int i = get_global_id(0) * IMAGE_W + get_global_id(1);
     //Global memory guard for padding
-    if(i < IMAGE_W*IMAGE_H)
-        array_float[i]=(float)array_int[i];
+    if ((get_global_id(0)<IMAGE_W) && (get_global_id(1) < IMAGE_H)){
+    	int i = get_global_id(0) + IMAGE_W * get_global_id(1);
+    	array_float[i]=(float)array_int[i];
+    }
 }//end kernel
 
 
@@ -111,10 +112,11 @@ s32_to_float(    __global int  *array_int,
                  const int IMAGE_H
 )
 {
-    int i = get_global_id(0) * IMAGE_W + get_global_id(1);
     //Global memory guard for padding
-    if(i < IMAGE_W*IMAGE_H)
+    if ((get_global_id(0)<IMAGE_W) && (get_global_id(1) < IMAGE_H)){
+    	int i = get_global_id(0) + IMAGE_W * get_global_id(1);
         array_float[i] = (float)(array_int[i]);
+    }//end test in image
 }//end kernel
 
 /**
@@ -132,10 +134,11 @@ s64_to_float(    __global long *array_int,
                  const int IMAGE_H
 )
 {
-    int i = get_global_id(0) * IMAGE_W + get_global_id(1);
     //Global memory guard for padding
-    if(i < IMAGE_W*IMAGE_H)
+    if ((get_global_id(0)<IMAGE_W) && (get_global_id(1) < IMAGE_H)){
+    	int i = get_global_id(0) + IMAGE_W * get_global_id(1);
         array_float[i] = (float)(array_int[i]);
+    }//end test in image
 }//end kernel
 
 /**
@@ -179,11 +182,11 @@ rgb_to_float(    __global unsigned char *array_int,
                  const int IMAGE_H
 )
 {
-    int i = get_global_id(0) * IMAGE_W + get_global_id(1);
     //Global memory guard for padding
-    if(i < IMAGE_W*IMAGE_H)
+    if ((get_global_id(0)<IMAGE_W) && (get_global_id(1) < IMAGE_H)){
+    	int i = get_global_id(0) + IMAGE_W * get_global_id(1);
         array_float[i] = 0.299f*array_int[3*i] + 0.587f*array_int[3*i+1] + 0.114f*array_int[3*i+2];
-;
+    }  //end test in image
 }//end kernel
 
 
@@ -239,11 +242,11 @@ shrink(const __global     float     *image_in,
 )
 {
     int gid0=get_global_id(0), gid1=get_global_id(1);
-    int j,i = gid0 * SMALL_W + gid1;
+    int j,i = gid0 + SMALL_W * gid1;
     //Global memory guard for padding
-    if(i < SMALL_W*SMALL_H)
+    if ((gid0 < SMALL_W) && (gid1 <SMALL_H))
     {
-        j = gid0*LARGE_W*scale_h + gid1*scale_w;
+        j = gid0 * scale_w + gid1 * scale_h * LARGE_W;
         image_out[i] = image_in[j];
     };//end if in IMAGE
 };//end kernel
@@ -260,11 +263,11 @@ shrink(const __global     float     *image_in,
  * @param binned_width:    Width of the output image
  * @param IMAGE_H:     Height of the output image
  *
- *Nota: this is a 2D kernel.
+ *Nota: this is a 2D kernel. This is non working and non TESTED !!!
 **/
 __kernel void
 bin(        const    __global     float     *image_in,
-                    __global     float     *image_out,
+                     __global     float     *image_out,
             const                 int     scale_width,
             const                 int     scale_heigth,
             const                 int     orig_width,
@@ -278,7 +281,7 @@ bin(        const    __global     float     *image_in,
     int w, h, size_w, size_h, big_h, big_w;
     float data=0.0f;
     //Global memory guard for padding
-    if(i < binned_width*binned_heigth){
+    if((gid0 < binned_width) && (gid1 < binned_heigth) ){
         size_h = 0;
         for (h=0; h<scale_heigth; h++){
             big_h = gid0 * scale_heigth + h;

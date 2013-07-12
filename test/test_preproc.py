@@ -85,16 +85,22 @@ def binning(input_img, binsize):
     @param input_img: input ndarray
     @param binsize: int or 2-tuple representing the size of the binning
     @return: binned input ndarray
+    
+    TODO: Not used here
     """
     inputSize = input_img.shape
     outputSize = []
     assert(len(inputSize) == 2)
     if isinstance(binsize, int):
         binsize = (binsize, binsize)
-    for i, j in zip(inputSize, binsize):
-        assert(i % j == 0)
-        outputSize.append(i // j)
-
+    outputSize = [i // j for i, j in zip(inputSize, binsize)]
+    bigsize =  [int(math.ceil(float(i)/j))*j  for i, j in zip(inputSize, binsize)]
+    big_array = numpy.empty(bigsize,input_img.dtype)
+    big_array[:inputSize[0],:inputSize[1]]=input_img
+#    big_array[-1:-(bigsize[0]-inputSize[0]):-1,-(bigsize[1]-inputSize[1])]=input_img[]
+#    delta =  [i-j for i,j in zip(bigsize,inputSize)]
+#    for i, j in enumarate([i - j for i, j in zip(bigsize, inputSize)]):
+#        big_array[:]
     if numpy.array(binsize).prod() < 50:
         out = numpy.zeros(tuple(outputSize))
         for i in xrange(binsize[0]):
@@ -161,6 +167,7 @@ class test_preproc(unittest.TestCase):
                                      self.buffers_max.data,
                                      self.twofivefive.data,
                                      self.IMAGE_W, self.IMAGE_H)
+        k4.wait()
         res = self.gpudata.get()
         t1 = time.time()
         ref = normalize(lint)
@@ -172,6 +179,7 @@ class test_preproc(unittest.TestCase):
             logger.info("Reduction stage1 took        %.3fms" % (1e-6 * (k2.profile.end - k2.profile.start)))
             logger.info("Reduction stage2 took        %.3fms" % (1e-6 * (k3.profile.end - k3.profile.start)))
             logger.info("Normalization                %.3fms" % (1e-6 * (k4.profile.end - k4.profile.start)))
+            logger.info("--------------------------------------")
 
         self.assert_(delta < 1e-4, "delta=%s" % delta)
 
@@ -183,20 +191,34 @@ class test_preproc(unittest.TestCase):
         t0 = time.time()
         au8 = pyopencl.array.to_device(queue, lint)
         k1 = self.program.u16_to_float(queue, self.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
-        min_data = pyopencl.array.min(self.gpudata, queue)
-        max_data = pyopencl.array.max(self.gpudata, queue)
-        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, min_data.data, max_data.data, self.twofivefive.data, self.IMAGE_W, self.IMAGE_H)
-        k2.wait()
+        k2 = self.reduction.max_min_global_stage1(queue, (self.red_size * self.red_size,), (self.red_size,),
+                                                               self.gpudata.data,
+                                                               self.buffers_max_min.data,
+                                                               (self.IMAGE_W * self.IMAGE_H))
+        k3 = self.reduction.max_min_global_stage2(queue, (self.red_size,), (self.red_size,),
+                                                               self.buffers_max_min.data,
+                                                               self.buffers_max.data,
+                                                               self.buffers_min.data)
+        k4 = self.program.normalizes(queue, self.shape, self.wg,
+                                     self.gpudata.data,
+                                     self.buffers_min.data,
+                                     self.buffers_max.data,
+                                     self.twofivefive.data,
+                                     self.IMAGE_W, self.IMAGE_H)
+        k4.wait()
         res = self.gpudata.get()
         t1 = time.time()
         ref = normalize(lint)
         t2 = time.time()
         delta = abs(ref - res).max()
-        self.assert_(delta < 1e-4, "delta=%s" % delta)
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
-            logger.info("conversion uint16->float took %.3fms and normalization took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start),
-                                                                                                1e-6 * (k2.profile.end - k2.profile.start)))
+            logger.info("Conversion uint16->float took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+            logger.info("Reduction stage1 took         %.3fms" % (1e-6 * (k2.profile.end - k2.profile.start)))
+            logger.info("Reduction stage2 took         %.3fms" % (1e-6 * (k3.profile.end - k3.profile.start)))
+            logger.info("Normalization                 %.3fms" % (1e-6 * (k4.profile.end - k4.profile.start)))
+            logger.info("--------------------------------------")
+        self.assert_(delta < 1e-4, "delta=%s" % delta)
 
     def test_int32(self):
         """
@@ -206,19 +228,34 @@ class test_preproc(unittest.TestCase):
         t0 = time.time()
         au8 = pyopencl.array.to_device(queue, lint)
         k1 = self.program.s32_to_float(queue, self.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
-        min_data = pyopencl.array.min(self.gpudata, queue)
-        max_data = pyopencl.array.max(self.gpudata, queue)
-        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, min_data.data, max_data.data, self.twofivefive.data, self.IMAGE_W, self.IMAGE_H)
+        k2 = self.reduction.max_min_global_stage1(queue, (self.red_size * self.red_size,), (self.red_size,),
+                                                               self.gpudata.data,
+                                                               self.buffers_max_min.data,
+                                                               (self.IMAGE_W * self.IMAGE_H))
+        k3 = self.reduction.max_min_global_stage2(queue, (self.red_size,), (self.red_size,),
+                                                               self.buffers_max_min.data,
+                                                               self.buffers_max.data,
+                                                               self.buffers_min.data)
+        k4 = self.program.normalizes(queue, self.shape, self.wg,
+                                     self.gpudata.data,
+                                     self.buffers_min.data,
+                                     self.buffers_max.data,
+                                     self.twofivefive.data,
+                                     self.IMAGE_W, self.IMAGE_H)
+        k4.wait()
         res = self.gpudata.get()
         t1 = time.time()
         ref = normalize(lint)
         t2 = time.time()
         delta = abs(ref - res).max()
-        self.assert_(delta < 1e-4, "delta=%s" % delta)
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
-            logger.info("conversion int32->float took %.3fms and normalization took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start),
-                                                                                             1e-6 * (k2.profile.end - k2.profile.start)))
+            logger.info("Conversion int32->float took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+            logger.info("Reduction stage1 took        %.3fms" % (1e-6 * (k2.profile.end - k2.profile.start)))
+            logger.info("Reduction stage2 took        %.3fms" % (1e-6 * (k3.profile.end - k3.profile.start)))
+            logger.info("Normalization                %.3fms" % (1e-6 * (k4.profile.end - k4.profile.start)))
+            logger.info("--------------------------------------")
+        self.assert_(delta < 1e-4, "delta=%s" % delta)
 
     def test_int64(self):
         """
@@ -228,31 +265,88 @@ class test_preproc(unittest.TestCase):
         t0 = time.time()
         au8 = pyopencl.array.to_device(queue, lint)
         k1 = self.program.s64_to_float(queue, self.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
-        min_data = pyopencl.array.min(self.gpudata, queue)
-        max_data = pyopencl.array.max(self.gpudata, queue)
-        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, min_data.data, max_data.data, self.twofivefive.data, self.IMAGE_W, self.IMAGE_H)
+        k2 = self.reduction.max_min_global_stage1(queue, (self.red_size * self.red_size,), (self.red_size,),
+                                                               self.gpudata.data,
+                                                               self.buffers_max_min.data,
+                                                               (self.IMAGE_W * self.IMAGE_H))
+        k3 = self.reduction.max_min_global_stage2(queue, (self.red_size,), (self.red_size,),
+                                                               self.buffers_max_min.data,
+                                                               self.buffers_max.data,
+                                                               self.buffers_min.data)
+        k4 = self.program.normalizes(queue, self.shape, self.wg,
+                                     self.gpudata.data,
+                                     self.buffers_min.data,
+                                     self.buffers_max.data,
+                                     self.twofivefive.data,
+                                     self.IMAGE_W, self.IMAGE_H)
         res = self.gpudata.get()
         t1 = time.time()
         ref = normalize(lint)
         t2 = time.time()
         delta = abs(ref - res).max()
-        self.assert_(delta < 1e-4, "delta=%s" % delta)
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
-            logger.info("conversion int64->float took %.3fms and normalization took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start),
-                                                                                             1e-6 * (k2.profile.end - k2.profile.start)))
+            logger.info("Conversion int64->float took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+            logger.info("Reduction stage1 took        %.3fms" % (1e-6 * (k2.profile.end - k2.profile.start)))
+            logger.info("Reduction stage2 took        %.3fms" % (1e-6 * (k3.profile.end - k3.profile.start)))
+            logger.info("Normalization                %.3fms" % (1e-6 * (k4.profile.end - k4.profile.start)))
+            logger.info("--------------------------------------")
+        self.assert_(delta < 1e-4, "delta=%s" % delta)
+
+    def test_rgb(self):
+        """
+        tests the int64 kernel
+        """
+        lint = numpy.empty((self.input.shape[0], self.input.shape[1], 3), dtype=numpy.uint8)
+        lint[:, :, 0] = self.input.astype(numpy.uint8)
+        lint[:, :, 1] = self.input.astype(numpy.uint8)
+        lint[:, :, 2] = self.input.astype(numpy.uint8)
+        t0 = time.time()
+        au8 = pyopencl.array.to_device(queue, lint)
+        k1 = self.program.rgb_to_float(queue, self.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
+        k2 = self.reduction.max_min_global_stage1(queue, (self.red_size * self.red_size,), (self.red_size,),
+                                                               self.gpudata.data,
+                                                               self.buffers_max_min.data,
+                                                               (self.IMAGE_W * self.IMAGE_H))
+        k3 = self.reduction.max_min_global_stage2(queue, (self.red_size,), (self.red_size,),
+                                                               self.buffers_max_min.data,
+                                                               self.buffers_max.data,
+                                                               self.buffers_min.data)
+        k4 = self.program.normalizes(queue, self.shape, self.wg,
+                                     self.gpudata.data,
+                                     self.buffers_min.data,
+                                     self.buffers_max.data,
+                                     self.twofivefive.data,
+                                     self.IMAGE_W, self.IMAGE_H)
+        res = self.gpudata.get()
+        t1 = time.time()
+        ref = normalize(lint.max(axis= -1))
+        t2 = time.time()
+        delta = abs(ref - res).max()
+        if PROFILE:
+            logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
+            logger.info("Conversion  RGB ->float took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+            logger.info("Reduction stage1 took        %.3fms" % (1e-6 * (k2.profile.end - k2.profile.start)))
+            logger.info("Reduction stage2 took        %.3fms" % (1e-6 * (k3.profile.end - k3.profile.start)))
+            logger.info("Normalization                %.3fms" % (1e-6 * (k4.profile.end - k4.profile.start)))
+            logger.info("--------------------------------------")
+        self.assert_(delta < 1e-4, "delta=%s" % delta)
+
 
     def test_shrink(self):
         """
         Test shrinking kernel
         """
         lint = self.input.astype(numpy.float32)
-        out_shape = tuple((i // j) for i, j in zip(self.input.shape, self.binning))
+        out_shape = tuple((i // j) for i, j in zip((self.IMAGE_W, self.IMAGE_H), self.binning))
         t0 = time.time()
         inp_gpu = pyopencl.array.to_device(queue, lint)
         out_gpu = pyopencl.array.empty(queue, out_shape, dtype=numpy.float32, order="C")
-        k1 = self.program.shrink(queue, calc_size(out_shape, self.wg), self.wg, inp_gpu.data, out_gpu.data,
-                                 numpy.int32(self.binning[1]), numpy.int32(self.binning[0]), numpy.int32(out_shape[1]), numpy.int32(out_shape[0]))
+        k1 = self.program.shrink(queue, calc_size(out_shape, self.wg), self.wg,
+                                 inp_gpu.data, out_gpu.data,
+                                 numpy.int32(self.binning[1]), numpy.int32(self.binning[0]),
+                                 self.IMAGE_W, self.IMAGE_H,
+                                 numpy.int32(out_shape[0]), numpy.int32(out_shape[1]))
         res = out_gpu.get()
         t1 = time.time()
         ref = shrink_cython(lint, xs=self.binning[1], ys=self.binning[0])
@@ -325,10 +419,11 @@ class test_preproc(unittest.TestCase):
 def test_suite_preproc():
     testSuite = unittest.TestSuite()
     testSuite.addTest(test_preproc("test_uint8"))
-#    testSuite.addTest(test_preproc("test_uint16"))
-#    testSuite.addTest(test_preproc("test_int32"))
-#    testSuite.addTest(test_preproc("test_int64"))
-#    testSuite.addTest(test_preproc("test_shrink"))
+    testSuite.addTest(test_preproc("test_uint16"))
+    testSuite.addTest(test_preproc("test_int32"))
+    testSuite.addTest(test_preproc("test_int64"))
+    testSuite.addTest(test_preproc("test_rgb"))
+    testSuite.addTest(test_preproc("test_shrink"))
 #    testSuite.addTest(test_preproc("test_bin"))
     return testSuite
 
