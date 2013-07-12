@@ -423,6 +423,19 @@ def descriptors_compare(ref,res):
             
     return match,nulldesc
         
+def check_for_doubles(res):
+    #check for descriptors that appear more than one time in the list
+    doubles = 0
+    cnt = numpy.zeros(res.shape[0])
+    for idx,desc in enumerate(res):
+        for idx2,desc2 in enumerate(res):
+            if abs(desc-desc2).sum() == 0 and idx != idx2 and (cnt[idx] == 0 or cnt[idx2] == 0):
+                cnt[idx] = 1
+                cnt[idx2] = 1
+                doubles+=1
+    return doubles
+
+
 
 def my_compact(keypoints,nbkeypoints):
     '''

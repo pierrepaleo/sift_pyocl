@@ -14,13 +14,15 @@ lena2 = scipy.misc.lena()
 lena = numpy.ascontiguousarray(lena2[0:512,0:512])
 # lena[:] = 0
 # lena[100:110, 100:110] = 255
-s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128)
+s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128,devicetype="GPU")
 kpg = s.keypoints(lena)
 kp = numpy.empty((kpg.size, 4), dtype=numpy.float32)
 kp[:, 0] = kpg.x
 kp[:, 1] = kpg.y
 kp[:, 2] = kpg.scale
 kp[:, 3] = kpg.angle
+
+
 
 s.log_profile()
 fig = pylab.figure()
@@ -52,6 +54,18 @@ ref[:, 1] = res.y
 ref[:, 2] = res.scale
 ref[:, 3] = res.angle
 
+#numpy.savetxt("opencl_keypoints.txt",kp[numpy.argsort(kpg.y)],fmt='%.4f')
+#numpy.savetxt("cpp_keypoints.txt",ref[numpy.argsort(res.y)],fmt='%.4f')
+#numpy.savetxt("opencl_cpu_cpukernels.txt",(kpg[numpy.argsort(kpg.y)]).desc,fmt='%d')
+#numpy.savetxt("cpp_descriptors_sort.txt",(res[numpy.argsort(res.y)]).desc,fmt='%d')
+
+numpy.savetxt("opencl_cpu_cpukernels_not_sort.txt",(kpg).desc,fmt='%d')
+
+#numpy.savetxt("cpp_descriptors_kp.txt",(ref[numpy.argsort(ref[:,1])]),fmt='%.3f')
+#numpy.savetxt("opencl_cpukernels_kp.txt",(kp[numpy.argsort(kp[:,1])]),fmt='%.3f')
+
+
+
 sp2.set_title("C++: %s keypoint" % ref.shape[0])
 for i in range(ref.shape[0]):
 #    print res[i, 4:].max()
@@ -72,16 +86,17 @@ for i in range(kp.shape[0]):
     sp1.annotate("", xy=(x, y), xytext=(x + scale * cos(angle), y + scale * sin(angle)), color="blue",
                      arrowprops=dict(facecolor='blue', edgecolor='blue', width=1),)
 #print numpy.degrees((ref[numpy.argsort(res.scale)][:392] - kp[numpy.argsort(kpg.scale)][:392])[:,3])
+
 lres = list(res)
 lres.sort(cmp)
 lkpg = list(kpg)
 lkpg.sort(cmp)
-print numpy.array([i.angle for i in lkpg[:250]])-numpy.array([i.angle for i in lres[:250]])
+#print numpy.array([i.angle for i in lkpg[:250]])-numpy.array([i.angle for i in lres[:250]])
 
-res2 = numpy.recarray(shape=res.shape[0]*2,dtype=res.dtype)
-res2[:res.shape[0]] = res
-res2[res.shape[0]:] = res
-match = feature.sift_match(res2, res2)
+#res2 = numpy.recarray(shape=res.shape[0]*2,dtype=res.dtype)
+#res2[:res.shape[0]] = res
+#res2[res.shape[0]:] = res
+match = feature.sift_match(res, kpg)
 print "Angle1 - Angle0"
 print abs(match.angle1-match.angle0).max()
 #print match

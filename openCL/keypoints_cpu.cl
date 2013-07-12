@@ -299,26 +299,13 @@ __kernel void descriptor(
 		}
 		norm += tmp_descriptors[i]*tmp_descriptors[i];
 	}
-/*
+
 	//if values have been changed, we have to normalize again...
 	if (changed == true) {
 		norm = rsqrt(norm);
 		for (i=0; i < 128; i++)
 			tmp_descriptors[i] *= norm;
 	}
-*/
-
-	if (changed == true) {
-		float norm = 0;
-		for (int i = 0; i < 128; i++) {
-			norm+=tmp_descriptors[i]*tmp_descriptors[i];
-		}
-		norm = rsqrt(norm);
-		for (int i=0; i < 128; i++) {
-			tmp_descriptors[i] *= norm;
-		}
-	}
-
 
 	//finally, cast to integer
 	int intval;

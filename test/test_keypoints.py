@@ -188,8 +188,7 @@ class test_keypoints(unittest.TestCase):
         keypoints_o, compact_cnt = my_compact(numpy.copy(keypoints_o),nb_keypoints)
         actual_nb_keypoints = compact_cnt
         keypoints_start, keypoints_end = 0, actual_nb_keypoints
-        #keypoints_start, keypoints_end = 20, 30
-        keypoints = keypoints_o[keypoints_start:keypoints_end]
+        keypoints = keypoints_o[keypoints_start:keypoints_end+52] #to check if we actually stop at keypoints_end
         print("Working on keypoints : [%s,%s] (octave = %s)" % (keypoints_start, keypoints_end-1,int(numpy.log2(octsize)+1)))
         
         if (USE_CPU):
@@ -232,28 +231,23 @@ class test_keypoints(unittest.TestCase):
         
         PRINT_KEYPOINTS=True
         if (PRINT_KEYPOINTS):
-            res_sort = (res[numpy.argsort(keypoints[:,1])])
-            print res_sort[0]#keypoints_end-keypoints_start,0:15]
-            print res_sort[3]
-            print res_sort[9]
-#            print res[:,:]
+            res_sort = (res[numpy.argsort(keypoints[keypoints_start:keypoints_end,1])])
+#            print res_sort[0]#keypoints_end-keypoints_start,0:15]
+#            print res_sort[3]
+#            print res_sort[9]
             print ""
 #            print ref[50:80,0:15]#[0:keypoints_end-keypoints_start,0:15]
-            print ref
-#            print res_sort[13+30:13+30+30,0:15] - ref[0+30:30+30,0:15]
             print "Comparing descriptors (OpenCL and cpp) :"
-            match, nulldesc = descriptors_compare(ref,res)
+            match, nulldesc = descriptors_compare(ref[keypoints_start:keypoints_end],res)
             print ("%s/%s match found" %(match,(keypoints_end-keypoints_start)-nulldesc))
-            
+#            print ("Found %s double-descriptors !" %(check_for_doubles(res)))
 #            print ref[1,:]
 #            print res[1,:].sum(), ref[1,:].sum()
 
-#            numpy.savetxt("desc_sort_ocl_gpu.txt",res_sort,fmt='%d')
-
-
-
-
-
+             #append to existing text file
+#            f_handle = file('desc_by_test_keypoints.txt', 'a')
+#            numpy.savetxt(f_handle,res_sort,fmt='%d')
+#            f_handle.close()
 
 
         #sort to compare added keypoints
@@ -273,8 +267,8 @@ class test_keypoints(unittest.TestCase):
 
 def test_suite_keypoints():
     testSuite = unittest.TestSuite()
-#    testSuite.addTest(test_keypoints("test_orientation"))
-    testSuite.addTest(test_keypoints("test_descriptor"))
+    testSuite.addTest(test_keypoints("test_orientation"))
+#    testSuite.addTest(test_keypoints("test_descriptor"))
     return testSuite
 
 if __name__ == '__main__':
