@@ -48,6 +48,7 @@ import urllib2
 # import gzip
 # import numpy
 import shutil
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("utilstest")
 
 def copy(infile, outfile):

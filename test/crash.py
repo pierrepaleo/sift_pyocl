@@ -11,14 +11,14 @@ import scipy.misc
 import pylab
 lena2 = scipy.misc.lena()
 #lena2 = scipy.misc.imread("../aerial.tiff") #for other tests
-lena2 = scipy.misc.imread("/users/kieffer/Pictures/2010-01-21/17h51m32-Canon_PowerShot_G11.jpg", flatten=True)
-lena = numpy.ascontiguousarray(lena2[0:1001, 0:1599])
+lena2 = scipy.misc.imread("/users/kieffer/Pictures/2010-01-21/17h51m32-Canon_PowerShot_G11.jpg")#, flatten=True)
+lena = numpy.ascontiguousarray(lena2[0:1001, 0:1599, :])
 #lena = lena2
 print lena.shape
 
 # lena[:] = 0
 # lena[100:110, 100:110] = 255
-s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128, device=(0, 0))
+s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128, device=(2, 0))
 kpg = s.keypoints(lena)
 kp = numpy.empty((kpg.size, 4), dtype=numpy.float32)
 kp[:, 0] = kpg.x
@@ -40,6 +40,9 @@ im = sp2.imshow(lena, cmap="gray")
 
 import feature
 sc = feature.SiftAlignment()
+lena2 = scipy.misc.imread("/users/kieffer/Pictures/2010-01-21/17h51m32-Canon_PowerShot_G11.jpg", flatten=True)
+lena = numpy.ascontiguousarray(lena2[0:1001, 0:1599])
+
 res = sc.sift(lena)
 ref = numpy.empty((res.size, 4), dtype=numpy.float32)
 ref[:, 0] = res.x

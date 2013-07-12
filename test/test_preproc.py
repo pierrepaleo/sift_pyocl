@@ -60,7 +60,6 @@ else:
     PROFILE = False
     queue = pyopencl.CommandQueue(ctx)
 
-
 def normalize(img, max_out=255):
     """
     Numpy implementation of the normalization
@@ -109,22 +108,34 @@ def binning(input_img, binsize):
 
 class test_preproc(unittest.TestCase):
     def setUp(self):
-        self.input = scipy.misc.lena()
+        self.input = numpy.ascontiguousarray(scipy.misc.lena()[:510, :511])
         self.gpudata = pyopencl.array.empty(queue, self.input.shape, dtype=numpy.float32, order="C")
         kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), "preprocess.cl")
+        reduct_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), "reductions.cl")
         kernel_src = open(kernel_path).read()
+        reduct_src = open(reduct_path).read()
         self.program = pyopencl.Program(ctx, kernel_src).build()
+        self.reduction = pyopencl.Program(ctx, reduct_src).build()
         self.IMAGE_W = numpy.int32(self.input.shape[-1])
         self.IMAGE_H = numpy.int32(self.input.shape[0])
-        self.wg = (2, 256)
-        self.shape = calc_size(self.input.shape, self.wg)
+        self.wg = (32, 16)#(256, 2) #(32, 16) # (2, 256)
+        self.shape = calc_size((self.IMAGE_W, self.IMAGE_H), self.wg)
+#        print self.shape
         self.binning = (4, 2) # Nota if wg < ouptup size weired results are expected !
         self.binning = (2, 2)
+        self.red_size = 128 #reduction size
         self.twofivefive = pyopencl.array.to_device(queue, numpy.array([255], numpy.float32))
+        self.buffers_max_min = pyopencl.array.empty(queue, (self.red_size, 2), dtype=numpy.float32)  # temporary buffer for max/min reduction
+        self.buffers_min = pyopencl.array.empty(queue, (1), dtype=numpy.float32)
+        self.buffers_max = pyopencl.array.empty(queue, (1), dtype=numpy.float32)
 
     def tearDown(self):
         self.input = None
         self.program = None
+        self.twofivefive = None
+        self.buffers_max_min = None
+        self.buffers_max = None
+        self.buffers_min = None
 
     def test_uint8(self):
         """
@@ -134,20 +145,35 @@ class test_preproc(unittest.TestCase):
         t0 = time.time()
         au8 = pyopencl.array.to_device(queue, lint)
         k1 = self.program.u8_to_float(queue, self.shape, self.wg, au8.data, self.gpudata.data, self.IMAGE_W, self.IMAGE_H)
-        min_data = pyopencl.array.min(self.gpudata, queue)
-        max_data = pyopencl.array.max(self.gpudata, queue)
-        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, min_data.data, max_data.data, self.twofivefive.data, self.IMAGE_W, self.IMAGE_H)
-#        k2 = self.program.normalizes(queue, self.shape, self.wg, self.gpudata.data, min_data, max_data, self.twofivefive.data)
+#        print abs(au8.get() - self.gpudata.get()).max()
+        k2 = self.reduction.max_min_global_stage1(queue, (self.red_size * self.red_size,), (self.red_size,),
+                                                               self.gpudata.data,
+                                                               self.buffers_max_min.data,
+                                                               (self.IMAGE_W * self.IMAGE_H))
+        k3 = self.reduction.max_min_global_stage2(queue, (self.red_size,), (self.red_size,),
+                                                               self.buffers_max_min.data,
+                                                               self.buffers_max.data,
+                                                               self.buffers_min.data)
+#        print self.buffers_max.get(), self.buffers_min.get(), self.input.min(), self.input.max()
+        k4 = self.program.normalizes(queue, self.shape, self.wg,
+                                     self.gpudata.data,
+                                     self.buffers_min.data,
+                                     self.buffers_max.data,
+                                     self.twofivefive.data,
+                                     self.IMAGE_W, self.IMAGE_H)
         res = self.gpudata.get()
         t1 = time.time()
         ref = normalize(lint)
         t2 = time.time()
         delta = abs(ref - res).max()
-        self.assert_(delta < 1e-4, "delta=%s" % delta)
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
-            logger.info("conversion uint8->float took %.3fms and normalization took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start),
-                                                                                          1e-6 * (k2.profile.end - k2.profile.start)))
+            logger.info("Conversion uint8->float took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+            logger.info("Reduction stage1 took        %.3fms" % (1e-6 * (k2.profile.end - k2.profile.start)))
+            logger.info("Reduction stage2 took        %.3fms" % (1e-6 * (k3.profile.end - k3.profile.start)))
+            logger.info("Normalization                %.3fms" % (1e-6 * (k4.profile.end - k4.profile.start)))
+
+        self.assert_(delta < 1e-4, "delta=%s" % delta)
 
     def test_uint16(self):
         """
@@ -299,11 +325,11 @@ class test_preproc(unittest.TestCase):
 def test_suite_preproc():
     testSuite = unittest.TestSuite()
     testSuite.addTest(test_preproc("test_uint8"))
-    testSuite.addTest(test_preproc("test_uint16"))
-    testSuite.addTest(test_preproc("test_int32"))
-    testSuite.addTest(test_preproc("test_int64"))
-    testSuite.addTest(test_preproc("test_shrink"))
-    testSuite.addTest(test_preproc("test_bin"))
+#    testSuite.addTest(test_preproc("test_uint16"))
+#    testSuite.addTest(test_preproc("test_int32"))
+#    testSuite.addTest(test_preproc("test_int64"))
+#    testSuite.addTest(test_preproc("test_shrink"))
+#    testSuite.addTest(test_preproc("test_bin"))
     return testSuite
 
 if __name__ == '__main__':

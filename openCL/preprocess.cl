@@ -56,9 +56,9 @@
  * \brief Cast values of an array of uint8 into a float output array.
  *
  * @param array_int:     Pointer to global memory with the input data as unsigned8 array
- * @param array_float:  Pointer to global memory with the output data as float array
- * @param IMAGE_W:        Width of the image
- * @param IMAGE_H:         Height of the image
+ * @param array_float:   Pointer to global memory with the output data as float array
+ * @param IMAGE_W:       Width of the image
+ * @param IMAGE_H:       Height of the image
  */
 __kernel void
 u8_to_float( __global unsigned char  *array_int,
@@ -67,10 +67,11 @@ u8_to_float( __global unsigned char  *array_int,
              const int IMAGE_H
 )
 {
-    int i = get_global_id(0) * IMAGE_W + get_global_id(1);
     //Global memory guard for padding
-    if(i < IMAGE_W*IMAGE_H)
-        array_float[i]=(float)array_int[i];
+    if ((get_global_id(0)<IMAGE_W) && (get_global_id(1) < IMAGE_H)){
+        int i = get_global_id(0) + IMAGE_W * get_global_id(1);
+    	array_float[i]=(float)array_int[i];
+    } //end test in image
 }//end kernel
 
 /**
@@ -199,21 +200,18 @@ rgb_to_float(    __global unsigned char *array_int,
  *
 **/
 __kernel void
-normalizes(    __global         float     *image,
-            __constant         float * min_in __attribute__((max_constant_size(MAX_CONST_SIZE))),
-            __constant         float * max_in __attribute__((max_constant_size(MAX_CONST_SIZE))),
-            __constant         float * max_out __attribute__((max_constant_size(MAX_CONST_SIZE))),
+normalizes(    __global       float     *image,
+            __constant        float * min_in __attribute__((max_constant_size(MAX_CONST_SIZE))),
+            __constant        float * max_in __attribute__((max_constant_size(MAX_CONST_SIZE))),
+            __constant        float * max_out __attribute__((max_constant_size(MAX_CONST_SIZE))),
             const             int IMAGE_W,
             const             int IMAGE_H
 )
 {
-    float data;
-    int i = get_global_id(0) * IMAGE_W + get_global_id(1);
     //Global memory guard for padding
-    if(i < IMAGE_W*IMAGE_H)
-    {
-        data = image[i];
-        image[i] = max_out[0]*(data-min_in[0])/(max_in[0]-min_in[0]);
+    if((get_global_id(0) < IMAGE_W) && (get_global_id(1)<IMAGE_H)){
+    	int i = get_global_id(0) + IMAGE_W * get_global_id(1);
+        image[i] = max_out[0]*(image[i]-min_in[0])/(max_in[0]-min_in[0]);
     };//end if in IMAGE
 };//end kernel
 
