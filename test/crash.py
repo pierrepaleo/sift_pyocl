@@ -10,8 +10,8 @@ import numpy
 import scipy.misc
 import pylab
 lena2 = scipy.misc.lena()
-#lena2 = scipy.misc.imread("../aerial.tiff") #for other tests
-lena = numpy.ascontiguousarray(lena2[0:512,0:512])
+#lena = scipy.misc.imread("../stream.tiff") #for other tests
+lena = numpy.ascontiguousarray(lena2[0:512,0:512]) #TODO: correct shrink
 # lena[:] = 0
 # lena[100:110, 100:110] = 255
 s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128,devicetype="GPU")
@@ -59,7 +59,7 @@ ref[:, 3] = res.angle
 #numpy.savetxt("opencl_cpu_cpukernels.txt",(kpg[numpy.argsort(kpg.y)]).desc,fmt='%d')
 #numpy.savetxt("cpp_descriptors_sort.txt",(res[numpy.argsort(res.y)]).desc,fmt='%d')
 
-numpy.savetxt("opencl_cpu_cpukernels_not_sort.txt",(kpg).desc,fmt='%d')
+#numpy.savetxt("opencl_cpu_cpukernels_not_sort.txt",(kpg).desc,fmt='%d')
 
 #numpy.savetxt("cpp_descriptors_kp.txt",(ref[numpy.argsort(ref[:,1])]),fmt='%.3f')
 #numpy.savetxt("opencl_cpukernels_kp.txt",(kp[numpy.argsort(kp[:,1])]),fmt='%.3f')

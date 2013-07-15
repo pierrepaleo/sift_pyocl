@@ -381,6 +381,46 @@ def normalize(vec):
 
 
 
+def my_matching(keypoints1, keypoints2, start, end, ratio_th=0.5329):
+    '''
+    Python implementation of SIFT keypoints matching
+    '''
+    counter = 0
+    matchings = numpy.zeros((end-start,2),dtype=numpy.uint32)
+    for i, desc1 in enumerate(keypoints1):#FIXME: keypoints1.desc.... idem below
+        ratio, match = check_for_match(desc1, keypoints2)
+        if (ratio < ratio_th):
+            matchings[counter] = i, match
+            counter += 1
+            
+
+
+def check_for_match(desc1, keypoints2):
+    '''
+    check if the descriptor "desc1" has matches in the list "keypoints2"
+    '''
+    current_min = 0
+    dist1 = dist2 = 1000000000000.0
+    for j, desc2 in enumerate(keypoints2):
+        dst = l1_distance(desc1,desc2)
+        if (dst < dist1):
+		    dist2 = dist1
+		    dist1 = dst
+		    current_min = j
+        elif (dst < dist2):
+		    dist2 = dst;
+
+    return dist1/dist2, current_min
+
+
+
+def l1_distance(desc1, desc2):
+    '''
+    L1 distance between two vectors
+    '''
+    return abs(desc1-desc2).sum()
+
+
 
 
 

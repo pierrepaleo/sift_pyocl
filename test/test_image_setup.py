@@ -26,8 +26,8 @@ def local_maxmin_setup():
     peakthresh = numpy.float32(255.0 * 0.04 / 3.0) #SIFT uses 255.0 * 0.04 / 3.0
     EdgeThresh = numpy.float32(0.06) #SIFT
     EdgeThresh0 = numpy.float32(0.08) #SIFT
-    octsize = numpy.int32(1) #initially 1, then twiced at each new octave
-    scale = numpy.int32(3) #1,2 or 3
+    octsize = numpy.int32(4) #initially 1, then twiced at each new octave
+    scale = numpy.int32(1) #1,2 or 3
     nb_keypoints = 1000 #constant size !
         
     l2 = scipy.misc.lena().astype(numpy.float32)#[100:250,100:250] #use a part of the image to fasten tests
@@ -137,5 +137,25 @@ def descriptor_setup():
     
     
     
-    
+
+
+def matching_setup():    
+    '''
+    Provides the values required by "test_matching"
+    Previous step: descriptors - we got a vector of 128-values descriptors
+    '''
+    keypoints, nb_keypoints, actual_nb_keypoints, grad, ori, octsize = descriptor_setup()
+    keypoints, actual_nb_keypoints = my_compact(numpy.copy(keypoints),nb_keypoints)
+    keypoints_start, keypoints_end = 0, actual_nb_keypoints
+    desc = my_descriptor(keypoints, grad, ori, octsize, keypoints_start, keypoints_end)
+    #keypoints with their descriptors
+    #FIXME: structure including keypoint (float32) and descriptors (uint8)
+    kp1 = desc
+    kp2 = desc
+    return kp1, kp2, nb_keypoints, actual_nb_keypoints
+
+
+
+
+
     

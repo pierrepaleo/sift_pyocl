@@ -62,8 +62,8 @@ else:
 
 SHOW_FIGURES = False
 PRINT_KEYPOINTS = False
-USE_CPU = True
-USE_CPP_SIFT = True #use reference cplusplus implementation for descriptors comparison
+USE_CPU = False
+USE_CPP_SIFT = False #use reference cplusplus implementation for descriptors comparison... not valid for (octsize,scale)!=(1,1)
 
 
 
@@ -131,7 +131,6 @@ class test_keypoints(unittest.TestCase):
         cnt = counter.get()
         t1 = time.time()
         
-        USE_CPP_SIFT = 1
         if (USE_CPP_SIFT):
             import feature
             sc = feature.SiftAlignment()
@@ -148,31 +147,29 @@ class test_keypoints(unittest.TestCase):
        
         t2 = time.time()
         
-        PRINT_KEYPOINTS = True
         if (PRINT_KEYPOINTS):
-            print("Keypoints after orientation assignment :")
-            print res[numpy.argsort(res[0:cnt,1])][0:cnt+10,3] #res[0:compact_cnt]
+#            print("Keypoints after orientation assignment :")
+#            print res[numpy.argsort(res[0:cnt,1])][0:cnt+10,3] #res[0:compact_cnt]
             print " "
 #            print kp_ref[0:cnt+10]
 #            print "Showing error (NOTE: significant error at position (i) should have its opposite at (i+1))"
 #            print res[numpy.argsort(res[0:compact_cnt,1])][0:compact_cnt,3] - ref[0:compact_cnt]
 
 #        print("Total keypoints for kernel : %s -- For Python : %s \t [octsize = %s]" % (cnt, updated_nb_keypoints, octsize))
-        print("Opencl found %s keypoints (%s added)" %(cnt,cnt-compact_cnt))
+#        print("Opencl found %s keypoints (%s added)" %(cnt,cnt-compact_cnt))
         
         #sort to compare added keypoints
-        '''
-        upbound = min(cnt,updated_nb_keypoints) #FIXME: our sift finds one additional keypoint for "lena".
+        upbound = min(cnt,updated_nb_keypoints)
         d1, d2, d3, d4 = keypoints_compare(ref[0:upbound], res[0:upbound]) 
         self.assert_(d1 < 1e-4, "delta_cols=%s" % (d1))
         self.assert_(d2 < 1e-4, "delta_rows=%s" % (d2))
         self.assert_(d3 < 1e-4, "delta_sigma=%s" % (d3))
-        self.assert_(d4 < 1e-4, "delta_angle=%s" % (d4))
+        self.assert_(d4 < 1e-1, "delta_angle=%s" % (d4)) #orientation has a poor precision
         logger.info("delta_cols=%s" % d1)
         logger.info("delta_rows=%s" % d2)
         logger.info("delta_sigma=%s" % d3)
         logger.info("delta_angle=%s" % d4)
-        '''
+        
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
             logger.info("Orientation assignment took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
@@ -196,9 +193,9 @@ class test_keypoints(unittest.TestCase):
             wg = 1,
             shape = keypoints.shape[0]*wg[0],
         else:
-            wg = 4,4,8
-            shape = keypoints.shape[0]*wg[0],wg[1],wg[2]
-            
+            wg = (4, 4, 8)
+            shape = int(keypoints.shape[0]*wg[0]), 4, 8
+                        
         gpu_keypoints = pyopencl.array.to_device(queue, keypoints_o)
         #NOTE: for the following line, use pyopencl.array.empty instead of pyopencl.array.zeros if the keypoints are compacted
         gpu_descriptors = pyopencl.array.zeros(queue, (keypoints_end - keypoints_start, 128), dtype=numpy.uint8, order="C")
@@ -237,10 +234,11 @@ class test_keypoints(unittest.TestCase):
 #            print res_sort[9]
             print ""
 #            print ref[50:80,0:15]#[0:keypoints_end-keypoints_start,0:15]
-            print "Comparing descriptors (OpenCL and cpp) :"
-            match, nulldesc = descriptors_compare(ref[keypoints_start:keypoints_end],res)
-            print ("%s/%s match found" %(match,(keypoints_end-keypoints_start)-nulldesc))
-#            print ("Found %s double-descriptors !" %(check_for_doubles(res)))
+            if (USE_CPP_SIFT):
+                print "Comparing descriptors (OpenCL and cpp) :"
+                match, nulldesc = descriptors_compare(ref[keypoints_start:keypoints_end],res)
+                print ("%s/%s match found" %(match,(keypoints_end-keypoints_start)-nulldesc))
+#                print ("Found %s double-descriptors !" %(check_for_doubles(res)))
 #            print ref[1,:]
 #            print res[1,:].sum(), ref[1,:].sum()
 
@@ -251,11 +249,11 @@ class test_keypoints(unittest.TestCase):
 
 
         #sort to compare added keypoints
-        '''
+        
         delta = (res-ref).max()
         self.assert_(delta == 0, "delta=%s" % (delta)) #integers
         logger.info("delta=%s" % delta)
-        '''
+        
 
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
@@ -268,7 +266,7 @@ class test_keypoints(unittest.TestCase):
 def test_suite_keypoints():
     testSuite = unittest.TestSuite()
     testSuite.addTest(test_keypoints("test_orientation"))
-#    testSuite.addTest(test_keypoints("test_descriptor"))
+    testSuite.addTest(test_keypoints("test_descriptor"))
     return testSuite
 
 if __name__ == '__main__':
