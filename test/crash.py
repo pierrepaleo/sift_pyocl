@@ -18,7 +18,7 @@ print lena.shape
 
 # lena[:] = 0
 # lena[100:110, 100:110] = 255
-s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128, device=(2, 0))
+s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128, device=(0, 0))
 kpg = s.keypoints(lena)
 kp = numpy.empty((kpg.size, 4), dtype=numpy.float32)
 kp[:, 0] = kpg.x

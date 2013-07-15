@@ -15,7 +15,7 @@ __authors__ = ["Jérôme Kieffer"]
 __contact__ = "jerome.kieffer@esrf.eu"
 __license__ = "BSD"
 __copyright__ = "European Synchrotron Radiation Facility, Grenoble, France"
-__date__ = "2013-06-26"
+__date__ = "2013-07-15"
 __status__ = "beta"
 __license__ = """
 Permission is hereby granted, free of charge, to any person
@@ -105,6 +105,7 @@ class SiftPlan(object):
         self.events = []
         self.scales = []  # in XY order
         self.procsize = []
+        self.procsize_XY = [] #same as  procsize but with dimension in (X,Y) not (slow, fast)
         self.wgsize = []
         self.kpsize = None
         self.buffers = {}
@@ -146,8 +147,8 @@ class SiftPlan(object):
         """
         Nota scales are in XY order
         """
-        self.scales = [tuple(numpy.int32(i) for i in self.shape[-1::-1])]
-        shape = self.shape
+        shape = self.shape[-1::-1]
+        self.scales = [tuple(numpy.int32(i) for i in shape)]
         min_size = 2 * par.BorderDist + 2
         while min(shape) > min_size * 2:
             shape = tuple(numpy.int32(i // 2) for i in shape)
@@ -326,9 +327,10 @@ class SiftPlan(object):
         min_size = 2 * par.BorderDist + 2
         self.max_workgroup_size = min(self.max_workgroup_size, max_work_item_sizes[1])
         while min(shape) > min_size:
-            wg = (1, min(2 ** int(math.log(shape[1]) / math.log(2)), self.max_workgroup_size))
+            wg = (min(2 ** int(math.log(shape[1], 2)), self.max_workgroup_size), 1)
             self.wgsize.append(wg)
             self.procsize.append(calc_size(shape, wg))
+            self.procsize_XY.append(calc_size(shape[-1::-1], wg))
             shape = tuple(i // 2 for i in shape)
 
 
@@ -352,17 +354,18 @@ class SiftPlan(object):
         elif (image.ndim == 3) and (self.dtype == numpy.uint8) and (self.RGB):
             evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
             if self.profile:self.events.append(("copy H->D", evt))
-            evt = self.programs["preprocess"].rgb_to_float(self.queue, self.procsize[0], self.wgsize[0],
-                                                         self.buffers["raw"].data, self.buffers[(0, 0) ].data, *self.scales[0])
-            if self.profile:self.events.append(("RGB->float", evt))
+            print self.procsize_XY[0], self.wgsize[0]
+            evt = self.programs["preprocess"].rgb_to_float(self.queue, self.procsize_XY[0], self.wgsize[0],
+                                                         self.buffers["raw"].data, self.buffers[(0, 0)].data, *self.scales[0])
+            if self.profile:self.events.append(("RGB -> float", evt))
 
         elif self.dtype in self.converter:
             program = self.programs["preprocess"].__getattr__(self.converter[self.dtype])
             evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
             if self.profile:self.events.append(("copy H->D", evt))
-            evt = program(self.queue, self.procsize[0], self.wgsize[0],
+            evt = program(self.queue, self.procsize_XY[0], self.wgsize[0],
                     self.buffers["raw"].data, self.buffers[(0, 0)].data, *self.scales[0])
-            if self.profile:self.events.append(("convert ->float", evt))
+            if self.profile:self.events.append(("convert -> float", evt))
         else:
             raise RuntimeError("invalid input format error")
 
@@ -377,7 +380,7 @@ class SiftPlan(object):
         if self.profile:
             self.events.append(("max_min_stage1", k1))
             self.events.append(("max_min_stage2", k2))
-        evt = self.programs["preprocess"].normalizes(self.queue, self.procsize[0], self.wgsize[0],
+        evt = self.programs["preprocess"].normalizes(self.queue, self.procsize_XY[0], self.wgsize[0],
                                                self.buffers[(0, 0)].data,
                                                self.buffers["min"].data,
                                                self.buffers["max"].data,
