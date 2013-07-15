@@ -49,6 +49,7 @@ import unittest
 from utilstest import UtilsTest, getLogger, ctx
 import sift
 from sift.utils import calc_size
+import math
 
 logger = getLogger(__file__)
 
@@ -93,21 +94,25 @@ def binning(input_img, binsize):
     assert(len(inputSize) == 2)
     if isinstance(binsize, int):
         binsize = (binsize, binsize)
-    outputSize = [i // j for i, j in zip(inputSize, binsize)]
-    bigsize =  [int(math.ceil(float(i)/j))*j  for i, j in zip(inputSize, binsize)]
-    big_array = numpy.empty(bigsize,input_img.dtype)
+    outputSize = [int(math.ceil(float(i) / j)) for i, j in zip(inputSize, binsize)]
+    bigSize = [i * j  for i, j in zip(outputSize, binsize)]
+    delta = [j - i  for i, j in zip(inputSize, bigSize)]
+    big_array = numpy.empty(bigSize, input_img.dtype)
     big_array[:inputSize[0],:inputSize[1]]=input_img
-#    big_array[-1:-(bigsize[0]-inputSize[0]):-1,-(bigsize[1]-inputSize[1])]=input_img[]
-#    delta =  [i-j for i,j in zip(bigsize,inputSize)]
-#    for i, j in enumarate([i - j for i, j in zip(bigsize, inputSize)]):
-#        big_array[:]
+    #corner
+    big_array[inputSize[0]:, inputSize[1]:] = input_img[-1:-delta[0] - 1:-1, -1:-delta[1] - 1:-1]
+    # 2 sides
+    big_array[inputSize[0]:, :inputSize[1]] = input_img[-1:-delta[0] - 1:-1, :]
+    big_array[:inputSize[0], inputSize[1]:] = input_img[:, -1:-delta[1] - 1:-1]
+
     if numpy.array(binsize).prod() < 50:
         out = numpy.zeros(tuple(outputSize))
+#        print input_img.shape, out.shape, big_array.shape, binsize
         for i in xrange(binsize[0]):
             for j in xrange(binsize[1]):
-                out += input_img[i::binsize[0], j::binsize[1]]
+                out += big_array[i::binsize[0], j::binsize[1]]
     else:
-        temp = input_img.copy()
+        temp = big_array.copy()
         temp.shape = (outputSize[0], binsize[0], outputSize[1], binsize[1])
         out = temp.sum(axis=3).sum(axis=1)
     return out
@@ -128,7 +133,7 @@ class test_preproc(unittest.TestCase):
         self.shape = calc_size((self.IMAGE_W, self.IMAGE_H), self.wg)
 #        print self.shape
         self.binning = (4, 2) # Nota if wg < ouptup size weired results are expected !
-        self.binning = (2, 2)
+#        self.binning = (2, 2)
         self.red_size = 128 #reduction size
         self.twofivefive = pyopencl.array.to_device(queue, numpy.array([255], numpy.float32))
         self.buffers_max_min = pyopencl.array.empty(queue, (self.red_size, 2), dtype=numpy.float32)  # temporary buffer for max/min reduction
@@ -338,19 +343,20 @@ class test_preproc(unittest.TestCase):
         Test shrinking kernel
         """
         lint = self.input.astype(numpy.float32)
-        out_shape = tuple((i // j) for i, j in zip((self.IMAGE_W, self.IMAGE_H), self.binning))
+        out_shape = tuple(int(math.ceil(float(i) / j)) for i, j in zip((self.IMAGE_H, self.IMAGE_W), self.binning))
         t0 = time.time()
         inp_gpu = pyopencl.array.to_device(queue, lint)
         out_gpu = pyopencl.array.empty(queue, out_shape, dtype=numpy.float32, order="C")
-        k1 = self.program.shrink(queue, calc_size(out_shape, self.wg), self.wg,
+        k1 = self.program.shrink(queue, calc_size((out_shape[1], out_shape[0]), self.wg), self.wg,
                                  inp_gpu.data, out_gpu.data,
                                  numpy.int32(self.binning[1]), numpy.int32(self.binning[0]),
                                  self.IMAGE_W, self.IMAGE_H,
-                                 numpy.int32(out_shape[0]), numpy.int32(out_shape[1]))
+                                 numpy.int32(out_shape[1]), numpy.int32(out_shape[0]))
         res = out_gpu.get()
         t1 = time.time()
-        ref = shrink_cython(lint, xs=self.binning[1], ys=self.binning[0])
+        ref = shrink(lint, xs=self.binning[1], ys=self.binning[0])
         t2 = time.time()
+#        print ref.shape, res.shape
         delta = abs(ref - res).max()
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
@@ -380,11 +386,11 @@ class test_preproc(unittest.TestCase):
         """
         lint = numpy.ascontiguousarray(self.input, numpy.float32)
 
-        out_shape = tuple((i // j) for i, j in zip(self.input.shape, self.binning))
+        out_shape = tuple(int(math.ceil((float(i) / j))) for i, j in zip(self.input.shape, self.binning))
         t0 = time.time()
         inp_gpu = pyopencl.array.to_device(queue, lint)
         out_gpu = pyopencl.array.empty(queue, out_shape, dtype=numpy.float32, order="C")
-        k1 = self.program.bin(queue, calc_size(out_shape, self.wg), self.wg, inp_gpu.data, out_gpu.data,
+        k1 = self.program.bin(queue, calc_size((out_shape[1], out_shape[0]), self.wg), self.wg, inp_gpu.data, out_gpu.data,
                                  numpy.int32(self.binning[1]), numpy.int32(self.binning[0]),
                                  numpy.int32(lint.shape[1]), numpy.int32(lint.shape[0]),
                                  numpy.int32(out_shape[1]), numpy.int32(out_shape[0]))
@@ -392,6 +398,7 @@ class test_preproc(unittest.TestCase):
         t1 = time.time()
         ref = binning(lint, self.binning) / self.binning[0] / self.binning[1]
         t2 = time.time()
+#        print ref.shape, res.shape
         delta = abs(ref - res).max()
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
@@ -424,7 +431,7 @@ def test_suite_preproc():
     testSuite.addTest(test_preproc("test_int64"))
     testSuite.addTest(test_preproc("test_rgb"))
     testSuite.addTest(test_preproc("test_shrink"))
-#    testSuite.addTest(test_preproc("test_bin"))
+    testSuite.addTest(test_preproc("test_bin"))
     return testSuite
 
 if __name__ == '__main__':
