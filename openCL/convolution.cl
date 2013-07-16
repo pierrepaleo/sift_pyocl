@@ -23,9 +23,10 @@ __kernel void horizontal_convolution(
 	
 	int HALF_FILTER_SIZE = (FILTER_SIZE % 2 == 1 ? (FILTER_SIZE)/2 : (FILTER_SIZE+1)/2);
 	
-	if (gid0 < IMAGE_H && gid1 < IMAGE_W) {
+	if (gid1 < IMAGE_H && gid0 < IMAGE_W) {
 		
-		int pos = gid0* IMAGE_W + gid1;
+//		int pos = gid0* IMAGE_W + gid1;
+		int pos = gid1*IMAGE_W + gid0;
 		int fIndex = 0;
 		float sum = 0.0f;
 		int c = 0;
@@ -36,13 +37,13 @@ __kernel void horizontal_convolution(
 		for (c = -HALF_FILTER_SIZE ; c < FILTER_SIZE-HALF_FILTER_SIZE ; c++) {
 			
 			newpos = pos + c;
-			if (gid1 + c < 0) {
+			if (gid0 + c < 0) {
 				//debug=1;
-				newpos= pos - 2*gid1 - c - 1;
+				newpos= pos - 2*gid0 - c - 1;
 			}
 
-			else if (gid1 + c > IMAGE_W -1 ) {
-				newpos= (gid0+2)*IMAGE_W - gid1 -c -1;
+			else if (gid0 + c > IMAGE_W -1 ) {
+				newpos= (gid1+2)*IMAGE_W - gid0 -c -1;
 				//newpos= pos - c+1; //newpos - 2*c;
 				//debug = 1;	
 			}
@@ -78,11 +79,12 @@ __kernel void vertical_convolution(
 	int gid0 = (int) get_global_id(0);
 	
 	
-	if (gid0 < IMAGE_H && gid1 < IMAGE_W) {
+	if (gid1 < IMAGE_H && gid0 < IMAGE_W) {
 	
 		int HALF_FILTER_SIZE = (FILTER_SIZE % 2 == 1 ? (FILTER_SIZE)/2 : (FILTER_SIZE+1)/2);
 
-		int pos = gid0 * IMAGE_W + gid1;
+//		int pos = gid0 * IMAGE_W + gid1;
+		int pos = gid1 * IMAGE_W + gid0;
 		int fIndex = 0;
 		float sum = 0.0f;
 		int r = 0,newpos=0;
@@ -91,12 +93,12 @@ __kernel void vertical_convolution(
 		for (r = -HALF_FILTER_SIZE ; r < FILTER_SIZE-HALF_FILTER_SIZE ; r++) {
 			newpos = pos + r * (IMAGE_W);
 			
-			if (gid0+r < 0) {
-				newpos = gid1 -(r+1)*IMAGE_W - gid0*IMAGE_W;
+			if (gid1+r < 0) {
+				newpos = gid0 -(r+1)*IMAGE_W - gid1*IMAGE_W;
 				//debug=1;	
 			}
-			else if (gid0+r > IMAGE_H -1) {
-				newpos= (IMAGE_H-1)*IMAGE_W + gid1 + (IMAGE_H - r)*IMAGE_W - gid0*IMAGE_W;
+			else if (gid1+r > IMAGE_H -1) {
+				newpos= (IMAGE_H-1)*IMAGE_W + gid0 + (IMAGE_H - r)*IMAGE_W - gid1*IMAGE_W;
 			}
 			sum += input[ newpos ] * filter[ fIndex   ];
 			fIndex += 1;

@@ -35,6 +35,17 @@ sp2 = fig.add_subplot(1, 2, 2)
 im = sp2.imshow(lena, cmap="gray")
 
 
+def cmp(a, b):
+    if a.scale < b.scale:
+        return True
+    elif a.scale > b.scale:
+        return False
+    else:
+        if a.angle > b.angle:
+            return True
+        else:
+            return False
+
 
 
 
@@ -69,6 +80,7 @@ for i in range(kp.shape[0]):
     angle = kp[i, 3]
     sp1.annotate("", xy=(x, y), xytext=(x + scale * cos(angle), y + scale * sin(angle)), color="blue",
                      arrowprops=dict(facecolor='blue', edgecolor='blue', width=1),)
+#print numpy.degrees((ref[numpy.argsort(res.scale)][:392] - kp[numpy.argsort(kpg.scale)][:392])[:,3])
 
 print res[:5]
 print ""*80

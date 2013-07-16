@@ -63,25 +63,25 @@ print "working on %s" % ctx.devices[0].name
 
 
 
-def my_combine(mat1,a1,mat2,a2):
+def my_combine(mat1, a1, mat2, a2):
     """
     reference linear combination
     """
-    return a1*mat1+a2*mat2
+    return a1 * mat1 + a2 * mat2
 
 
 
-def my_compact(keypoints,nbkeypoints):
+def my_compact(keypoints, nbkeypoints):
     '''
     Reference compacting
     '''
     output = -numpy.ones_like(keypoints)
-    idx = numpy.where(keypoints[:,1]!=-1)[0]
+    idx = numpy.where(keypoints[:, 1] != -1)[0]
     length = idx.size
-    output[:length,0] = keypoints[idx,0]
-    output[:length,1] = keypoints[idx,1]
-    output[:length,2] = keypoints[idx,2]
-    output[:length,3] = keypoints[idx,3]
+    output[:length, 0] = keypoints[idx, 0]
+    output[:length, 1] = keypoints[idx, 1]
+    output[:length, 2] = keypoints[idx, 2]
+    output[:length, 3] = keypoints[idx, 3]
     return output, length
 
 
@@ -145,15 +145,17 @@ class test_algebra(unittest.TestCase):
         tests the "compact" kernel
         """
 
-        nbkeypoints = 1000 #constant value
-        keypoints = numpy.random.rand(nbkeypoints,4).astype(numpy.float32)
-        for i in range(0,nbkeypoints):
-            if ((numpy.random.rand(1))[0] < 0.75):
-                keypoints[i]=(-1,-1,-1,-1)
+        nbkeypoints = 10000 #constant value
+        keypoints = numpy.random.rand(nbkeypoints, 4).astype(numpy.float32)
+        nb_ones = 0
+        for i in range(0, nbkeypoints):
+            if ((numpy.random.rand(1))[0] < 0.25):
+                keypoints[i] = (-1, -1, -1, -1)
+                nb_ones += 1
 
         gpu_keypoints = pyopencl.array.to_device(queue, keypoints)
-        output = pyopencl.array.empty(queue, (nbkeypoints,4), dtype=numpy.float32, order="C")
-        output.fill(-1.0,queue)
+        output = pyopencl.array.empty(queue, (nbkeypoints, 4), dtype=numpy.float32, order="C")
+        output.fill(-1.0, queue)
         counter = pyopencl.array.zeros(queue, (1,), dtype=numpy.int32, order="C")
         wg = max(self.wg),
         shape = calc_size((keypoints.shape[0],), wg)
@@ -165,8 +167,10 @@ class test_algebra(unittest.TestCase):
         res = output.get()
         count = counter.get()[0]
         t1 = time.time()
-        ref, count_ref = my_compact(keypoints,nbkeypoints)
+        ref, count_ref = my_compact(keypoints, nbkeypoints)
         t2 = time.time()
+
+        print("Kernel counter : %s / Python counter : %s / True value : %s" % (count, count_ref, nbkeypoints - nb_ones))
 
         res_sort_arg = res[:, 0].argsort(axis=0)
         res_sort = res[res_sort_arg]
@@ -174,7 +178,7 @@ class test_algebra(unittest.TestCase):
         ref_sort = ref[ref_sort_arg]
         delta = abs((res_sort - ref_sort)).max()
         self.assert_(delta < 1e-5, "delta=%s" % (delta))
-        self.assertEqual(count, count_ref, "conters are the same")
+        self.assertEqual(count, count_ref, "counters are the same")
         logger.info("delta=%s" % delta)
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))

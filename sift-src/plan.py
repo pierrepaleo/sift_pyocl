@@ -66,7 +66,9 @@ class SiftPlan(object):
                "image":1024,
                "gaussian":1024,
                "reductions":1024,
-               "keypoints":128}
+               "keypoints":128,
+               "keypoints_cpu":1024}
+#               "keypoints":128}
     converter = {numpy.dtype(numpy.uint8):"u8_to_float",
                  numpy.dtype(numpy.uint16):"u16_to_float",
                  numpy.dtype(numpy.int32):"s32_to_float",
@@ -81,7 +83,8 @@ class SiftPlan(object):
                                 ('angle', numpy.float32),
                                 ('desc', (numpy.uint8, 128))
                                 ])
-    def __init__(self, shape=None, dtype=None, devicetype="GPU", template=None, profile=False, device=None, PIX_PER_KP=None, max_workgroup_size=128):
+
+    def __init__(self, shape=None, dtype=None, devicetype="CPU", template=None, profile=False, device=None, PIX_PER_KP=None, max_workgroup_size=128):
         """
         Contructor of the class
         """
@@ -129,6 +132,14 @@ class SiftPlan(object):
         self._compile_kernels()
         self._allocate_buffers()
         self.debug = []
+
+        self.devicetype = ocl.platforms[self.device[0]].devices[self.device[1]].type
+        if (self.devicetype == "CPU"):
+            self.USE_CPU = True
+        else:
+            self.USE_CPU = False
+
+
 
 
 
@@ -520,9 +531,18 @@ class SiftPlan(object):
 
     #           Orientation assignement: 1D kernel, rather heavy kernel
                 if newcnt and newcnt > last_start:  # launch kernel only if neededwgsize = (128,)
+
+                    if (self.USE_CPU):
+                        wgsize2 = 1,
+                        file_to_use = "keypoints_cpu"
+                        print "NOTICE: computing orientation with CPU-optimized kernels"
+                    else:
+                        wgsize2 = wgsize
+                        file_to_use = "keypoints"
+
                     procsize = int(newcnt * wgsize[0]),
-                    print "orientation_assignment:", procsize, wgsize
-                    evt = self.programs["keypoints"].orientation_assignment(self.queue, procsize, wgsize,
+#                    print "orientation_assignment:", procsize, wgsize2
+                    evt = self.programs[file_to_use].orientation_assignment(self.queue, procsize, wgsize2,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
                                           grad.data,  # __global float* grad,
                                           ori.data,  # __global float* ori,
@@ -533,9 +553,19 @@ class SiftPlan(object):
                                           numpy.int32(last_start),  # int keypoints_start,
                                           newcnt,  # int keypoints_end,
                                           *self.scales[octave])  # int grad_width, int grad_height)
-                    wgsize2 = (4, 4, 8) # hard-coded for this kernel, do not modify these values !
-                    procsize2 = int(newcnt) * wgsize2[0], wgsize2[1], wgsize2[2]
-                    evt2 = self.programs["keypoints"].descriptor(self.queue, procsize2, wgsize2,
+
+                    newcnt = self.buffers["cnt"].get()[0] #do not forget to update numbers of keypoints, modified above !
+                    if (self.USE_CPU):
+                        wgsize2 = 1,
+                        file_to_use = "keypoints_cpu"
+                        procsize2 = int(newcnt * wgsize2[0]),
+                        print "NOTICE: computing descriptors with CPU-optimized kernels"
+                    else:
+                        wgsize2 = (8, 8, 8) # hard-coded for this kernel, do not modify these values !
+                        file_to_use = "keypoints"
+                        procsize2 = int(newcnt * wgsize2[0]), 8, 8
+
+                    evt2 = self.programs[file_to_use].descriptor(self.queue, procsize2, wgsize2,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
                                           self.buffers["descriptors"].data, #___global unsigned char *descriptors
                                           grad.data,  # __global float* grad,
@@ -556,11 +586,15 @@ class SiftPlan(object):
         # Rescale all images to populate all octaves TODO: scale G3 -> G'0
         ########################################################################
         if octave < self.octave_max - 1:
-             evt = self.programs["preprocess"].shrink(self.queue, self.procsize[octave + 1], self.wgsize[octave + 1],
+#             evt = self.programs["preprocess"].shrink(self.queue, self.procsize[octave + 1], self.wgsize[octave + 1],
+#                                                self.buffers[(octave, par.Scales)].data, self.buffers[(octave + 1, 0)].data,
+#                                                numpy.int32(2), numpy.int32(2), *self.scales[octave + 1])
+
+            evt = self.programs["preprocess"].shrink(self.queue, self.procsize[octave + 1], self.wgsize[octave + 1],
                                                 self.buffers[(octave, par.Scales)].data, self.buffers[(octave + 1, 0)].data,
                                                 numpy.int32(2), numpy.int32(2), self.scales[octave][0], self.scales[octave][1],
                                                 *self.scales[octave + 1])
-             if self.profile:self.events.append(("shrink %s->%s" % (self.scales[octave], self.scales[octave + 1]), evt))
+            if self.profile:self.events.append(("shrink %s->%s" % (self.scales[octave], self.scales[octave + 1]), evt))
         results = numpy.empty((last_start, 4), dtype=numpy.float32)
         descriptors = numpy.empty((last_start, 128), dtype=numpy.uint8)
         if last_start:

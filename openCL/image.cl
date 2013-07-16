@@ -34,8 +34,6 @@ typedef float4 keypoint;
  * \brief Gradient of a grayscale image
  *
  * The gradient is computed using central differences in the interior and first differences at the boundaries.
- * NOTE: In "sift.cpp", the gradient magnitude is not divided by 2.
- * To be coherent with Python's gradient, we shall divide by 2 and use a threshold twice smaller.
  *
  * @param igray: Pointer to global memory with the input data of the grayscale image
  * @param grad: Pointer to global memory with the output norm of the gradient
@@ -57,25 +55,25 @@ __kernel void compute_gradient_orientation(
 	int gid1 = (int) get_global_id(1);
 	int gid0 = (int) get_global_id(0);
 
-	if (gid0 < height && gid1 < width) {
+	if (gid1 < height && gid0 < width) {
 
 		float xgrad, ygrad;
-		int pos = gid0*width+gid1;
+		int pos = gid1*width+gid0;
 
-        if (gid1 == 0)
-			xgrad = 2.0 * (igray[pos+1] - igray[pos]);
-        else if (gid1 == width-1)
-			xgrad = 2.0 * (igray[pos] - igray[pos-1]);
+        if (gid0 == 0)
+			xgrad = 2.0f * (igray[pos+1] - igray[pos]);
+        else if (gid0 == width-1)
+			xgrad = 2.0f * (igray[pos] - igray[pos-1]);
         else
 			xgrad = igray[pos+1] - igray[pos-1];
-        if (gid0 == 0)
-			ygrad = 2.0 * (igray[pos] - igray[pos + width]);
-        else if (gid0 == height-1)
-			ygrad = 2.0 * (igray[pos - width] - igray[pos]);
+        if (gid1 == 0)
+			ygrad = 2.0f * (igray[pos] - igray[pos + width]);
+        else if (gid1 == height-1)
+			ygrad = 2.0f * (igray[pos - width] - igray[pos]);
         else
 			ygrad = igray[pos - width] - igray[pos + width];
 
-        grad[pos] = sqrt((xgrad * xgrad + ygrad * ygrad))/2;
+        grad[pos] = sqrt((xgrad * xgrad + ygrad * ygrad));
         ori[pos] = atan2 (-ygrad,xgrad);
 
       }
@@ -157,9 +155,9 @@ __kernel void local_maxmin(
 			int ismax = 0, ismin = 0;
 			if (val > 0.0) ismax = 1;
 			else ismin = 1;
-
-			for (c = gid1 - 1; c <= gid1 + 1; c++) {
-				for (r = gid0  - 1; r <= gid0 + 1; r++) {
+			for (r = gid0  - 1; r <= gid0 + 1; r++) {
+				for (c = gid1 - 1; c <= gid1 + 1; c++) {
+				
 					pos = r*width + c;
 					if (ismax == 1) //if (val > 0.0)
 						if (DOGS[index_dog_prev+pos] > val || DOGS[index_dog+pos] > val || DOGS[index_dog_next+pos] > val) ismax = 0;

@@ -9,5 +9,5 @@ import numpy
 import scipy.misc
 
 lena = scipy.misc.lena()
-s = sift.SiftPlan(template=lena, profile=False, device=(1, 0))
+s = sift.SiftPlan(template=lena, profile=True, devicetype="GPU")
 kp = s.keypoints(lena)
