@@ -1,5 +1,5 @@
 #!/usr/bin/python
-import sys, os
+import sys, os, pyopencl
 from math import sin, cos
 here = os.path.dirname(os.path.abspath(__file__))
 there = os.path.join(here, "..", "build")
@@ -11,15 +11,21 @@ import scipy.misc
 import pylab
 lena2 = scipy.misc.lena()
 #lena2 = scipy.misc.imread("../aerial.tiff") #for other tests
+shape = 1001, 1001 #1001,1599
 lena2 = scipy.misc.imread("/users/kieffer/Pictures/2010-01-21/17h51m32-Canon_PowerShot_G11.jpg")#, flatten=True)
-lena = numpy.ascontiguousarray(lena2[0:1001, 0:1599, :])
+lena = numpy.ascontiguousarray(lena2[:shape[0], 0:shape[1], :])
 #lena = lena2
 print lena.shape
 
 # lena[:] = 0
 # lena[100:110, 100:110] = 255
 s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128, device=(0, 0))
-kpg = s.keypoints(lena)
+try:
+    kpg = s.keypoints(lena)
+except (Exception, pyopencl.RuntimeError) as error:
+    print error
+    s.log_profile()
+    sys.exit(0)
 kp = numpy.empty((kpg.size, 4), dtype=numpy.float32)
 kp[:, 0] = kpg.x
 kp[:, 1] = kpg.y
@@ -52,7 +58,7 @@ def cmp(a, b):
 import feature
 sc = feature.SiftAlignment()
 lena2 = scipy.misc.imread("/users/kieffer/Pictures/2010-01-21/17h51m32-Canon_PowerShot_G11.jpg", flatten=True)
-lena = numpy.ascontiguousarray(lena2[0:1001, 0:1599])
+lena = numpy.ascontiguousarray(lena2[:shape[0], :shape[1]])
 
 res = sc.sift(lena)
 ref = numpy.empty((res.size, 4), dtype=numpy.float32)

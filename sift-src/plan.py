@@ -563,7 +563,7 @@ class SiftPlan(object):
                     else:
                         wgsize2 = (8, 8, 8) # hard-coded for this kernel, do not modify these values !
                         file_to_use = "keypoints"
-                        procsize2 = int(newcnt * wgsize2[0]), 8, 8
+                        procsize2 = int(newcnt * wgsize2[0]), wgsize2[1], wgsize2[2]
 
                     evt2 = self.programs[file_to_use].descriptor(self.queue, procsize2, wgsize2,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
@@ -574,7 +574,7 @@ class SiftPlan(object):
                                           numpy.int32(last_start),  # int keypoints_start,
                                           newcnt,  # int keypoints_end,
                                           *self.scales[octave])  # int grad_width, int grad_height)
-
+                    evt2.wait()
                     if self.profile:
                         self.events.append(("orientation_assignment %s %s" % (octave, scale), evt))
                         self.events.append(("descriptors %s %s" % (octave, scale), evt2))

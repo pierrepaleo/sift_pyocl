@@ -363,10 +363,10 @@ __kernel void descriptor(
 	int grad_height)
 {
 
-	int lid0 = get_local_id(0); //[0,4[
-	int lid1 = get_local_id(1); //[0,4[
+	int lid0 = get_local_id(0); //[0,8[
+	int lid1 = get_local_id(1); //[0,8[
 	int lid2 = get_local_id(2); //[0,8[
-	int lid = (lid0*4+lid1)*8+lid2; //[0,128[
+	int lid = (lid0*8+lid1)*8+lid2; //[0,512[ to limit to [0,128[
 	int groupid = get_group_id(0);
 	keypoint k = keypoints[groupid];
 	if (!(keypoints_start <= groupid && groupid < keypoints_end && k.s1 >=0.0f))
@@ -383,16 +383,16 @@ __kernel void descriptor(
 	float sine = sin((float) angle), cosine = cos((float) angle);
 	float spacing = k.s2/octsize * 3.0f;
 	int radius = (int) ((1.414f * spacing * 2.5f) + 0.5f);
-
-	int imin = -64 +32*lid0,
-		jmin = -64 +32*lid1;
-	int imax = imin+32,
-		jmax = jmin+32;
-
+	
+	int imin = -64 +16*lid0,
+		jmin = -64 +16*lid1;
+	int imax = imin+16,
+		jmax = jmin+16;
+		
 	//memset
-	histogram[lid] = 0.0f;
-	for (i=0; i < 8; i++) hist2[lid*8+i] = 0.0f;
-
+	for (i=0; i < 2; i++) hist2[i*512+lid] = 0.0f;
+	if (lid < 128)
+		histogram[lid] = 0.0f;
 	for (i=imin; i < imax; i++) {
 		for (j2=jmin/8; j2 < jmax/8; j2++) {
 			j=j2*8+lid2;			
@@ -462,13 +462,15 @@ __kernel void descriptor(
 
 
 	barrier(CLK_LOCAL_MEM_FENCE);
-	histogram[lid]
-		+= hist2[lid*8]+hist2[lid*8+1]+hist2[lid*8+2]+hist2[lid*8+3]+hist2[lid*8+4]+hist2[lid*8+5]+hist2[lid*8+6]+hist2[lid*8+7];
+	if (lid < 128)
+		histogram[lid] 
+			+= hist2[lid*8]+hist2[lid*8+1]+hist2[lid*8+2]+hist2[lid*8+3]
+			+hist2[lid*8+4]+hist2[lid*8+5]+hist2[lid*8+6]+hist2[lid*8+7];
 
 	barrier(CLK_LOCAL_MEM_FENCE);
 
 	//memset of 128 values of hist2 before re-use
-	hist2[lid] = histogram[lid]*histogram[lid];
+	if (lid < 128) hist2[lid] = histogram[lid]*histogram[lid];
 	
 	/*
 	 	Normalization and thre work shared by the 16 threads (8 values per thread)
@@ -504,54 +506,54 @@ __kernel void descriptor(
 	if (lid == 0) hist2[0] = rsqrt(hist2[1]+hist2[0]);
 	barrier(CLK_LOCAL_MEM_FENCE);
 	//now we have hist2[0] = 1/sqrt(sum(hist[i]^2))
-
-	histogram[lid] *= hist2[0];
-
-	//Threshold to 0.2 of the norm, for invariance to illumination
-	__local int changed[1];
-	if (lid == 0) changed[0] = 0;
-
-	if (histogram[lid] > 0.2f) {
-		histogram[lid] = 0.2f;
-		atomic_inc(changed);
-	}
-	barrier(CLK_LOCAL_MEM_FENCE);
-	//if values have changed, we have to re-normalize
-	if (changed[0]) { 
-		hist2[lid] = histogram[lid]*histogram[lid];
-		if (lid < 64) {
-			hist2[lid] += hist2[lid+64];
-		}
-		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid < 32) {
-			hist2[lid] += hist2[lid+32];
-		}
-		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid < 16) {
-			hist2[lid] += hist2[lid+16];
-		}
-		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid < 8) {
-			hist2[lid] += hist2[lid+8];
-		}
-		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid < 4) {
-			hist2[lid] += hist2[lid+4];
-		}
-		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid < 2) {
-			hist2[lid] += hist2[lid+2];
-		}
-		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid == 0) hist2[0] = rsqrt(hist2[0]+hist2[1]);
-		barrier(CLK_LOCAL_MEM_FENCE);
-		histogram[lid] *= hist2[0];
-	}
-
-	//finally, cast to integer
-		descriptors[128*groupid+lid]
-		= (unsigned char) MIN(255,(unsigned char)(512.0f*histogram[lid]));
 	
+	if (lid < 128) {
+		histogram[lid] *= hist2[0];
+
+		//Threshold to 0.2 of the norm, for invariance to illumination
+		__local int changed[1];
+		if (lid == 0) changed[0] = 0;
+		if (histogram[lid] > 0.2f) {
+			histogram[lid] = 0.2f;
+			atomic_inc(changed);
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);
+		//if values have changed, we have to re-normalize
+		if (changed[0]) { 
+			hist2[lid] = histogram[lid]*histogram[lid];
+			if (lid < 64) {
+				hist2[lid] += hist2[lid+64];
+			}
+			barrier(CLK_LOCAL_MEM_FENCE);
+			if (lid < 32) {
+				hist2[lid] += hist2[lid+32];
+			}
+			barrier(CLK_LOCAL_MEM_FENCE);
+			if (lid < 16) {
+				hist2[lid] += hist2[lid+16];
+			}
+			barrier(CLK_LOCAL_MEM_FENCE);
+			if (lid < 8) {
+				hist2[lid] += hist2[lid+8];
+			}
+			barrier(CLK_LOCAL_MEM_FENCE);
+			if (lid < 4) {
+				hist2[lid] += hist2[lid+4];
+			}
+			barrier(CLK_LOCAL_MEM_FENCE);
+			if (lid < 2) {
+				hist2[lid] += hist2[lid+2];
+			}
+			barrier(CLK_LOCAL_MEM_FENCE);
+			if (lid == 0) hist2[0] = rsqrt(hist2[0]+hist2[1]);
+			barrier(CLK_LOCAL_MEM_FENCE);
+			histogram[lid] *= hist2[0];
+		}
+
+		//finally, cast to integer
+		descriptors[128*groupid+lid]
+			= (unsigned char) MIN(255,(unsigned char)(512.0f*histogram[lid]));
+	} //end "if lid < 128"
 }
 
 
