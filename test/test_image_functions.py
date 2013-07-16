@@ -389,10 +389,10 @@ def my_matching(keypoints1, keypoints2, start, end, ratio_th=0.5329):
     matchings = numpy.zeros((end-start,2),dtype=numpy.uint32)
     for i, desc1 in enumerate(keypoints1):#FIXME: keypoints1.desc.... idem below
         ratio, match = check_for_match(desc1, keypoints2)
-        if (ratio < ratio_th):
+        if (ratio < ratio_th and i <= match):
             matchings[counter] = i, match
             counter += 1
-            
+    return matchings, counter  
 
 
 def check_for_match(desc1, keypoints2):

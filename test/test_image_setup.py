@@ -151,7 +151,7 @@ def matching_setup():
     #keypoints with their descriptors
     #FIXME: structure including keypoint (float32) and descriptors (uint8)
     kp1 = desc
-    kp2 = desc
+    kp2 = numpy.ascontiguousarray(desc[::-1])
     return kp1, kp2, nb_keypoints, actual_nb_keypoints
 
 

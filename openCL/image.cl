@@ -54,20 +54,20 @@ __kernel void compute_gradient_orientation(
 	int gid1 = (int) get_global_id(1);
 	int gid0 = (int) get_global_id(0);
 
-	if (gid0 < height && gid1 < width) {
+	if (gid1 < height && gid0 < width) {
 
 		float xgrad, ygrad;
-		int pos = gid0*width+gid1;
+		int pos = gid1*width+gid0;
 
-        if (gid1 == 0)
+        if (gid0 == 0)
 			xgrad = 2.0f * (igray[pos+1] - igray[pos]);
-        else if (gid1 == width-1)
+        else if (gid0 == width-1)
 			xgrad = 2.0f * (igray[pos] - igray[pos-1]);
         else
 			xgrad = igray[pos+1] - igray[pos-1];
-        if (gid0 == 0)
+        if (gid1 == 0)
 			ygrad = 2.0f * (igray[pos] - igray[pos + width]);
-        else if (gid0 == height-1)
+        else if (gid1 == height-1)
 			ygrad = 2.0f * (igray[pos - width] - igray[pos]);
         else
 			ygrad = igray[pos - width] - igray[pos + width];

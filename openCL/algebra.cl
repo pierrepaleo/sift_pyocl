@@ -30,9 +30,9 @@ __kernel void combine(
 	int gid1 = (int) get_global_id(1);
 	int gid0 = (int) get_global_id(0);
 
-	if (gid0 < height && gid1 < width) {
+	if (gid1 < height && gid0 < width) {
 
-		int index = gid0 * width + gid1;
+		int index = gid1 * width + gid0;
 		int index_dog = dog * width * height +  index;
 		w[index_dog] = a * u[index] + b * v[index];
 	}

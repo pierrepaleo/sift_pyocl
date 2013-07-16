@@ -193,8 +193,8 @@ class test_keypoints(unittest.TestCase):
             wg = 1,
             shape = keypoints.shape[0]*wg[0],
         else:
-            wg = (4, 4, 8)
-            shape = int(keypoints.shape[0]*wg[0]), 4, 8
+            wg = (8, 8, 8)
+            shape = int(keypoints.shape[0]*wg[0]), 8, 8
                         
         gpu_keypoints = pyopencl.array.to_device(queue, keypoints_o)
         #NOTE: for the following line, use pyopencl.array.empty instead of pyopencl.array.zeros if the keypoints are compacted
@@ -225,11 +225,11 @@ class test_keypoints(unittest.TestCase):
         
         
         
-        
-        PRINT_KEYPOINTS=True
+        USE_SIFT_CPP = True
+        PRINT_KEYPOINTS = True
         if (PRINT_KEYPOINTS):
             res_sort = (res[numpy.argsort(keypoints[keypoints_start:keypoints_end,1])])
-#            print res_sort[0]#keypoints_end-keypoints_start,0:15]
+            print res_sort[0]#keypoints_end-keypoints_start,0:15]
 #            print res_sort[3]
 #            print res_sort[9]
             print ""
@@ -265,7 +265,7 @@ class test_keypoints(unittest.TestCase):
 
 def test_suite_keypoints():
     testSuite = unittest.TestSuite()
-    testSuite.addTest(test_keypoints("test_orientation"))
+#    testSuite.addTest(test_keypoints("test_orientation"))
     testSuite.addTest(test_keypoints("test_descriptor"))
     return testSuite
 
