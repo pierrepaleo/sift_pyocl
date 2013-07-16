@@ -522,8 +522,8 @@ class SiftPlan(object):
                 # recycle buffers G_2 and tmp to store ori and grad
                 ori = self.buffers[(octave, "ori")]
                 grad = self.buffers[(octave, "tmp")]
-                self.debug.append(self.buffers[(octave, scale)].get())
-                evt = self.programs["image"].compute_gradient_orientation(self.queue, self.procsize[octave], self.wgsize[octave],
+#                self.debug.append(self.buffers[(octave, scale)].get())
+                evt = self.programs["image"].compute_gradient_orientation(self.queue, self.procsize_XY[octave], self.wgsize[octave],
                                    self.buffers[(octave, scale)].data,  # __global float* igray,
                                    grad.data,  # __global float *grad,
                                    ori.data,  # __global float *ori,
@@ -533,7 +533,7 @@ class SiftPlan(object):
     #           Orientation assignement: 1D kernel, rather heavy kernel
                 if newcnt and newcnt > last_start:  # launch kernel only if neededwgsize = (128,)
 
-                    if 1:#(self.USE_CPU):
+                    if self.USE_CPU:
                         wgsize2 = 1,
                         file_to_use = "keypoints_cpu"
                         print "NOTICE: computing orientation with CPU-optimized kernels"
@@ -543,9 +543,8 @@ class SiftPlan(object):
 
                     procsize = int(newcnt * wgsize[0]),
                     print "orientation_assignment:", procsize, wgsize2, last_start, self.buffers["cnt"].get()[0], newcnt
-                    self.debug.append(grad.get())
-                    self.debug.append(ori.get())
-#                    return print self.buffers["Kp_1"].get()
+#                    self.debug.append(grad.get())
+#                    self.debug.append(ori.get())
                     evt = self.programs[file_to_use].orientation_assignment(self.queue, procsize, wgsize2,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
                                           grad.data,  # __global float* grad,
@@ -559,7 +558,7 @@ class SiftPlan(object):
                                           *self.scales[octave])  # int grad_width, int grad_height)
                     evt.wait()
                     newcnt = self.buffers["cnt"].get()[0] #do not forget to update numbers of keypoints, modified above !
-                    if (self.USE_CPU):
+                    if self.USE_CPU:
                         wgsize2 = 1,
                         file_to_use = "keypoints_cpu"
                         procsize2 = int(newcnt * wgsize2[0]),

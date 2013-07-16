@@ -20,12 +20,11 @@ print lena.shape
 # lena[:] = 0
 # lena[100:110, 100:110] = 255
 s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128, device=(0, 0))
-try:
-    kpg = s.keypoints(lena)
-except (Exception, pyopencl.RuntimeError) as error:
-    print error
-    s.log_profile()
-    sys.exit(0)
+kpg = s.keypoints(lena)
+#except (Exception, pyopencl.RuntimeError) as error:
+#    print error
+#    s.log_profile()
+#    sys.exit(0)
 kp = numpy.empty((kpg.size, 4), dtype=numpy.float32)
 kp[:, 0] = kpg.x
 kp[:, 1] = kpg.y
