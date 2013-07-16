@@ -170,6 +170,7 @@ __kernel void orientation_assignment(
 		barrier(CLK_LOCAL_MEM_FENCE);
 	}
 
+
 	hist2[lid0] = 0.0f;
 
 
@@ -544,7 +545,8 @@ __kernel void descriptor(
 			barrier(CLK_LOCAL_MEM_FENCE);
 			histogram[lid] *= hist2[0];
 		}
-
+		
+		barrier(CLK_LOCAL_MEM_FENCE);
 		//finally, cast to integer
 		descriptors[128*groupid+lid]
 			= (unsigned char) MIN(255,(unsigned char)(512.0f*histogram[lid]));
@@ -555,40 +557,7 @@ __kernel void descriptor(
 
 
 
-/*
-	
-	Descriptors kernel -- optimized for <=1.3 compute capability (GTX <= 295) 
-	
-	Turns out that it takes more memory !
-	
-	
-	The previous kernel uses (128*8+128)*4 = 4608 Bytes in shared memory, plus 4 bytes for the header.
-	This is 4612B per block. Cuda Profiler tells that there are 6 blocks active per SM (8 max for CC==2.0), so
-	4612*6=27672 Bytes of shared mem are used. 
-
-	
-	see also: http://en.wikipedia.org/wiki/CUDA#Version_features_and_specifications (2nd table)
-	
-	
-	
-	
- * @param keypoints: Pointer to global memory with current keypoints vector
- * @param descriptor: Pointer to global memory with the output SIFT descriptor, cast to uint8
- * @param grad: Pointer to global memory with gradient norm previously calculated
- * @param orim: Pointer to global memory with gradient orientation previously calculated
- * @param octsize: the size of the current octave (1, 2, 4, 8...)
- * @param keypoints_start : index start for keypoints
- * @param keypoints_end: end index for keypoints
- * @param grad_width: integer number of columns of the gradient
- * @param grad_height: integer num of lines of the gradient
-
-
-
-*/
-
-
-
-__kernel void descriptor_2(
+__kernel void descriptor_844(
 	__global keypoint* keypoints,
 	__global unsigned char *descriptors,
 	__global float* grad,
@@ -600,10 +569,10 @@ __kernel void descriptor_2(
 	int grad_height)
 {
 
-	int lid0 = get_local_id(0); //[0,8[
-	int lid1 = get_local_id(1); //[0,2[
-	int lid2 = get_local_id(2); //[0,2[
-	int lid = (lid0*2+lid1)*2+lid2; //[0,32[, to expand to [0,128[
+	int lid0 = get_local_id(0); //[0,4[
+	int lid1 = get_local_id(1); //[0,4[
+	int lid2 = get_local_id(2); //[0,8[
+	int lid = (lid0*4+lid1)*8+lid2; //[0,128[
 	int groupid = get_group_id(0);
 	keypoint k = keypoints[groupid];
 	if (!(keypoints_start <= groupid && groupid < keypoints_end && k.s1 >=0.0f))
@@ -621,18 +590,18 @@ __kernel void descriptor_2(
 	float spacing = k.s2/octsize * 3.0f;
 	int radius = (int) ((1.414f * spacing * 2.5f) + 0.5f);
 	
-	int imin = (lid1 == 0 ? -64 : 0),
-		jmin = (lid2 == 0 ? -64 : 0);
-	int imax = imin+64,
-		jmax = jmin+64;
+	int imin = -64 +32*lid0,
+		jmin = -64 +32*lid1;
+	int imax = imin+32,
+		jmax = jmin+32;
 		
 	//memset
-	for (i=0; i < 4; i++) histogram[4*lid+i] = 0.0f;
-	for (j=0; j < 4; j++) for (i=0; i < 8; i++) hist2[(lid*4+j)*8+i] = 0.0f;
+	histogram[lid] = 0.0f;
+	for (i=0; i < 8; i++) hist2[lid*8+i] = 0.0f;
 	
 	for (i=imin; i < imax; i++) {
 		for (j2=jmin/8; j2 < jmax/8; j2++) {	
-			j=j2*8+lid0;
+			j=j2*8+lid2;
 			
 			rx = ((cosine * i - sine * j) - (row - irow)) / spacing + 1.5f;
 			cx = ((sine * i + cosine * j) - (col - icol)) / spacing + 1.5f;
@@ -685,7 +654,7 @@ __kernel void descriptor_2(
 											where idx = (r*2+c)*orr is the index of "lid0", in [0,8[
 										
 										*/
-										hist2[lid0+8*bin] += cweight * ((orr == 0) ? 1.0f - ofrac : ofrac);
+										hist2[lid2+8*bin] += cweight * ((orr == 0) ? 1.0f - ofrac : ofrac);
 
 									} //end "for orr"
 								} //end "valid cindex"
@@ -699,9 +668,8 @@ __kernel void descriptor_2(
 	
 
 	barrier(CLK_LOCAL_MEM_FENCE);
-	for (i=0; i < 4; i++)
-		histogram[4*lid+i] 
-		+= hist2[(lid*4+i)*8]+hist2[(lid*4+i)*8+1]+hist2[(lid*4+i)*8+2]+hist2[(lid*4+i)*8+3]+hist2[(lid*4+i)*8+4]+hist2[(lid*4+i)*8+5]+hist2[(lid*4+i)*8+6]+hist2[(lid*4+i)*8+7];
+	histogram[lid] 
+		+= hist2[lid*8]+hist2[lid*8+1]+hist2[lid*8+2]+hist2[lid*8+3]+hist2[lid*8+4]+hist2[lid*8+5]+hist2[lid*8+6]+hist2[lid*8+7];
 
 	barrier(CLK_LOCAL_MEM_FENCE);
 	//memset of 128 values of hist2 before re-use
@@ -711,10 +679,10 @@ __kernel void descriptor_2(
 	 	Normalization and thre work shared by the 16 threads (8 values per thread)
 	*/
 	
-	
-	for (i=0; i < 4; i++)
-		if (lid*4+i < 64) hist2[lid*4+i] += hist2[lid*4+i+64];
-	
+	//parallel reduction to normalize vector
+	if (lid < 64) {
+		hist2[lid] += hist2[lid+64];
+	}
 	barrier(CLK_LOCAL_MEM_FENCE);
 	if (lid < 32) {
 		hist2[lid] += hist2[lid+32];
@@ -745,47 +713,50 @@ __kernel void descriptor_2(
 	//Threshold to 0.2 of the norm, for invariance to illumination
 	__local int changed[1];
 	if (lid == 0) changed[0] = 0;
-	for (i=0; i < 4; i++) {
-		if (histogram[lid*4+i] > 0.2f) {
-			histogram[lid*4+i] = 0.2f;
-			atomic_inc(changed);
-		}
+	if (histogram[lid] > 0.2f) {
+		histogram[lid] = 0.2f;
+		atomic_inc(changed);
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
 	//if values have changed, we have to re-normalize
 	if (changed[0]) { 
 		hist2[lid] = histogram[lid]*histogram[lid];
-		
-		for (i=0; i < 4; i++)
-			if (lid*4+i < 64) hist2[lid*4+i] += hist2[lid*4+i+64];
+		if (lid < 64) {
+			hist2[lid] += hist2[lid+64];
+		}
 		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid < 32)
+		if (lid < 32) {
 			hist2[lid] += hist2[lid+32];
+		}
 		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid < 16)
+		if (lid < 16) {
 			hist2[lid] += hist2[lid+16];
+		}
 		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid < 8)
+		if (lid < 8) {
 			hist2[lid] += hist2[lid+8];
+		}
 		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid < 4)
+		if (lid < 4) {
 			hist2[lid] += hist2[lid+4];
+		}
 		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid < 2)
+		if (lid < 2) {
 			hist2[lid] += hist2[lid+2];
+		}
 		barrier(CLK_LOCAL_MEM_FENCE);
 		if (lid == 0) hist2[0] = rsqrt(hist2[0]+hist2[1]);
 		barrier(CLK_LOCAL_MEM_FENCE);
 		histogram[lid] *= hist2[0];
 	}
-
+	
+	
+	barrier(CLK_LOCAL_MEM_FENCE);
 	//finally, cast to integer
-	for (i=0; i < 4; i++)
-		descriptors[128*groupid+(lid*4+i)]
+		descriptors[128*groupid+lid]
 		= (unsigned char) MIN(255,(unsigned char)(512.0f*histogram[lid]));
 	
 }
-
 
 
 
