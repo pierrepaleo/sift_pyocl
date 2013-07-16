@@ -93,7 +93,7 @@ class test_algebra(unittest.TestCase):
         kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), "algebra.cl")
         kernel_src = open(kernel_path).read()
         self.program = pyopencl.Program(ctx, kernel_src).build()
-        self.wg = (1, 32)
+        self.wg = (32, 4)
 
 
     def tearDown(self):
@@ -110,8 +110,8 @@ class test_algebra(unittest.TestCase):
         """
         tests the combine (linear combination) kernel
         """
-        width = numpy.int32(15)
-        height = numpy.int32(14)
+        width = numpy.int32(157)
+        height = numpy.int32(147)
         coeff1 = numpy.random.rand(1)[0].astype(numpy.float32)
         coeff2 = numpy.random.rand(1)[0].astype(numpy.float32)
         mat1 = numpy.random.rand(height, width).astype(numpy.float32)
@@ -120,7 +120,7 @@ class test_algebra(unittest.TestCase):
         gpu_mat1 = pyopencl.array.to_device(queue, mat1)
         gpu_mat2 = pyopencl.array.to_device(queue, mat2)
         gpu_out = pyopencl.array.empty(queue, mat1.shape, dtype=numpy.float32, order="C")
-        shape = calc_size(mat1.shape, self.wg)
+        shape = calc_size((width, height), self.wg)
 
         t0 = time.time()
         k1 = self.program.combine(queue, shape, self.wg,

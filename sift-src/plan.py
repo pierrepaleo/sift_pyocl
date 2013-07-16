@@ -464,7 +464,7 @@ class SiftPlan(object):
 
             self._gaussian_convolution(self.buffers[(octave, scale)], self.buffers[(octave, scale + 1)], sigma, octave)
             prevSigma *= self.sigmaRatio
-            evt = self.programs["algebra"].combine(self.queue, self.procsize[octave], self.wgsize[octave],
+            evt = self.programs["algebra"].combine(self.queue, self.procsize_XY[octave], self.wgsize[octave],
                                              self.buffers[(octave, scale + 1)].data, numpy.float32(-1.0),
                                              self.buffers[(octave, scale)].data, numpy.float32(+1.0),
                                              self.buffers[(octave, "DoGs")].data, numpy.int32(scale),
@@ -569,8 +569,6 @@ class SiftPlan(object):
             if self.profile:
                 self.events.append(("copy D->H", evt))
                 self.events.append(("copy D->H", evt2))
-
-
         return results, descriptors
 
     def compact(self, start=numpy.int32(0)):
