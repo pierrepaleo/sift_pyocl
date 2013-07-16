@@ -11,7 +11,7 @@ import scipy.misc
 import pylab
 lena2 = scipy.misc.lena()
 #lena2 = scipy.misc.imread("../aerial.tiff") #for other tests
-shape = 1001, 1001 #1001,1599
+shape = 1001, 1599
 lena2 = scipy.misc.imread("/users/kieffer/Pictures/2010-01-21/17h51m32-Canon_PowerShot_G11.jpg")#, flatten=True)
 lena = numpy.ascontiguousarray(lena2[:shape[0], 0:shape[1], :])
 #lena = lena2
@@ -31,7 +31,7 @@ kp[:, 0] = kpg.x
 kp[:, 1] = kpg.y
 kp[:, 2] = kpg.scale
 kp[:, 3] = kpg.angle
-
+print "Non infinite", numpy.isfinite(kpg.angle).sum()
 s.log_profile()
 fig = pylab.figure()
 sp1 = fig.add_subplot(1, 2, 1)

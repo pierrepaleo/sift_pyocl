@@ -31,7 +31,7 @@ def local_maxmin_setup():
     nb_keypoints = 1000 #constant size !
         
     l2 = scipy.misc.lena().astype(numpy.float32)#[100:250,100:250] #use a part of the image to fasten tests
-    l2 = numpy.ascontiguousarray(l2[0:512,:]);
+    l2 = numpy.ascontiguousarray(l2[0:512, :]);
     #l2 = scipy.misc.imread("../aerial.tiff").astype(numpy.float32)
     l = normalize_image(l2) #do not forget to normalize the image if you want to compare with sift.cpp
     for octave_cnt in range(1,int(numpy.log2(octsize))+1+1):

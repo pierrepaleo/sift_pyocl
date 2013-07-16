@@ -483,7 +483,7 @@ class SiftPlan(object):
             if self.profile:self.events.append(("DoG %s %s" % (octave, scale), evt))
         for scale in range(1, par.Scales + 1):
 #                print("Before local_maxmin, cnt is %s %s %s" % (self.buffers["cnt"].get()[0], self.procsize[octave], self.wgsize[octave]))
-                evt = self.programs["image"].local_maxmin(self.queue, self.procsize[octave], self.wgsize[octave],
+                evt = self.programs["image"].local_maxmin(self.queue, self.procsize_XY[octave], self.wgsize[octave],
                                                 self.buffers[(octave, "DoGs")].data,  # __global float* DOGS,
                                                 self.buffers["Kp_1"].data,  # __global keypoint* output,
                                                 numpy.int32(par.BorderDist),  # int border_dist,
