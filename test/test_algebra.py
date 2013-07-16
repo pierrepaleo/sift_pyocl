@@ -93,7 +93,7 @@ class test_algebra(unittest.TestCase):
         kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), "algebra.cl")
         kernel_src = open(kernel_path).read()
         self.program = pyopencl.Program(ctx, kernel_src).build()
-        self.wg = (1, 32)
+        self.wg = (32, 1)
 
 
     def tearDown(self):

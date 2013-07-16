@@ -83,7 +83,7 @@ class test_convol(unittest.TestCase):
         self.program = pyopencl.Program(ctx, kernel_src).build()
         self.IMAGE_W = numpy.int32(self.input.shape[-1])
         self.IMAGE_H = numpy.int32(self.input.shape[0])
-        self.wg = (2, 256)
+        self.wg = (256, 2)
         self.shape = calc_size(self.input.shape, self.wg)
 
     def tearDown(self):

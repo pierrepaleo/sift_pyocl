@@ -78,7 +78,7 @@ class test_image(unittest.TestCase):
         kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), "image.cl")
         kernel_src = open(kernel_path).read()
         self.program = pyopencl.Program(ctx, kernel_src).build()
-        self.wg = (1, 8)
+        self.wg = (8, 1)
 
 
 
@@ -264,8 +264,8 @@ class test_image(unittest.TestCase):
 def test_suite_image():
     testSuite = unittest.TestSuite()
     testSuite.addTest(test_image("test_gradient"))
-#    testSuite.addTest(test_image("test_local_maxmin"))
-#    testSuite.addTest(test_image("test_interpolation"))
+    testSuite.addTest(test_image("test_local_maxmin"))
+    testSuite.addTest(test_image("test_interpolation"))
     return testSuite
 
 if __name__ == '__main__':
