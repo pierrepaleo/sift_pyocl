@@ -67,7 +67,8 @@ class SiftPlan(object):
                "gaussian":1024,
                "reductions":1024,
                "keypoints":128,
-               "keypoints_cpu":1024}
+               "keypoints_cpu":1024,
+               "memset":128, }
 #               "keypoints":128}
     converter = {numpy.dtype(numpy.uint8):"u8_to_float",
                  numpy.dtype(numpy.uint16):"u16_to_float",
@@ -556,7 +557,6 @@ class SiftPlan(object):
                                           numpy.int32(last_start),  # int keypoints_start,
                                           newcnt,  # int keypoints_end,
                                           *self.scales[octave])  # int grad_width, int grad_height)
-                    evt.wait()
                     newcnt = self.buffers["cnt"].get()[0] #do not forget to update numbers of keypoints, modified above !
                     if self.USE_CPU:
                         wgsize2 = 1,
@@ -567,20 +567,36 @@ class SiftPlan(object):
                         wgsize2 = (8, 8, 8) # hard-coded for this kernel, do not modify these values !
                         file_to_use = "keypoints"
                         procsize2 = int(newcnt * wgsize2[0]), wgsize2[1], wgsize2[2]
+                    evt.wait()
+                    try:
+                        evt2 = self.programs[file_to_use].descriptor(self.queue, procsize2, wgsize2,
+                                              self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
+                                              self.buffers["descriptors"].data, #___global unsigned char *descriptors
+                                              grad.data,  # __global float* grad,
+                                              ori.data,  # __global float* ori,
+                                              octsize,   #int octsize,
+                                              numpy.int32(last_start),  # int keypoints_start,
+                                              newcnt,  # int keypoints_end,
+                                              *self.scales[octave])  # int grad_width, int grad_height)
+                    except pyopencl.RuntimeError as error:
+                        logger.error("Descriptor failed with %s" % error)
+                        wgsize2 = 1,
+                        file_to_use = "keypoints_cpu"
+                        procsize2 = int(newcnt * wgsize2[0]),
+                        print "NOTICE: computing descriptors with CPU-optimized kernels"
+                        evt2 = self.programs[file_to_use].descriptor(self.queue, procsize2, wgsize2,
+                                              self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
+                                              self.buffers["descriptors"].data, #___global unsigned char *descriptors
+                                              grad.data,  # __global float* grad,
+                                              ori.data,  # __global float* ori,
+                                              octsize,   #int octsize,
+                                              numpy.int32(last_start),  # int keypoints_start,
+                                              newcnt,  # int keypoints_end,
+                                              *self.scales[octave])  # int grad_width, int grad_height)
 
-                    evt2 = self.programs[file_to_use].descriptor(self.queue, procsize2, wgsize2,
-                                          self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
-                                          self.buffers["descriptors"].data, #___global unsigned char *descriptors
-                                          grad.data,  # __global float* grad,
-                                          ori.data,  # __global float* ori,
-                                          octsize,   #int octsize,
-                                          numpy.int32(last_start),  # int keypoints_start,
-                                          newcnt,  # int keypoints_end,
-                                          *self.scales[octave])  # int grad_width, int grad_height)
-                    evt2.wait()
                     if self.profile:
-                        self.events.append(("orientation_assignment %s %s" % (octave, scale), evt))
-                        self.events.append(("descriptors %s %s" % (octave, scale), evt2))
+                        self.events += [("orientation_assignment %s %s" % (octave, scale), evt),
+                                        ("descriptors %s %s" % (octave, scale), evt2)]
 
 #                self.debug_holes("After orientation %s %s" % (octave, scale))
                 last_start = self.buffers["cnt"].get()[0]
@@ -600,8 +616,8 @@ class SiftPlan(object):
             evt = pyopencl.enqueue_copy(self.queue, results, self.buffers["Kp_1"].data)
             evt2 = pyopencl.enqueue_copy(self.queue, descriptors, self.buffers["descriptors"].data)
             if self.profile:
-                self.events.append(("copy D->H", evt))
-                self.events.append(("copy D->H", evt2))
+                self.events += [("copy D->H", evt),
+                              ("copy D->H", evt2)]
         return results, descriptors
 
     def compact(self, start=numpy.int32(0)):
@@ -611,7 +627,7 @@ class SiftPlan(object):
         @param start: start compacting at this adress. Before just copy
         @type start: numpy.int32
         """
-        wgsize = (8,)  # (max(self.wgsize[0]),) #TODO: optimize
+        wgsize = self.max_workgroup_size, #(max(self.wgsize[0]),) #TODO: optimize
         kpsize32 = numpy.int32(self.kpsize)
         kp_counter = self.buffers["cnt"].get()[0]
         procsize = calc_size((self.kpsize,), wgsize)
@@ -631,7 +647,10 @@ class SiftPlan(object):
         # print("After compaction, %i (-%i)" % (newcnt, kp_counter - newcnt))
         # swap keypoints:
         self.buffers["Kp_1"], self.buffers["Kp_2"] = self.buffers["Kp_2"], self.buffers["Kp_1"]
-        self.buffers["Kp_2"].fill(-1, self.queue)
+        #memset buffer Kp_2
+        evt = self.programs["memset"].memset_float(self.queue, calc_size((4 * self.kpsize,), wgsize), wgsize, self.buffers["Kp_2"].data, numpy.float32(-1), numpy.int32(4 * self.kpsize))
+        if self.profile:self.events.append(("memset 2", evt))
+#        self.buffers["Kp_2"].fill(-1, self.queue)
         return newcnt
 
 
@@ -639,9 +658,15 @@ class SiftPlan(object):
         """
         Todo: implement directly in OpenCL instead of relying on pyOpenCL
         """
-        self.buffers["Kp_1"].fill(-1, self.queue)
-        self.buffers["Kp_2"].fill(-1, self.queue)
-        self.buffers["cnt"].fill(0, self.queue)
+        wg_size = min(self.max_workgroup_size, self.kernels["memset"]),
+        evt1 = self.programs["memset"].memset_float(self.queue, calc_size((4 * self.kpsize,), wg_size), wg_size, self.buffers["Kp_1"].data, numpy.float32(-1), numpy.int32(4 * self.kpsize))
+#        evt2 = self.programs["memset"].memset_float(self.queue, calc_size((4 * self.kpsize,), wg_size), wg_size, self.buffers["Kp_2"].data, numpy.float32(-1), numpy.int32(4 * self.kpsize))
+        evt3 = self.programs["memset"].memset_int(self.queue, (1,), (1,), self.buffers["cnt"].data, numpy.int32(0), numpy.int32(1))
+        if self.profile:
+            self.events += [("memset 1", evt1), ("memset cnt", evt3)]
+#        self.buffers["Kp_1"].fill(-1, self.queue)
+#        self.buffers["Kp_2"].fill(-1, self.queue)
+#        self.buffers["cnt"].fill(0, self.queue)
 
     def count_kp(self, output):
         kpt = 0
