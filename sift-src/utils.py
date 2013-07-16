@@ -49,9 +49,9 @@ def calc_size(shape, blocksize):
     Calculate the optimal size for a kernel according to the workgroup size
     """
     if "__len__" in dir(blocksize):
-        return tuple((i + j - 1) & ~(j - 1) for i, j in zip(shape, blocksize))
+        return tuple((int(i) + int(j) - 1) & ~(int(j) - 1) for i, j in zip(shape, blocksize))
     else:
-        return tuple((i + blocksize - 1) & ~(blocksize - 1) for i in shape)
+        return tuple((int(i) + int(blocksize) - 1) & ~(int(blocksize) - 1) for i in shape)
 
 
 def kernel_size(sigma, odd=False, cutoff=4):
@@ -81,3 +81,29 @@ def sizeof(shape, dtype="uint8"):
     else:
         cnt = int(shape)
     return cnt * itemsize
+    
+def _gcd(a, b):
+    """Calculate the greatest common divisor of a and b"""
+    while b:
+        a, b = b, a%b
+    return a
+
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+

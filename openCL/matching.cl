@@ -86,17 +86,24 @@ __kernel void matching(
 			dist2 = dist;
 		}
 		
-		if (dist1/dist2 < ratio_th) { //0.73^2. TODO: set this threshold as a parameter ?
-		
-			//pair of keypoints
-			uint2 pair = 0;
-			pair.s0 = (unsigned int) gid0;
-			pair.s1 = (unsigned int) current_min;
-			old = atomic_inc(counter);
-			if (old < max_nb_keypoints) matchings[old] = pair;
-		}
 		
 		
 	}//end "i loop"	
+	
+
+		//to avoid duplicata : gid0 <= current_min
+	if (dist1/dist2 < ratio_th && gid0 <= current_min) { //0.73^2. TODO: set this threshold as a parameter ?
+	
+		//pair of keypoints
+		uint2 pair = 0;
+		pair.s0 = (unsigned int) gid0;
+		pair.s1 = (unsigned int) current_min;
+		old = atomic_inc(counter);
+		if (old < max_nb_keypoints) matchings[old] = pair;
+	}
+
+
+	
+	
 	
 }

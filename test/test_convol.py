@@ -72,6 +72,8 @@ def my_blur(img, kernel):
 class test_convol(unittest.TestCase):
     def setUp(self):
         self.input = scipy.misc.lena().astype(numpy.float32)
+        self.input = numpy.ascontiguousarray(self.input[0:507,0:209])
+        
         self.gpu_in = pyopencl.array.to_device(queue, self.input)
         self.gpu_tmp = pyopencl.array.empty(queue, self.input.shape, dtype=numpy.float32, order="C")
         self.gpu_out = pyopencl.array.empty(queue, self.input.shape, dtype=numpy.float32, order="C")
@@ -84,7 +86,7 @@ class test_convol(unittest.TestCase):
         self.IMAGE_W = numpy.int32(self.input.shape[-1])
         self.IMAGE_H = numpy.int32(self.input.shape[0])
         self.wg = (256, 2)
-        self.shape = calc_size(self.input.shape, self.wg)
+        self.shape = calc_size((self.input.shape[1], self.input.shape[0]), self.wg)
 
     def tearDown(self):
         self.input = None

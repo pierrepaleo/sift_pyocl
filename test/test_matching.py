@@ -112,7 +112,7 @@ class test_matching(unittest.TestCase):
         
         gpu_keypoints1 = pyopencl.array.to_device(queue, kp1)
         gpu_keypoints2 = pyopencl.array.to_device(queue, kp2)
-        gpu_matchings = pyopencl.array.zeros(queue, (keypoints_end-keypoints_start,1),dtype=numpy.uint32, order="C")
+        gpu_matchings = pyopencl.array.zeros(queue, (keypoints_end-keypoints_start,2),dtype=numpy.uint32, order="C")
         keypoints_start, keypoints_end = numpy.int32(keypoints_start), numpy.int32(keypoints_end)
         counter = pyopencl.array.zeros(queue, (1,1),dtype=numpy.int32, order="C")
 
@@ -121,6 +121,7 @@ class test_matching(unittest.TestCase):
         		gpu_keypoints1.data, gpu_keypoints2.data, gpu_matchings.data, counter.data,
         		nb_keypoints, ratio_th, keypoints_start, keypoints_end)
         res = gpu_matchings.get()
+        cnt = counter.get()
         t1 = time.time()
 
         if (USE_CPP_SIFT):
@@ -129,10 +130,17 @@ class test_matching(unittest.TestCase):
             ref2 = sc.sift(scipy.misc.lena()) #ref2.x, ref2.y, ref2.scale, ref2.angle, ref2.desc --- ref2[numpy.argsort(ref2.y)]).desc
             ref = ref2.desc
         else:
-            ref = my_matching(kp1, kp2, keypoints_start, keypoints_end)
+            ref, nb_match = my_matching(kp1, kp2, keypoints_start, keypoints_end)
 
         t2 = time.time()
         
+        res_sort = res[numpy.argsort(res[:,1])]
+        ref_sort = ref[numpy.argsort(ref[:,1])]
+        
+        print res_sort[0:20]
+        print ""
+        print ref_sort[0:20]
+        print("OpenCL: %d match / Python: %d match" %(cnt,nb_match))
         
 
         #sort to compare added keypoints

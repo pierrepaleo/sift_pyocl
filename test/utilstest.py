@@ -48,6 +48,7 @@ import urllib2
 # import gzip
 # import numpy
 import shutil
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("utilstest")
 
 def copy(infile, outfile):
@@ -99,10 +100,24 @@ class UtilsTest(object):
     sys.modules[name] = sift
     logger.info("sift loaded from %s" % sift.__file__)
 
+    @classmethod
+    def deep_reload(cls):
+        logger.info("Loading sift")
+        cls.sift = None
+        sift = None
+        sys.path.insert(0, cls.sift_home)
+        for key in sys.modules.copy():
+            if key.startswith("sift"):
+                sys.modules.pop(key)
 
+        import sift
+        cls.sift = sift
+        logger.info("sift loaded from %s" % sift.__file__)
+        sys.modules[cls.name] = sift
+        return cls.sift
 
     @classmethod
-    def forceBuild(cls):
+    def forceBuild(cls, remove_first=True):
         """
         force the recompilation of sift
         """
@@ -112,16 +127,21 @@ class UtilsTest(object):
                     logger.info("Building sift to %s" % cls.sift_home)
                     if "sift" in sys.modules:
                         logger.info("sift module was already loaded from  %s" % sys.modules["sift"])
-                        sift = None
+                        cls.sift = None
                         sys.modules.pop("sift")
-                    recursive_delete(cls.sift_home)
+                    if remove_first:
+                        recursive_delete(cls.sift_home)
                     p = subprocess.Popen([sys.executable, "setup.py", "build"],
                                      shell=False, cwd=os.path.dirname(cls.test_home))
                     logger.info("subprocess ended with rc= %s" % p.wait())
-                    sift = imp.load_module(*((cls.name,) + imp.find_module(cls.name, [cls.sift_home])))
-                    sys.modules[cls.name] = sift
-                    logger.info("sift loaded from %s" % sift.__file__)
+                    opencl = os.path.join(os.path.dirname(cls.test_home), "openCL")
+                    for clf in os.listdir(opencl):
+                        if clf.endswith(".cl") and clf not in os.listdir(os.path.join(cls.sift_home, "sift")):
+                            copy(os.path.join(opencl, clf), os.path.join(cls.sift_home, "sift", clf))
+                    cls.sift = cls.deep_reload()
                     cls.recompiled = True
+
+
 
     @classmethod
     def timeoutDuringDownload(cls, imagename=None):
@@ -217,6 +237,7 @@ def getLogger(filename=__file__):
     basename = os.path.basename(os.path.abspath(filename))
     basename = os.path.splitext(basename)[0]
     force_build = False
+    force_remove = False
     level = logging.WARN
     for opts in sys.argv[1:]:
         if opts in ["-d", "--debug"]:
@@ -227,14 +248,18 @@ def getLogger(filename=__file__):
 #            sys.argv.pop(sys.argv.index(opts))
         elif opts in ["-f", "--force"]:
             force_build = True
-#            sys.argv.pop(sys.argv.index(opts))
+        elif opts in ["-r", "--really-force"]:
+            force_remove = True
+            force_build = True
+
     mylogger = logging.getLogger(basename)
     mylogger.setLevel(level)
     mylogger.debug("tests loaded from file: %s" % basename)
     if force_build:
-        UtilsTest.forceBuild()
+        UtilsTest.forceBuild(force_remove)
+    else:
+        UtilsTest.deep_reload()
     return mylogger
-
 ################################################################################
 # This is very specific to PyOpenCL
 ################################################################################
@@ -243,4 +268,5 @@ import sift
 from sift.opencl import ocl
 ctx = ocl.create_context("GPU")
 logger.info("working on %s" % ctx.devices[0].name)
+
 

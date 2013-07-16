@@ -154,7 +154,7 @@ class test_algebra(unittest.TestCase):
                 nb_ones += 1
 
         gpu_keypoints = pyopencl.array.to_device(queue, keypoints)
-        output = pyopencl.array.empty(queue, (nbkeypoints,4), dtype=numpy.float32, order="C")
+        output = pyopencl.array.empty(queue, (nbkeypoints,4), dtype=numpy.float32,order="C")
         output.fill(-1.0,queue)
         counter = pyopencl.array.zeros(queue, (1,), dtype=numpy.int32, order="C")
         wg = max(self.wg),

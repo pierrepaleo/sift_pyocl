@@ -8,7 +8,7 @@ import sift
 import numpy
 import scipy.misc
 
-
 lena = scipy.misc.lena()
 s = sift.SiftPlan(template=lena, profile=True, devicetype="GPU")
 kp = s.keypoints(lena)
+print kp.shape

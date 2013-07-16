@@ -11,7 +11,7 @@ import scipy.misc
 import pylab
 lena2 = scipy.misc.lena()
 #lena = scipy.misc.imread("../stream.tiff") #for other tests
-lena = numpy.ascontiguousarray(lena2[0:512,0:512]) #TODO: correct shrink
+lena = numpy.ascontiguousarray(lena2[0:209,0:507]) #TODO: correct shrink
 # lena[:] = 0
 # lena[100:110, 100:110] = 255
 s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128,devicetype="GPU")

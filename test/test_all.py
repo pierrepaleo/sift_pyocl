@@ -50,15 +50,16 @@ from test_reductions import test_suite_reductions
 from test_convol import test_suite_convol
 from test_algebra import test_suite_algebra
 from test_image import test_suite_image
-
+from test_keypoints import test_suite_keypoints
+from test_matching import test_suite_matching
 
 def test_suite_all():
     testSuite = unittest.TestSuite()
+    testSuite.addTest(test_suite_algebra())
     testSuite.addTest(test_suite_gaussian())
     testSuite.addTest(test_suite_preproc())
     testSuite.addTest(test_suite_reductions())
     testSuite.addTest(test_suite_convol())
-    testSuite.addTest(test_suite_algebra())
     testSuite.addTest(test_suite_image())
     testSuite.addTest(test_suite_keypoints())
     testSuite.addTest(test_suite_matching())

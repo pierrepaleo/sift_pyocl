@@ -56,7 +56,7 @@
 
 #define REDUCE(a, b) ((float2)(fmax(a.x,b.x),fmin(a.y,b.y)))
 #define READ_AND_MAP(i) ((float2)(data[i],data[i]))
-
+#define MIN(i,j) ( (i)<(j) ? (i):(j) )
 
 /**
  * \brief max_min_global_stage1: Look for the maximum an the minimum of an array. stage1
@@ -79,7 +79,7 @@ __kernel void max_min_global_stage1(
 		unsigned int SIZE){
 
     __local volatile float2 ldata[WORKGROUP_SIZE];
-    unsigned int group_size =  min(get_local_size(0), (unsigned int) WORKGROUP_SIZE);
+    unsigned int group_size =  MIN(get_local_size(0), (unsigned int) WORKGROUP_SIZE);
     unsigned int lid = get_local_id(0);
     float2 acc;
     unsigned int big_block = group_size * get_num_groups(0);
@@ -160,7 +160,7 @@ __kernel void max_min_global_stage2(
 
 	__local float2 ldata[WORKGROUP_SIZE];
     unsigned int lid = get_local_id(0);
-    unsigned int group_size =  min(get_local_size(0), (unsigned int) WORKGROUP_SIZE);
+    unsigned int group_size =  MIN(get_local_size(0), (unsigned int) WORKGROUP_SIZE);
     float2 acc = (float2)(-1.0f, -1.0f);
     if (lid<=group_size){
     	ldata[lid] = data2[lid];

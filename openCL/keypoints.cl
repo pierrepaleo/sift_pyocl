@@ -131,8 +131,7 @@ __kernel void orientation_assignment(
 			if (gval > 0.0f  &&  distsq < (radius*radius) + 0.5f) {
 				// Ori is in range of -PI to PI.
 				angle = ori[r*grad_width+c];
-				//bin = (int) (36 * (angle + M_PI_F + 0.001f) / (2.0f * M_PI_F)); //why this offset ?
-				bin = (int) (18.0f * (angle + M_PI_F + 0.001f) *  M_1_PI_F);
+				bin = (int) (18.0f * (angle + M_PI_F) *  M_1_PI_F);
 				if (bin<0) bin+=36;
 				if (bin>35) bin-=36;
 				hist2[lid0] = exp(- distsq / (2.0f*sigma*sigma)) * gval;
