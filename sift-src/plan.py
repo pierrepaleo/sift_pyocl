@@ -15,7 +15,7 @@ __authors__ = ["Jérôme Kieffer"]
 __contact__ = "jerome.kieffer@esrf.eu"
 __license__ = "BSD"
 __copyright__ = "European Synchrotron Radiation Facility, Grenoble, France"
-__date__ = "2013-06-26"
+__date__ = "2013-07-15"
 __status__ = "beta"
 __license__ = """
 Permission is hereby granted, free of charge, to any person
@@ -107,6 +107,7 @@ class SiftPlan(object):
         self.events = []
         self.scales = []  # in XY order
         self.procsize = []
+        self.procsize_XY = [] #same as  procsize but with dimension in (X,Y) not (slow, fast)
         self.wgsize = []
         self.kpsize = None
         self.buffers = {}
@@ -154,8 +155,8 @@ class SiftPlan(object):
         """
         Nota scales are in XY order
         """
-        self.scales = [tuple(numpy.int32(i) for i in self.shape[-1::-1])]
-        shape = self.shape
+        shape = self.shape[-1::-1]
+        self.scales = [tuple(numpy.int32(i) for i in shape)]
         min_size = 2 * par.BorderDist + 2
         while min(shape) > min_size * 2:
             shape = tuple(numpy.int32(i // 2) for i in shape)
@@ -300,10 +301,14 @@ class SiftPlan(object):
         for kernel in self.kernels:
             kernel_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), kernel + ".cl")
             kernel_src = open(kernel_file).read()
+            wg_size = min(self.max_workgroup_size, self.kernels[kernel])
             try:
-                program = pyopencl.Program(self.ctx, kernel_src).build('-D WORKGROUP_SIZE=%s' % min(self.max_workgroup_size, self.kernels[kernel]))
+                program = pyopencl.Program(self.ctx, kernel_src).build('-D WORKGROUP_SIZE=%s' % wg_size)
             except pyopencl.MemoryError as error:
                 raise MemoryError(error)
+            except pyopencl.RuntimeError as error:
+                logger.error("Failed compiling kernel %s with workgroup size %s: %s", kernel, wg_size, error)
+                raise error
             self.programs[kernel] = program
 
     def _free_kernels(self):
@@ -330,9 +335,10 @@ class SiftPlan(object):
         min_size = 2 * par.BorderDist + 2
         self.max_workgroup_size = min(self.max_workgroup_size, max_work_item_sizes[1])
         while min(shape) > min_size:
-            wg = (1, min(2 ** int(math.log(shape[1]) / math.log(2)), self.max_workgroup_size))
+            wg = (min(2 ** int(math.log(shape[1], 2)), self.max_workgroup_size), 1)
             self.wgsize.append(wg)
             self.procsize.append(calc_size(shape, wg))
+            self.procsize_XY.append(calc_size(shape[-1::-1], wg))
             shape = tuple(i // 2 for i in shape)
 
 
@@ -356,17 +362,18 @@ class SiftPlan(object):
         elif (image.ndim == 3) and (self.dtype == numpy.uint8) and (self.RGB):
             evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
             if self.profile:self.events.append(("copy H->D", evt))
-            evt = self.programs["preprocess"].rgb_to_float(self.queue, self.procsize[0], self.wgsize[0],
-                                                         self.buffers["raw"].data, self.buffers[(0, 0) ].data, *self.scales[0])
-            if self.profile:self.events.append(("RGB->float", evt))
+            print self.procsize_XY[0], self.wgsize[0]
+            evt = self.programs["preprocess"].rgb_to_float(self.queue, self.procsize_XY[0], self.wgsize[0],
+            	self.buffers["raw"].data, self.buffers[(0, 0)].data, *self.scales[0])
+            if self.profile:self.events.append(("RGB -> float", evt))
 
         elif self.dtype in self.converter:
             program = self.programs["preprocess"].__getattr__(self.converter[self.dtype])
             evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
             if self.profile:self.events.append(("copy H->D", evt))
-            evt = program(self.queue, self.procsize[0], self.wgsize[0],
+            evt = program(self.queue, self.procsize_XY[0], self.wgsize[0],
                     self.buffers["raw"].data, self.buffers[(0, 0)].data, *self.scales[0])
-            if self.profile:self.events.append(("convert ->float", evt))
+            if self.profile:self.events.append(("convert -> float", evt))
         else:
             raise RuntimeError("invalid input format error")
 
@@ -381,7 +388,7 @@ class SiftPlan(object):
         if self.profile:
             self.events.append(("max_min_stage1", k1))
             self.events.append(("max_min_stage2", k2))
-        evt = self.programs["preprocess"].normalizes(self.queue, self.procsize[0], self.wgsize[0],
+        evt = self.programs["preprocess"].normalizes(self.queue, self.procsize_XY[0], self.wgsize[0],
                                                self.buffers[(0, 0)].data,
                                                self.buffers["min"].data,
                                                self.buffers["max"].data,
@@ -551,9 +558,9 @@ class SiftPlan(object):
                         procsize2 = int(newcnt * wgsize2[0]),
                         print "NOTICE: computing descriptors with CPU-optimized kernels"
                     else:
-                        wgsize2 = (4, 4, 8) # hard-coded for this kernel, do not modify these values !
+                        wgsize2 = (8, 8, 8) # hard-coded for this kernel, do not modify these values !
                         file_to_use = "keypoints"
-                        procsize2 = int(newcnt * wgsize2[0]), 4, 8
+                        procsize2 = int(newcnt * wgsize2[0]), 8, 8
                    
                     evt2 = self.programs[file_to_use].descriptor(self.queue, procsize2, wgsize2,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
@@ -576,10 +583,16 @@ class SiftPlan(object):
         # Rescale all images to populate all octaves TODO: scale G3 -> G'0
         ########################################################################
         if octave < self.octave_max - 1:
-             evt = self.programs["preprocess"].shrink(self.queue, self.procsize[octave + 1], self.wgsize[octave + 1],
+#             evt = self.programs["preprocess"].shrink(self.queue, self.procsize[octave + 1], self.wgsize[octave + 1],
+#                                                self.buffers[(octave, par.Scales)].data, self.buffers[(octave + 1, 0)].data,
+#                                                numpy.int32(2), numpy.int32(2), *self.scales[octave + 1])
+
+            evt = self.programs["preprocess"].shrink(self.queue, self.procsize[octave + 1], self.wgsize[octave + 1],
                                                 self.buffers[(octave, par.Scales)].data, self.buffers[(octave + 1, 0)].data,
-                                                numpy.int32(2), numpy.int32(2), *self.scales[octave + 1])
-             if self.profile:self.events.append(("shrink %s->%s" % (self.scales[octave], self.scales[octave + 1]), evt))
+                                                numpy.int32(2), numpy.int32(2), self.scales[octave][0], self.scales[octave][1],
+                                                *self.scales[octave + 1])
+
+            if self.profile:self.events.append(("shrink %s->%s" % (self.scales[octave], self.scales[octave + 1]), evt))
         results = numpy.empty((last_start, 4), dtype=numpy.float32)
         descriptors = numpy.empty((last_start, 128), dtype=numpy.uint8)
         if last_start:
