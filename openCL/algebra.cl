@@ -12,6 +12,7 @@ typedef float4 keypoint;
  * @param width: integer, number of columns the matrices
  * @param height: integer, number of lines of the matrices
  *
+ * Nota: updated to have coalesced access on dim[0]
  */
 
 __kernel void combine(
@@ -28,9 +29,8 @@ __kernel void combine(
 	int gid1 = (int) get_global_id(1);
 	int gid0 = (int) get_global_id(0);
 
-	if (gid0 < height && gid1 < width) {
-
-		int index = gid0 * width + gid1;
+	if (gid0 < width && gid1 < height) {
+		int index = gid0 + width * gid1;
 		int index_dog = dog * width * height +  index;
 		w[index_dog] = a * u[index] + b * v[index];
 	}

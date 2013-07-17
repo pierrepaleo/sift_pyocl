@@ -56,9 +56,9 @@
  * \brief Cast values of an array of uint8 into a float output array.
  *
  * @param array_int:     Pointer to global memory with the input data as unsigned8 array
- * @param array_float:  Pointer to global memory with the output data as float array
- * @param IMAGE_W:        Width of the image
- * @param IMAGE_H:         Height of the image
+ * @param array_float:   Pointer to global memory with the output data as float array
+ * @param IMAGE_W:       Width of the image
+ * @param IMAGE_H:       Height of the image
  */
 __kernel void
 u8_to_float( __global unsigned char  *array_int,
@@ -67,10 +67,11 @@ u8_to_float( __global unsigned char  *array_int,
              const int IMAGE_H
 )
 {
-    int i = get_global_id(0) * IMAGE_W + get_global_id(1);
     //Global memory guard for padding
-    if(i < IMAGE_W*IMAGE_H)
-        array_float[i]=(float)array_int[i];
+    if ((get_global_id(0)<IMAGE_W) && (get_global_id(1) < IMAGE_H)){
+        int i = get_global_id(0) + IMAGE_W * get_global_id(1);
+    	array_float[i]=(float)array_int[i];
+    } //end test in image
 }//end kernel
 
 /**
@@ -88,10 +89,11 @@ u16_to_float(__global unsigned short  *array_int,
              const int IMAGE_H
 )
 {
-    int i = get_global_id(0) * IMAGE_W + get_global_id(1);
     //Global memory guard for padding
-    if(i < IMAGE_W*IMAGE_H)
-        array_float[i]=(float)array_int[i];
+    if ((get_global_id(0)<IMAGE_W) && (get_global_id(1) < IMAGE_H)){
+    	int i = get_global_id(0) + IMAGE_W * get_global_id(1);
+    	array_float[i]=(float)array_int[i];
+    }
 }//end kernel
 
 
@@ -110,10 +112,11 @@ s32_to_float(    __global int  *array_int,
                  const int IMAGE_H
 )
 {
-    int i = get_global_id(0) * IMAGE_W + get_global_id(1);
     //Global memory guard for padding
-    if(i < IMAGE_W*IMAGE_H)
+    if ((get_global_id(0)<IMAGE_W) && (get_global_id(1) < IMAGE_H)){
+    	int i = get_global_id(0) + IMAGE_W * get_global_id(1);
         array_float[i] = (float)(array_int[i]);
+    }//end test in image
 }//end kernel
 
 /**
@@ -131,10 +134,11 @@ s64_to_float(    __global long *array_int,
                  const int IMAGE_H
 )
 {
-    int i = get_global_id(0) * IMAGE_W + get_global_id(1);
     //Global memory guard for padding
-    if(i < IMAGE_W*IMAGE_H)
+    if ((get_global_id(0)<IMAGE_W) && (get_global_id(1) < IMAGE_H)){
+    	int i = get_global_id(0) + IMAGE_W * get_global_id(1);
         array_float[i] = (float)(array_int[i]);
+    }//end test in image
 }//end kernel
 
 /**
@@ -178,11 +182,11 @@ rgb_to_float(    __global unsigned char *array_int,
                  const int IMAGE_H
 )
 {
-    int i = get_global_id(0) * IMAGE_W + get_global_id(1);
     //Global memory guard for padding
-    if(i < IMAGE_W*IMAGE_H)
+    if ((get_global_id(0)<IMAGE_W) && (get_global_id(1) < IMAGE_H)){
+    	int i = get_global_id(0) + IMAGE_W * get_global_id(1);
         array_float[i] = 0.299f*array_int[3*i] + 0.587f*array_int[3*i+1] + 0.114f*array_int[3*i+2];
-;
+    }  //end test in image
 }//end kernel
 
 
@@ -199,21 +203,18 @@ rgb_to_float(    __global unsigned char *array_int,
  *
 **/
 __kernel void
-normalizes(    __global         float     *image,
-            __constant         float * min_in __attribute__((max_constant_size(MAX_CONST_SIZE))),
-            __constant         float * max_in __attribute__((max_constant_size(MAX_CONST_SIZE))),
-            __constant         float * max_out __attribute__((max_constant_size(MAX_CONST_SIZE))),
+normalizes(    __global       float     *image,
+            __constant        float * min_in __attribute__((max_constant_size(MAX_CONST_SIZE))),
+            __constant        float * max_in __attribute__((max_constant_size(MAX_CONST_SIZE))),
+            __constant        float * max_out __attribute__((max_constant_size(MAX_CONST_SIZE))),
             const             int IMAGE_W,
             const             int IMAGE_H
 )
 {
-    float data;
-    int i = get_global_id(0) * IMAGE_W + get_global_id(1);
     //Global memory guard for padding
-    if(i < IMAGE_W*IMAGE_H)
-    {
-        data = image[i];
-        image[i] = max_out[0]*(data-min_in[0])/(max_in[0]-min_in[0]);
+    if((get_global_id(0) < IMAGE_W) && (get_global_id(1)<IMAGE_H)){
+    	int i = get_global_id(0) + IMAGE_W * get_global_id(1);
+        image[i] = max_out[0]*(image[i]-min_in[0])/(max_in[0]-min_in[0]);
     };//end if in IMAGE
 };//end kernel
 
@@ -241,11 +242,11 @@ shrink(const __global     float     *image_in,
 )
 {
     int gid0=get_global_id(0), gid1=get_global_id(1);
-    int j,i = gid0 * SMALL_W + gid1;
+    int j,i = gid0 + SMALL_W * gid1;
     //Global memory guard for padding
-    if(i < SMALL_W*SMALL_H)
+    if ((gid0 < SMALL_W) && (gid1 <SMALL_H))
     {
-        j = gid0*LARGE_W*scale_h + gid1*scale_w;
+        j = gid0 * scale_w + gid1 * scale_h * LARGE_W;
         image_out[i] = image_in[j];
     };//end if in IMAGE
 };//end kernel
@@ -257,16 +258,18 @@ shrink(const __global     float     *image_in,
  *
  * @param image_in        Float pointer to global memory storing the big image.
  * @param image_ou        Float pointer to global memory storing the small image.
- * @param scale_w:     Minimum value in the input array
- * @param scale_h:     Maximum value in the input array
- * @param binned_width:    Width of the output image
- * @param IMAGE_H:     Height of the output image
+ * @param scale_width:    Binning factor in horizontal           
+ * @param scale_heigth:   Binning factor in vertical
+ * @param orig_width:     Original image size in horizontal
+ * @param orig_heigth:    Original image size in vertical
+ * @param binned_width:   Width of the output binned image
+ * @param binned_heigth:  Height of the output binned image
  *
- *Nota: this is a 2D kernel.
+ * Nota: this is a 2D kernel. This is non working and non TESTED !!!
 **/
 __kernel void
 bin(        const    __global     float     *image_in,
-                    __global     float     *image_out,
+                     __global     float     *image_out,
             const                 int     scale_width,
             const                 int     scale_heigth,
             const                 int     orig_width,
@@ -276,29 +279,28 @@ bin(        const    __global     float     *image_in,
 )
 {
     int gid0=get_global_id(0), gid1=get_global_id(1);
-    int j,i = gid0 * binned_width + gid1;
-    int w, h, size_w, size_h, big_h, big_w;
-    float data=0.0f;
     //Global memory guard for padding
-    if(i < binned_width*binned_heigth){
-        size_h = 0;
-        for (h=0; h<scale_heigth; h++){
-            big_h = gid0 * scale_heigth + h;
-            if (big_h < orig_heigth){
-                size_h += 1;
-                size_w = 0;
-                for (w=0; w<scale_width; w++){
-                    big_w = gid1*scale_width + w;
-                    if (big_w < orig_width){
-                        //j = (gid0 * scale_heigth + h) * (binned_width*scale_width) + (gid1*scale_width + w);
-                        size_w += 1;
-                        j = big_h * (binned_width*scale_width) + big_w;
-                        data += image_in[j];
-                    }//end test in image horiz
-                };//end for horiz
-            }//end test in image vert
+    if((gid0 < binned_width) && (gid1 < binned_heigth) ){
+    	int j,i = gid0 + binned_width * gid1;
+        float data=0.0f;
+        int w, h, big_h, big_w;
+        for (h=gid1 * scale_heigth; h<(gid1+1) * scale_heigth; h++){
+            if (h>=orig_heigth){
+            	big_h = 2*orig_heigth - h - 1;
+            }else{
+            	big_h = h;
+            }
+            for (w=gid0*scale_width; w<(gid0+1)*scale_width; w++){
+                if (w>=orig_width){
+                	big_w = 2*orig_width - w - 1;
+                }else{
+                	big_w = w;
+                }
+                j = big_h * orig_width + big_w;
+				data += image_in[j];
+			};//end for horiz
         };//end for vertical
-        image_out[i] = data/size_h/size_w;
+        image_out[i] = data/((float)(scale_width*scale_heigth));
     };//end if in IMAGE
 };//end kernel
 
@@ -347,5 +349,6 @@ divide_cst(    __global     float     *data,
         data[gid] = data[gid] / value[0];
     }
 }
+
 
 

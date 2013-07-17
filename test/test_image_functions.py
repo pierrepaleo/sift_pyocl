@@ -14,9 +14,11 @@ def my_gradient(mat):
     """
     numpy implementation of gradient :
     "The gradient is computed using central differences in the interior and first differences at the boundaries. The returned gradient hence has the same shape as the input array."
+    NOTE:
+        -with numpy.gradient, the amplitude is twice smaller than in SIFT.cpp, therefore we multiply the amplitude by two
     """
     g = numpy.gradient(mat)
-    return numpy.sqrt(g[0]**2+g[1]**2), numpy.arctan2(g[0],g[1]) #image.cl/compute_gradient_orientation() puts a "-" here
+    return 2.0*numpy.sqrt(g[0]**2+g[1]**2), numpy.arctan2(g[0],g[1]) #sift.cpp puts a "-" here
     
     
     
@@ -379,6 +381,46 @@ def normalize(vec):
 
 
 
+def my_matching(keypoints1, keypoints2, start, end, ratio_th=0.5329):
+    '''
+    Python implementation of SIFT keypoints matching
+    '''
+    counter = 0
+    matchings = numpy.zeros((end-start,2),dtype=numpy.uint32)
+    for i, desc1 in enumerate(keypoints1):#FIXME: keypoints1.desc.... idem below
+        ratio, match = check_for_match(desc1, keypoints2)
+        if (ratio < ratio_th and i <= match):
+            matchings[counter] = i, match
+            counter += 1
+    return matchings, counter  
+
+
+def check_for_match(desc1, keypoints2):
+    '''
+    check if the descriptor "desc1" has matches in the list "keypoints2"
+    '''
+    current_min = 0
+    dist1 = dist2 = 1000000000000.0
+    for j, desc2 in enumerate(keypoints2):
+        dst = l1_distance(desc1,desc2)
+        if (dst < dist1):
+		    dist2 = dist1
+		    dist1 = dst
+		    current_min = j
+        elif (dst < dist2):
+		    dist2 = dst;
+
+    return dist1/dist2, current_min
+
+
+
+def l1_distance(desc1, desc2):
+    '''
+    L1 distance between two vectors
+    '''
+    return abs(desc1-desc2).sum()
+
+
 
 
 
@@ -404,6 +446,49 @@ def keypoints_compare(ref,res):
     ref_angle = ref[(ref[:,3].argsort(axis=0)),3]
     
     return abs(res_c - ref_c).max(), abs(res_r - ref_r).max(), abs(res_s - ref_s).max(), abs(res_angle - ref_angle).max()
+
+
+def descriptors_compare(ref,res):
+    #count null descriptors in "ref" (take care of the order in the arguments : (ref, res) and not (res, ref))
+    nulldesc = 0
+    for descriptor2 in res:
+        if abs(descriptor2).sum() == 0: nulldesc+=1
+    #count descriptors that are (exactly) equal
+    match = 0
+    delta = 0
+    for descriptor in ref:
+        for descriptor2 in res:
+            delta = abs(descriptor-descriptor2).sum()
+            if delta == 0: match+=1
+            
+    return match,nulldesc
+        
+def check_for_doubles(res):
+    #check for descriptors that appear more than one time in the list
+    doubles = 0
+    cnt = numpy.zeros(res.shape[0])
+    for idx,desc in enumerate(res):
+        for idx2,desc2 in enumerate(res):
+            if abs(desc-desc2).sum() == 0 and idx != idx2 and (cnt[idx] == 0 or cnt[idx2] == 0):
+                cnt[idx] = 1
+                cnt[idx2] = 1
+                doubles+=1
+    return doubles
+
+
+
+def my_compact(keypoints,nbkeypoints):
+    '''
+    Reference compacting
+    '''
+    output = -numpy.ones_like(keypoints)
+    idx = numpy.where(keypoints[:,1]!=-1)[0]
+    length = idx.size
+    output[:length,0] = keypoints[idx,0]
+    output[:length,1] = keypoints[idx,1]
+    output[:length,2] = keypoints[idx,2]
+    output[:length,3] = keypoints[idx,3]
+    return output, length
  
 '''    
     
