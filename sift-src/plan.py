@@ -162,10 +162,10 @@ class SiftPlan(object):
         shape = self.shape[-1::-1]
         self.scales = [tuple(numpy.int32(i) for i in shape)]
         min_size = 2 * par.BorderDist + 2
-        while min(shape) > min_size * 2:
+        while min(shape) > min_size:
             shape = tuple(numpy.int32(i // 2) for i in shape)
             self.scales.append(shape)
-#        self.scales.pop()
+        self.scales.pop()
         self.octave_max = len(self.scales)
 
     def _calc_memory(self):
@@ -676,8 +676,10 @@ class SiftPlan(object):
                 kpt += sum
                 print("octave %i kp count %i/%i size %s ratio:%s" % (octave, sum, self.kpsize, self.scales[octave], 1000.0 * sum / self.scales[octave][1] / self.scales[octave][0]))
         print("Found total %i guess %s pixels per keypoint" % (kpt, self.shape[0] * self.shape[1] / kpt))
+
     def debug_holes(self, label=""):
         print("%s %s" % (label, numpy.where(self.buffers["Kp_1"].get()[:, 1] == -1)[0]))
+
     def log_profile(self):
         t = 0.0
         orient = 0.0
@@ -697,6 +699,10 @@ class SiftPlan(object):
         print("%50s:\t%.3fms" % ("Total execution time", t))
         print("%50s:\t%.3fms" % ("Total Orientation assignment", orient))
         print("%50s:\t%.3fms" % ("Total Descriptors", descr))
+
+    def reset_timer(self):
+        self.events = []
+
 if __name__ == "__main__":
     # Prepare debugging
     import scipy.misc
