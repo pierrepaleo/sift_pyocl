@@ -66,12 +66,12 @@ class DemoSift(object):
         if filename and os.path.exists(filename):
             self.filename = filename
         else:
-            self.filename = UtilsTest.getimage("10h59m34-Canon_DIGITAL_IXUS_850_IS.jpg")
+            self.filename = UtilsTest.getimage("wikipedia/commons/9/94/Esrf_grenoble.jpg")
         self.image_rgb = scipy.misc.imread(self.filename)
         self.image_bw = 0.299 * self.image_rgb[:, :, 0] + 0.587 * self.image_rgb[:, :, 1] + 0.114 * self.image_rgb[:, :, 2]
         if feature:
             self._sift_cpp = feature.SiftAlignment()
-        self._sict_ocl = sift.SiftPlan(template=self.image_rgb, device=device, devicetype=devicetype)
+        self._sift_ocl = sift.SiftPlan(template=self.image_rgb, device=device, devicetype=devicetype)
         self.kp_cpp = numpy.empty(0)
         self.kp_ocl = numpy.empty(0)
         self.fig = pylab.figure()
@@ -98,7 +98,7 @@ class DemoSift(object):
     def sift_ocl(self):
         print(os.linesep + "Running SIFT using OpenCL code")
         t0 = time.time()
-        self.kp_ocl = self._sict_ocl.keypoints(self.image_rgb)
+        self.kp_ocl = self._sift_ocl.keypoints(self.image_rgb)
         t1 = time.time()
         self.timing_ocl = t1 - t0
         self.sp1.set_title("OpenCL: %s keypoint" % self.kp_ocl.size)
@@ -163,12 +163,17 @@ if __name__ == "__main__":
     parser.add_option("-t", "--type", dest="type",
                        help="device type  on which to run like CPU (default) or GPU",
                        default="CPU")
+
     (options, args) = parser.parse_args()
+    if options.device:
+        device = tuple(int(i) for i in options.device.split(","))
+    else:
+        device = None
     if args:
         for i in args:
             if os.path.exists(i):
                 print("Processing file %s" % i)
-                d = DemoSift(i, devicetype=option.type, device=options.device)
+                d = DemoSift(i, devicetype=options.type, device=device)
                 d.sift_ocl()
                 if feature:
                     d.sift_cpp()
@@ -179,7 +184,7 @@ if __name__ == "__main__":
                 raw_input()
     else:
         print("Processing file demo image")
-        d = DemoSift(devicetype=options.type, device=options.device)
+        d = DemoSift(devicetype=options.type, device=device)
         d.sift_ocl()
         if feature:
             d.sift_cpp()
