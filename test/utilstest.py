@@ -63,7 +63,7 @@ class UtilsTest(object):
     Static class providing useful stuff for preparing tests.
     """
     timeout = 60        #timeout in seconds for downloading images
-    url_base = "http://forge.epn-campus.eu/attachments/download"
+    url_base = "http://upload.wikimedia.org"
     #Nota https crashes with error 501 under windows.
 #    url_base = "https://forge.epn-campus.eu/attachments/download"
     test_home = os.path.dirname(os.path.abspath(__file__))
