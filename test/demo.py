@@ -62,7 +62,7 @@ def cmp_kp(a, b):
 
 
 class DemoSift(object):
-    def __init__(self, filename=None, devicetype=None, device=None):
+    def __init__(self, filename=None, devicetype=None, device=None, profile=False):
         if filename and os.path.exists(filename):
             self.filename = filename
         else:
@@ -71,7 +71,7 @@ class DemoSift(object):
         self.image_bw = 0.299 * self.image_rgb[:, :, 0] + 0.587 * self.image_rgb[:, :, 1] + 0.114 * self.image_rgb[:, :, 2]
         if feature:
             self._sift_cpp = feature.SiftAlignment()
-        self._sift_ocl = sift.SiftPlan(template=self.image_rgb, device=device, devicetype=devicetype)
+        self._sift_ocl = sift.SiftPlan(template=self.image_rgb, device=device, devicetype=devicetype, profile=profile)
         self.kp_cpp = numpy.empty(0)
         self.kp_ocl = numpy.empty(0)
         self.fig = pylab.figure()
@@ -163,7 +163,15 @@ if __name__ == "__main__":
     parser.add_option("-t", "--type", dest="type",
                        help="device type  on which to run like CPU (default) or GPU",
                        default="CPU")
-
+    parser.add_option("-p", "--profile", dest="profile",
+                       help="Print profiling information of OpenExecution",
+                       default=False, action="store_true")
+    parser.add_option("-f", "--force", dest="force",
+                       help="rebuild the package",
+                       default=False, action="store_true")
+    parser.add_option("-r", "--remove", dest="remove",
+                       help="remove build and rebuild the package",
+                       default=False, action="store_true")
     (options, args) = parser.parse_args()
     if options.device:
         device = tuple(int(i) for i in options.device.split(","))
@@ -173,23 +181,26 @@ if __name__ == "__main__":
         for i in args:
             if os.path.exists(i):
                 print("Processing file %s" % i)
-                d = DemoSift(i, devicetype=options.type, device=device)
+                d = DemoSift(i, devicetype=options.type, device=device, profile=options.profile)
                 d.sift_ocl()
                 if feature:
                     d.sift_cpp()
                 d.timings()
                 d.show(1000)
                 d.match()
-
+                if options.profile:
+                    d._sift_ocl.log_profile()
                 raw_input()
     else:
         print("Processing file demo image")
-        d = DemoSift(devicetype=options.type, device=device)
+        d = DemoSift(devicetype=options.type, device=device, profile=options.profile)
         d.sift_ocl()
         if feature:
             d.sift_cpp()
         d.timings()
         d.show(1000)
         d.match()
+        if options.profile:
+            d._sift_ocl.log_profile()
         raw_input()
 
