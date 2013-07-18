@@ -103,8 +103,7 @@ class test_matching(unittest.TestCase):
         sc = feature.SiftAlignment()
         ref_sift = sc.sift(scipy.misc.lena())
         ref_sift_2 = numpy.recarray((ref_sift.shape),dtype=ref_sift.dtype)
-        ref_sift_2[:] = ref_sift[::-1]
-        print type(ref_sift), ref_sift.ndim, type(ref_sift_2), ref_sift_2.ndim
+        ref_sift_2[:] = (ref_sift[::-1])
         siftmatch = feature.sift_match(ref_sift, ref_sift_2)
         ref = ref_sift.desc
         
@@ -139,7 +138,6 @@ class test_matching(unittest.TestCase):
         print ""
 #        print ref_sort[0:20]
         print("OpenCL: %d match / C++ : %d match" %(cnt,siftmatch.shape[0]/2))
-
 
 
         #sort to compare added keypoints
