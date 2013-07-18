@@ -253,7 +253,6 @@ class test_keypoints(unittest.TestCase):
         '''
             For now, the descriptor kernel is not precise enough to get exactly the same descriptors values 
         (we have several difference of 1, but it is OK for the SIFT matching).
-        This is certainly due to the cast of the calculated float values to unsigned char.
             Use descriptors_compare(ref,res) to count how many descriptors are exactly the same.
         
         #sort to compare added keypoints

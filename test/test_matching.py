@@ -97,13 +97,6 @@ class test_matching(unittest.TestCase):
         '''
         tests keypoints matching kernel
         '''    
-        kp1, kp2, nb_keypoints, actual_nb_keypoints = matching_setup()
-        keypoints_start, keypoints_end = 0, actual_nb_keypoints
-        ratio_th = numpy.float32(0.5329) #sift.cpp : 0.73*0.73
-        print("Working on keypoints : [%s,%s]" % (keypoints_start, keypoints_end-1))
-        
-        wg = 1,
-        shape = kp1.shape[0]*wg[0], #TODO: bound for the min size of kp1, kp2
         
         #get the struct keypoints : (x,y,s,angle,[descriptors])
         import feature
@@ -115,12 +108,16 @@ class test_matching(unittest.TestCase):
         siftmatch = feature.sift_match(ref_sift, ref_sift_2)
         ref = ref_sift.desc
         
-#        gpu_keypoints1 = pyopencl.array.to_device(queue, kp1)
-#        gpu_keypoints2 = pyopencl.array.to_device(queue, kp2)
+        wg = 1,
+        shape = ref_sift.shape[0]*wg[0], #TODO: bound for the min size of the two keypoints lists
+        ratio_th = numpy.float32(0.5329) #sift.cpp : 0.73*0.73
+        keypoints_start, keypoints_end = 0, min(ref_sift.shape[0],ref_sift_2.shape[0])
+        
         gpu_keypoints1 = pyopencl.array.to_device(queue, ref_sift)
         gpu_keypoints2 = pyopencl.array.to_device(queue, ref_sift_2)
         gpu_matchings = pyopencl.array.zeros(queue, (keypoints_end-keypoints_start,2),dtype=numpy.uint32, order="C")
         keypoints_start, keypoints_end = numpy.int32(keypoints_start), numpy.int32(keypoints_end)
+        nb_keypoints = numpy.int32(10000)
         counter = pyopencl.array.zeros(queue, (1,1),dtype=numpy.int32, order="C")
         
 
@@ -133,7 +130,7 @@ class test_matching(unittest.TestCase):
         t1 = time.time()
 
        
-        ref_python, nb_match = my_matching(kp1, kp2, keypoints_start, keypoints_end)
+#        ref_python, nb_match = my_matching(kp1, kp2, keypoints_start, keypoints_end)
 
         t2 = time.time()
         
@@ -143,7 +140,7 @@ class test_matching(unittest.TestCase):
         print res_sort[0:20]
         print ""
         print ref_sort[0:20]
-        print("OpenCL: %d match / Python: %d match" %(cnt,nb_match))
+        print("OpenCL: %d match" %(cnt))
         
 
         print siftmatch[0:10]

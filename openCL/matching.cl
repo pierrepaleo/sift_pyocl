@@ -46,8 +46,8 @@ par.MatchYradius = 1000000.0f;
 __kernel void matching(
 	__global t_keypoint* keypoints1,
 	__global t_keypoint* keypoints2,
-//	__global char* desc1,
-//	__global char* desc2,
+//	__global unsigned char* desc1,
+//	__global unsigned char* desc2,
 	__global uint2* matchings,
 	__global int* counter,
 	int max_nb_keypoints,
@@ -63,16 +63,21 @@ __kernel void matching(
 	float dist1 = 1000000000000.0f, dist2 = 1000000000000.0f; //HUGE_VALF ?
 	int current_min = 0;
 	int old;
-//	unsigned char *desc1 = keypoints1->desc, *desc2 = keypoints2->desc;
+	
+	//pre-fetch
+	__local unsigned char desc1[128];
+	for (int i = 0; i<128; i++)
+		desc1[i] = ((keypoints1[gid0]).desc)[i];
 	
 	//each thread gid0 makes a loop on the second list
 	for (int i = start; i<end; i++) {
 	
 		//L1 distance between desc1[gid0] and desc2[i]
-		unsigned int dist = 0;
+		float dist = 0.0f;
 		for (int j=0; j<128; j++) {
-			unsigned char dval1 = (keypoints1->desc)[gid0*128+j], dval2 = (keypoints2->desc)[i*128+j];
-			dist += ((dval1 > dval2) ? (dval1 - dval2) : (-dval1 + dval2)); //fabs() ?
+//			unsigned char dval1 = desc1[gid0*128+j], dval2 = desc2[i*128+j];
+			unsigned char dval1 = desc1[j], dval2 = ((keypoints2[i]).desc)[j];
+			dist += (float) gid0; //((dval1 > dval2) ? (dval1 - dval2) : (-dval1 + dval2)); //fabs() ?
 		}
 		
 		if (dist < dist1) { //candidate better than the first
@@ -90,12 +95,12 @@ __kernel void matching(
 	
 
 		//to avoid duplicata : gid0 <= current_min
-	if (dist1/dist2 < ratio_th && gid0 <= current_min) { //0.73^2. TODO: set this threshold as a parameter ?
+	if (1 || (dist1/dist2 < ratio_th && gid0 <= current_min)) {
 	
 		//pair of keypoints
 		uint2 pair = 0;
-		pair.s0 = (unsigned int) gid0;
-		pair.s1 = (unsigned int) current_min;
+		pair.s0 = (unsigned int) keypoints2[gid0].desc[0]; //gid0;
+		pair.s1 = (unsigned int) keypoints2[gid0].desc[1]; //current_min;
 		old = atomic_inc(counter);
 		if (old < max_nb_keypoints) matchings[old] = pair;
 	}
