@@ -73,8 +73,6 @@ __kernel void matching(
 		for (int j=0; j<128; j++) {
 			unsigned char dval1 = desc1[gid0*128+j], dval2 = desc2[i*128+j];
 			dist += ((dval1 > dval2) ? (dval1 - dval2) : (-dval1 + dval2)); //fabs() ?
-			//TODO (?)  if (ABS(k1.x - k2.x) > par.MatchXradius || ABS(k1.y - k2.y) > par.MatchYradius) return tdist;
-			//by default : par.MatchXradius = 1000000.0f
 		}
 		
 		if (dist < dist1) { //candidate better than the first
@@ -102,8 +100,5 @@ __kernel void matching(
 		if (old < max_nb_keypoints) matchings[old] = pair;
 	}
 
-
-	
-	
 	
 }

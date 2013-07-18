@@ -372,30 +372,35 @@ __kernel void descriptor(
 		
 	int i,j,j2;
 	
-	__local volatile float histogram[128];
-	__local volatile float hist2[128*8];
-			
-	float rx, cx;
-	float row = k.s1/octsize, col = k.s0/octsize, angle = k.s3;
-	int	irow = (int) (row + 0.5f), icol = (int) (col + 0.5f);
-	float sine = sin((float) angle), cosine = cos((float) angle);
-	float spacing = k.s2/octsize * 3.0f;
-	int radius = (int) ((1.414f * spacing * 2.5f) + 0.5f);
+	__local volatile float histogram[128];		//for "final" histogram
+	__local volatile float hist2[128];		//for temporary histogram
+	__local volatile unsigned int hist3[128*8]; //for the atomic_add
 	
-	int imin = -64 +16*lid0,
-		jmin = -64 +16*lid1;
+	float rx, cx;
+	float one_octsize = 1.0f/octsize;
+	float row = k.s1*one_octsize, col = k.s0*one_octsize;
+	int	irow = (int) ((k.s1*one_octsize) + 0.5f), icol = (int) ((k.s0*one_octsize) + 0.5f);
+	float sine = sin((float) k.s3), cosine = cos((float) k.s3);
+	float spacing = k.s2*one_octsize * 3.0f;
+	int radius = (int) ((1.414f * (k.s2*one_octsize * 3.0f) * 2.5f) + 0.5f);
+	
+	int imin = -64 +16*lid1,
+		jmin = -64 +16*lid2;
 	int imax = imin+16,
 		jmax = jmin+16;
 		
 	//memset
-	for (i=0; i < 2; i++) hist2[i*512+lid] = 0.0f;
-	if (lid < 128)
+	for (i=0; i < 2; i++) {
+		hist3[i*512+lid] = 0;
+	}
+	if (lid < 128) {
 		histogram[lid] = 0.0f;
-	
+	hist2[lid] = 0.0f;
+	}
 	for (i=imin; i < imax; i++) {
 		for (j2=jmin/8; j2 < jmax/8; j2++) {	
-			j=j2*8+lid2;
-			
+			j=j2*8+lid0;
+
 			rx = ((cosine * i - sine * j) - (row - irow)) / spacing + 1.5f;
 			cx = ((sine * i + cosine * j) - (col - icol)) / spacing + 1.5f;
 			if ((rx > -1.0f && rx < 4.0f && cx > -1.0f && cx < 4.0f
@@ -403,7 +408,7 @@ __kernel void descriptor(
 				
 				float mag = grad[icol+j + (irow+i)*grad_width]
 							 * exp(- 0.125f*((rx - 1.5f) * (rx - 1.5f) + (cx - 1.5f) * (cx - 1.5f)) );
-				float ori = orim[icol+j+(irow+i)*grad_width] -  angle;
+				float ori = orim[icol+j+(irow+i)*grad_width] -  k.s3;
 				
 				while (ori > 2.0f*M_PI_F) ori -= 2.0f*M_PI_F;
 				while (ori < 0.0f) ori += 2.0f*M_PI_F;
@@ -435,36 +440,41 @@ __kernel void descriptor(
 										}
 										int bin = (rindex*4 + cindex)*8+oindex; //value in [0,128[
 										
-										/*
-											Bank conflict ?
-											shared[base+S*tid] : no conflict if "S" has no common factors with 16 (half-warp) 
-												i.e if "S" is odd
-											If we want to be sure there are no bank conflicts, we can force the stride to
-											be odd : S=9. This leads to creating a 128*9 vector "hist2". The unused parts do
-											not need to be padded since we know that bin is in [0,128[.
-											hist2 = [idx=0|...|idx=7|PADDED|idx=0|...|idx=7|PADDED|idx=0|...]
-										    
-											where idx = (r*2+c)*orr is the index of "lid0", in [0,8[
+//										hist2[8*bin+lid0] += cweight * ((orr == 0) ? 1.0f - ofrac : ofrac);
 										
-										*/
-										hist2[lid2+8*bin] += cweight * ((orr == 0) ? 1.0f - ofrac : ofrac);
-
+										//we do not have atomic_add on floats, but we know the upper limit of this float
+										//take its 5 first (decimal) digits
+										atomic_add(hist3+bin*8+lid0,
+											(unsigned int) (100000*(cweight * ((orr == 0) ? 1.0f - ofrac : ofrac))));
+									
+										
 									} //end "for orr"
 								} //end "valid cindex"
 							} //end "for c"
 						} //end "valid rindex"
 					} //end "for r"
+					
+					
 				}
 			}//end "in the boundaries"
 		} //end j loop
 	}//end i loop
 	
-
+/*
 	barrier(CLK_LOCAL_MEM_FENCE);
 	if (lid < 128)
 		histogram[lid] 
 			+= hist2[lid*8]+hist2[lid*8+1]+hist2[lid*8+2]+hist2[lid*8+3]
 			+hist2[lid*8+4]+hist2[lid*8+5]+hist2[lid*8+6]+hist2[lid*8+7];
+*/
+
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid < 128)
+		histogram[lid] 
+			+= (float) ((hist3[lid*8]+hist3[lid*8+1]+hist3[lid*8+2]+hist3[lid*8+3]
+			+hist3[lid*8+4]+hist3[lid*8+5]+hist3[lid*8+6]+hist3[lid*8+7])*0.00001f);
+
+
 
 	barrier(CLK_LOCAL_MEM_FENCE);
 	//memset of 128 values of hist2 before re-use
@@ -569,10 +579,10 @@ __kernel void descriptor_844(
 	int grad_height)
 {
 
-	int lid0 = get_local_id(0); //[0,4[
+	int lid0 = get_local_id(0); //[0,8[
 	int lid1 = get_local_id(1); //[0,4[
-	int lid2 = get_local_id(2); //[0,8[
-	int lid = (lid0*4+lid1)*8+lid2; //[0,128[
+	int lid2 = get_local_id(2); //[0,4[
+	int lid = (lid0*4+lid1)*4+lid2; //[0,128[
 	int groupid = get_group_id(0);
 	keypoint k = keypoints[groupid];
 	if (!(keypoints_start <= groupid && groupid < keypoints_end && k.s1 >=0.0f))
@@ -590,8 +600,8 @@ __kernel void descriptor_844(
 	float spacing = k.s2/octsize * 3.0f;
 	int radius = (int) ((1.414f * spacing * 2.5f) + 0.5f);
 	
-	int imin = -64 +32*lid0,
-		jmin = -64 +32*lid1;
+	int imin = -64 +32*lid1,
+		jmin = -64 +32*lid2;
 	int imax = imin+32,
 		jmax = jmin+32;
 		
@@ -601,7 +611,7 @@ __kernel void descriptor_844(
 	
 	for (i=imin; i < imax; i++) {
 		for (j2=jmin/8; j2 < jmax/8; j2++) {	
-			j=j2*8+lid2;
+			j=j2*8+lid0;
 			
 			rx = ((cosine * i - sine * j) - (row - irow)) / spacing + 1.5f;
 			cx = ((sine * i + cosine * j) - (col - icol)) / spacing + 1.5f;
@@ -654,7 +664,7 @@ __kernel void descriptor_844(
 											where idx = (r*2+c)*orr is the index of "lid0", in [0,8[
 										
 										*/
-										hist2[lid2+8*bin] += cweight * ((orr == 0) ? 1.0f - ofrac : ofrac);
+										hist2[lid0+8*bin] += cweight * ((orr == 0) ? 1.0f - ofrac : ofrac);
 
 									} //end "for orr"
 								} //end "valid cindex"
