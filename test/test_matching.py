@@ -129,21 +129,17 @@ class test_matching(unittest.TestCase):
         cnt = counter.get()
         t1 = time.time()
 
-       
 #        ref_python, nb_match = my_matching(kp1, kp2, keypoints_start, keypoints_end)
-
         t2 = time.time()
         
         res_sort = res[numpy.argsort(res[:,1])]
-        ref_sort = ref[numpy.argsort(ref[:,1])]
+#        ref_sort = ref[numpy.argsort(ref[:,1])]
         
-        print res_sort[0:20]
+        print res[0:20]
         print ""
-        print ref_sort[0:20]
-        print("OpenCL: %d match" %(cnt))
-        
+#        print ref_sort[0:20]
+        print("OpenCL: %d match / C++ : %d match" %(cnt,siftmatch.shape[0]/2))
 
-        print siftmatch[0:10]
 
 
         #sort to compare added keypoints

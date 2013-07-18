@@ -77,7 +77,7 @@ __kernel void matching(
 		for (int j=0; j<128; j++) {
 //			unsigned char dval1 = desc1[gid0*128+j], dval2 = desc2[i*128+j];
 			unsigned char dval1 = desc1[j], dval2 = ((keypoints2[i]).desc)[j];
-			dist += (float) gid0; //((dval1 > dval2) ? (dval1 - dval2) : (-dval1 + dval2)); //fabs() ?
+			dist += (float) ((dval1 > dval2) ? (dval1 - dval2) : (-dval1 + dval2)); //fabs() ?
 		}
 		
 		if (dist < dist1) { //candidate better than the first
@@ -95,12 +95,12 @@ __kernel void matching(
 	
 
 		//to avoid duplicata : gid0 <= current_min
-	if (1 || (dist1/dist2 < ratio_th && gid0 <= current_min)) {
+	if ((dist1/dist2 < ratio_th && gid0 <= current_min)) {
 	
 		//pair of keypoints
 		uint2 pair = 0;
-		pair.s0 = (unsigned int) keypoints2[gid0].desc[0]; //gid0;
-		pair.s1 = (unsigned int) keypoints2[gid0].desc[1]; //current_min;
+		pair.s0 = (unsigned int) gid0;
+		pair.s1 = (unsigned int) current_min;
 		old = atomic_inc(counter);
 		if (old < max_nb_keypoints) matchings[old] = pair;
 	}
