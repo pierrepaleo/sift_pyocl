@@ -142,11 +142,21 @@ class test_matching(unittest.TestCase):
         print ref_sort[0:20]
         print("OpenCL: %d match / Python: %d match" %(cnt,nb_match))
         
+        if not(USE_CPP_SIFT):
+            import feature
+            sc = feature.SiftAlignment()
+            ref_sift = sc.sift(scipy.misc.lena())
+            ref_sift_2 = ref_sift[::-1]
+            siftmatch = feature.sift_match(ref_sift, ref_sift_2)
+        print siftmatch[0:10]
+
 
         #sort to compare added keypoints
-#        delta = (res-ref).max()
-#        self.assert_(delta == 0, "delta=%s" % (delta)) #integers
-#        logger.info("delta=%s" % delta)
+        '''
+        delta = abs(res_sort-ref_sort).max()
+        self.assert_(delta == 0, "delta=%s" % (delta)) #integers
+        logger.info("delta=%s" % delta)
+        '''
 
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
