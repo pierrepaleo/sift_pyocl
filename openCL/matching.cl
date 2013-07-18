@@ -44,10 +44,10 @@ par.MatchYradius = 1000000.0f;
 
 
 __kernel void matching(
-	//__global t_keypoint* keypoints1,
-	//__global t_keypoint* keypoints2,
-	__global char* desc1, //FIXME: this is used for now
-	__global char* desc2,
+	__global t_keypoint* keypoints1,
+	__global t_keypoint* keypoints2,
+//	__global char* desc1,
+//	__global char* desc2,
 	__global uint2* matchings,
 	__global int* counter,
 	int max_nb_keypoints,
@@ -63,7 +63,7 @@ __kernel void matching(
 	float dist1 = 1000000000000.0f, dist2 = 1000000000000.0f; //HUGE_VALF ?
 	int current_min = 0;
 	int old;
-//	unsigned char desc1 = keypoints1.desc, desc2 = keypoints2.desc; //FIXME: uncomment
+//	unsigned char *desc1 = keypoints1->desc, *desc2 = keypoints2->desc;
 	
 	//each thread gid0 makes a loop on the second list
 	for (int i = start; i<end; i++) {
@@ -71,7 +71,7 @@ __kernel void matching(
 		//L1 distance between desc1[gid0] and desc2[i]
 		unsigned int dist = 0;
 		for (int j=0; j<128; j++) {
-			unsigned char dval1 = desc1[gid0*128+j], dval2 = desc2[i*128+j];
+			unsigned char dval1 = (keypoints1->desc)[gid0*128+j], dval2 = (keypoints2->desc)[i*128+j];
 			dist += ((dval1 > dval2) ? (dval1 - dval2) : (-dval1 + dval2)); //fabs() ?
 		}
 		
