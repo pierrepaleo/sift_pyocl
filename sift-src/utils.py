@@ -81,3 +81,29 @@ def sizeof(shape, dtype="uint8"):
     else:
         cnt = int(shape)
     return cnt * itemsize
+    
+def _gcd(a, b):
+    """Calculate the greatest common divisor of a and b"""
+    while b:
+        a, b = b, a%b
+    return a
+
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+

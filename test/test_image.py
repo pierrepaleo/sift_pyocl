@@ -88,22 +88,18 @@ class test_image(unittest.TestCase):
 
 
 
-
-
-
     def test_gradient(self):
         """
         tests the gradient kernel (norm and orientation)
         """
         
         border_dist, peakthresh, EdgeThresh, EdgeThresh0, octsize, scale, nb_keypoints, width, height, DOGS, g = local_maxmin_setup()
-        self.mat = g[1]
+        self.mat = numpy.ascontiguousarray(g[1])
         self.height, self.width = numpy.int32(self.mat.shape)
-
         self.gpu_mat = pyopencl.array.to_device(queue, self.mat)
         self.gpu_grad = pyopencl.array.empty(queue, self.mat.shape, dtype=numpy.float32, order="C")
         self.gpu_ori = pyopencl.array.empty(queue, self.mat.shape, dtype=numpy.float32, order="C")
-        self.shape = calc_size(self.mat.shape, self.wg)
+        self.shape = calc_size((self.width, self.height), self.wg)
 
         t0 = time.time()
         k1 = self.program.compute_gradient_orientation(queue, self.shape, self.wg, self.gpu_mat.data, self.gpu_grad.data, self.gpu_ori.data, self.width, self.height)
@@ -119,10 +115,16 @@ class test_image(unittest.TestCase):
             rmin, cmin = 0, 0
             rmax, cmax = rmin+6, cmin+6
             
-            print res_norm[rmin:rmax,cmin:cmax]
+            print res_norm[-rmax,cmin:cmax]
             print ""
-            print res_ori[rmin:rmax,cmin:cmax]
-        
+            print ref_norm[-rmax,cmin:cmax]
+            fig = pylab.figure()
+            sp1 = fig.add_subplot(121)
+            sp1.imshow(res_norm, interpolation="nearest")
+            sp2 = fig.add_subplot(122)
+            sp2.imshow(ref_norm, interpolation="nearest")
+            fig.show()
+            raw_input("enter")
         
         self.assert_(delta_norm < 1e-4, "delta_norm=%s" % (delta_norm))
         self.assert_(delta_ori < 1e-4, "delta_ori=%s" % (delta_ori))

@@ -269,3 +269,4 @@ from sift.opencl import ocl
 ctx = ocl.create_context("GPU")
 logger.info("working on %s" % ctx.devices[0].name)
 
+

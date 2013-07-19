@@ -144,6 +144,8 @@ class SiftPlan(object):
             self.LOW_END = False
 
 
+
+
     def __del__(self):
         """
         Destructor: release all buffers
@@ -449,9 +451,9 @@ class SiftPlan(object):
         """
         temp_data = self.buffers["tmp"]
         gaussian = self.buffers["gaussian_%s" % sigma]
-        k1 = self.programs["convolution"].horizontal_convolution(self.queue, self.procsize[octave], self.wgsize[octave],
+        k1 = self.programs["convolution"].horizontal_convolution(self.queue, self.procsize_XY[octave], self.wgsize[octave],
                                 input_data.data, temp_data.data, gaussian.data, numpy.int32(gaussian.size), *self.scales[octave])
-        k2 = self.programs["convolution"].vertical_convolution(self.queue, self.procsize[octave], self.wgsize[octave],
+        k2 = self.programs["convolution"].vertical_convolution(self.queue, self.procsize_XY[octave], self.wgsize[octave],
                                 temp_data.data, output_data.data, gaussian.data, numpy.int32(gaussian.size), *self.scales[octave])
 
         if self.profile:
@@ -591,6 +593,7 @@ class SiftPlan(object):
                     file_to_use = "keypoints_cpu"
                     procsize2 = int(newcnt * wgsize2[0]),
                     logger.info("Computing descriptors with CPU-optimized kernels")
+
                     evt2 = self.programs[file_to_use].descriptor(self.queue, procsize2, wgsize2,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
                                           self.buffers["descriptors"].data, #___global unsigned char *descriptors
@@ -600,7 +603,6 @@ class SiftPlan(object):
                                           numpy.int32(last_start),  # int keypoints_start,
                                           newcnt,  # int keypoints_end,
                                           *self.scales[octave])  # int grad_width, int grad_height)
-
                 if self.profile:
                     self.events += [("orientation_assignment %s %s" % (octave, scale), evt),
                                     ("copy cnt D->H", evt_cp),
@@ -630,7 +632,7 @@ class SiftPlan(object):
             evt2 = pyopencl.enqueue_copy(self.queue, descriptors, self.buffers["descriptors"].data)
             if self.profile:
                 self.events += [("copy D->H", evt),
-                              ("copy D->H", evt2)]
+                                ("copy D->H", evt2)]
         return results, descriptors
 
     def _compact(self, start=numpy.int32(0)):
@@ -742,5 +744,6 @@ if __name__ == "__main__":
     lena = scipy.misc.lena()
     s = SiftPlan(template=lena)
     s.keypoints(lena)
+
 
 
