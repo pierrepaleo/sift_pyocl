@@ -91,6 +91,8 @@ class DemoSift(object):
         self.kp_cpp = self._sift_cpp.sift(self.image_bw)
         t1 = time.time()
         self.timing_cpp = t1 - t0
+        if "size" not in dir(self.kp_cpp):
+            return #we are using an old kind of Sift-C++
         self.sp2.set_title("C++: %s keypoint" % self.kp_cpp.size)
         self.fig.canvas.draw()
         self.kp_cpp.sort(order=["scale", "angle", "x", "y"])
