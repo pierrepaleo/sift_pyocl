@@ -15,7 +15,7 @@ __authors__ = ["Jérôme Kieffer"]
 __contact__ = "jerome.kieffer@esrf.eu"
 __license__ = "BSD"
 __copyright__ = "European Synchrotron Radiation Facility, Grenoble, France"
-__date__ = "2013-07-15"
+__date__ = "2013-07-19"
 __status__ = "beta"
 __license__ = """
 Permission is hereby granted, free of charge, to any person
@@ -123,6 +123,7 @@ class SiftPlan(object):
         self.red_size = None
         self._calc_scales()
         self._calc_memory()
+        self.LOW_END = 0
         if device is None:
             self.device = ocl.select_device(type=devicetype, memory=self.memory, best=True)
         else:
@@ -141,10 +142,8 @@ class SiftPlan(object):
         self.devicetype = ocl.platforms[self.device[0]].devices[self.device[1]].type
         if (self.devicetype == "CPU"):
             self.USE_CPU = True
-            self.LOW_END = None
         else:
             self.USE_CPU = False
-            self.LOW_END = False
 
 
 
@@ -319,7 +318,10 @@ class SiftPlan(object):
             except pyopencl.RuntimeError as error:
                 if kernel == "keypoints_gpu2":
                     logger.warning("Failed compiling kernel '%s' with workgroup size %s: %s: use low_end alternative", kernel, wg_size, error)
-                    self.LOW_END = True
+                    self.LOW_END += 1
+                elif kernel == "keypoints_gpu1":
+                    logger.warning("Failed compiling kernel '%s' with workgroup size %s: %s: use CPU alternative", kernel, wg_size, error)
+                    self.LOW_END += 1
                 else:
                     logger.error("Failed compiling kernel '%s' with workgroup size %s: %s", kernel, wg_size, error)
                     raise error
@@ -468,7 +470,7 @@ class SiftPlan(object):
     def _one_octave(self, octave):
         """
         Does all scales within an octave
-        
+
         @param octave: number of the octave
         """
         prevSigma = par.InitSigma
@@ -574,14 +576,14 @@ class SiftPlan(object):
                 evt_cp = pyopencl.enqueue_copy(self.queue, self.cnt, self.buffers["cnt"].data)
                 newcnt = self.cnt[0] #do not forget to update numbers of keypoints, modified above !
 
-                if self.USE_CPU:
+                if self.USE_CPU or self.LOW_END == 2:
                     file_to_use = "keypoints_cpu"
                     logger.info("Computing descriptors with CPU optimized kernels")
                     wgsize2 = self.kernels[file_to_use],
                     procsize2 = int(newcnt * wgsize2[0]),
 
                 else:
-                    if self.LOW_END:
+                    if self.LOW_END == 1 :
                         file_to_use = "keypoints_gpu1"
                         logger.info("Computing descriptors with older-GPU optimized kernels")
                         wgsize2 = self.kernels[file_to_use]
@@ -601,11 +603,25 @@ class SiftPlan(object):
                                           self.buffers["cnt"].data,  # int* keypoints_end,
                                           *self.scales[octave])  # int grad_width, int grad_height)
                 except pyopencl.RuntimeError as error:
-                    self.LOW_END = True
-                    logger.error("Descriptor failed with %s. Switching to low_end mode" % error)
-                    file_to_use = "keypoints_gpu1"
-                    logger.info("Computing descriptors with older-GPU optimized kernels")
-                    wgsize2 = self.kernels[file_to_use]
+                    self.LOW_END += 1
+                    logger.error("Descriptor failed with %s. Switching to lower_end mode" % error)
+                    if self.USE_CPU or self.LOW_END == 2:
+                        file_to_use = "keypoints_cpu"
+                        logger.info("Computing descriptors with CPU optimized kernels")
+                        wgsize2 = self.kernels[file_to_use],
+                        procsize2 = int(newcnt * wgsize2[0]),
+
+                    else:
+                        if self.LOW_END == 1 :
+                            file_to_use = "keypoints_gpu1"
+                            logger.info("Computing descriptors with older-GPU optimized kernels")
+                            wgsize2 = self.kernels[file_to_use]
+                        else:
+                            file_to_use = "keypoints_gpu2"
+                            logger.info("Computing descriptors with newer-GPU optimized kernels")
+                            wgsize2 = self.kernels[file_to_use]
+                        procsize2 = int(newcnt * wgsize2[0]), wgsize2[1], wgsize2[2]
+
                     evt2 = self.programs[file_to_use].descriptor(self.queue, procsize2, wgsize2,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
                                           self.buffers["descriptors"].data, #___global unsigned char *descriptors
