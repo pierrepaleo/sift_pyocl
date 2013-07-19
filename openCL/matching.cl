@@ -1,4 +1,6 @@
-#define WORKGROUP_SIZE 64
+#define WORKGROUP_SIZE 8
+#define MIN(i,j) ( (i)<(j) ? (i):(j) )
+#define MAX(i,j) ( (i)<(j) ? (j):(i) )
 
 /*
 	Keypoint (c, r, s, angle) without its descriptor
@@ -109,14 +111,24 @@ __kernel void matching(
 
 
 
+/*
+
+	Let L2 be the length of "keypoints2" and W be the workgroup size.
+	Each thread of the workgroup handles L2/W keypoints : [lid0*L2/W, (lid0+1)*L2/W[ ,
+	 and gives a pair of "best distance / second-best distance" (d1,d2)
+	Then, we take d1 = min{(d1,d2) | all threads} and d2 = second_min {(d1,d2) | all threads}
+
+	 -----------------------------------------------
+	|  thread 0 | thread 1 | ... | thread (W-1)    |
+	 -----------------------------------------------
+	 <---------->
+	L2/W keypoints
 
 
 
+	WORKGROUP SIZE IS FIXED TO 64
 
-
-
-
-
+*/
 
 __kernel void matching_v2(
 	__global t_keypoint* keypoints1,
@@ -130,28 +142,27 @@ __kernel void matching_v2(
 
 	int gid = get_group_id(0);
 	int lid0 = get_local_id(0); //[0,128[ !
-	if (!(start <= gid && gid < end))
+	if (!(0 <= gid && gid < end))
 		return;
 		
 	float dist1 = 1000000000000.0f, dist2 = 1000000000000.0f;
 	int current_min = 0;
 	int old;
 	
-	__local unsigned char desc1[WORKGROUP_SIZE]; //store the descriptor of keypoint we are looking (in list 1)
-	__local uint3 candidates[WORKGROUP_SIZE]
+	__local unsigned char desc1[64]; //store the descriptor of keypoint we are looking (in list 1)
+	__local uint3 candidates[64];
 
-	desc1[lid0] = ((keypoints1[gid]).desc)[lid0];
-	
-	int frac = end/WORKGROUP_SIZE; //fraction of the list that will be processed by a thread
+	for (int i = 0; i < 2; i++)
+		desc1[i*64+lid0] = ((keypoints1[gid]).desc)[i*64+lid0];
+
+	int frac = (end >> 6)+1; //fraction of the list that will be processed by a thread
 	int low_bound = lid0*frac;
-	int up_bound = low_bound+frac;
-	if (lid0 == WORKGROUP_SIZE -1) up_bound += end%WORKGROUP_SIZE; //fix the workgroup size to do a bitwise shift 
-
+	int up_bound = MIN(low_bound+frac,end);
 	
 	for (int i = low_bound; i<up_bound; i++) {
 	
 		unsigned int dist = 0;
-		for (int j=0; j<128; j++) { //parallel reduction on another workgroup dimension ?
+		for (int j=0; j<128; j++) {
 			unsigned char dval1 = desc1[j], dval2 = ((keypoints2[i]).desc)[j];
 			dist += ((dval1 > dval2) ? (dval1 - dval2) : (-dval1 + dval2));
 		}
@@ -167,43 +178,50 @@ __kernel void matching_v2(
 		
 	}//end "i loop"	
 	
-	if (lid0 == low_bound) candidates[lid0/frac] = (uint3) (dist1, dist2, current_min)
+	candidates[lid0] = (uint3) (dist1, dist2, current_min);
 	barrier(CLK_LOCAL_MEM_FENCE);
 	
 		//Now each block has its pair of best candidates (dist1,dist2) at position current_min
-		//Find the minimum of them all, and the "second minimum" : (min1,min2)
+		//Find the global minimum and the "second minimum" : (min1,min2)
 		
 	
-	if (lid0 == 0) {
-		unsigned int current_min0, dist10, dist_20, min1=4294967296, min2=4294967296, abs_min = 0;
-		for (int i = 0; i < WORKGROUP_SIZE; i++) {
+	if (lid0 == 5) {
+		unsigned int dist1_t, dist2_t, current_min_t, //values got from other threads
+		dist0 = 0, dist10=429496729, dist20=429496729, index_abs_min = 0;
+		
+		for (int i = 0; i < 64; i++) {
 			
-			(dist10, dist20, current_min0) = candidates[i]; //is it OK ?
-			dist = dist10;
-			if (dist < dist10) {
-				min2 = dist10;
-				min1 = dist;
-				abs_min = i;
+			dist1_t = candidates[i].s0;
+			dist2_t = candidates[i].s1;
+			current_min_t = candidates[i].s2;
+
+			//check if d1 can be a global min (or second_min)
+			dist0 = dist1_t;
+			if (dist0 < dist10) {
+				dist20 = dist10;
+				dist10 = dist0;
+				index_abs_min = current_min_t;
 			} 
-			else if (dist < dist2) {
-				min2 = dist;
+			else if (dist0 < dist20) {
+				dist20 = dist0;
+			}
+			//do the same with d2
+			dist0 = dist2_t;
+			if (dist0 < dist10) {
+				dist20 = dist10;
+				dist10 = dist0;
+				index_abs_min = current_min_t;
+			} 
+			else if (dist0 < dist20) {
+				dist20 = dist0;
 			}
 			
-			dist = dist20;
-			if (dist < dist10) {
-				min2 = dist10;
-				min1 = dist;
-				abs_min = i;
-			} 
-			else if (dist < dist2) {
-				min2 = dist;
-			}
 		}//end for
 	
-		if ((min1/min2 < ratio_th && gid <= abs_min)) {
+		if ((dist20 != 0 && (((float) dist10)/ ((float) dist20)) < ratio_th && gid <= index_abs_min)) {
 			uint2 pair = 0;
-			pair.s0 = (unsigned int) gid;
-			pair.s1 = (unsigned int) current_min;
+			pair.s0 = (unsigned int) gid; //dist10; //gid; //current_min; //gid;
+			pair.s1 = (unsigned int) index_abs_min; //candidates[61].s2-low_bound; //candidates[1].s2; //index_abs_min;
 			old = atomic_inc(counter);
 			if (old < max_nb_keypoints) matchings[old] = pair;
 		}
