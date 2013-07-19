@@ -32,6 +32,19 @@
  * OTHER DEALINGS IN THE SOFTWARE. 
  * 
  **/
+/*
+	Keypoint (x, y, scale, angle) without its descriptor
+*/
+typedef float4 keypoint;
+
+
+/*
+	Keypoint with its descriptor
+*/
+typedef struct t_keypoint {
+	float x, y, scale, angle;
+	unsigned char desc[128];
+} t_keypoint;
 
 
 /**
@@ -71,5 +84,34 @@ memset_int( __global int *array,
 	int gid = get_global_id(0);
 	if (gid<SIZE){
 		array[gid] = value;
+	}
+}
+
+/**
+ * \brief Fills an array of keypoints with the given value.
+ *
+ * @param array:         Pointer to global memory with the data as float array
+ * @param value:         Value used for filling
+ * @param SIZE:          Size if the array
+ */
+
+
+__kernel void
+memset_kp( __global t_keypoint *array,
+				const float value,
+				const int SIZE
+){
+	int gid = get_global_id(0);
+	if (gid<SIZE){
+		t_keypoint kp;
+		float u8_value =  (unsigned char)value;
+		kp.x =  value;
+		kp.y =  value;
+		kp.scale =  value;
+		kp.angle =  value;
+		for (int i=0;i<128;i++){
+			kp.desc[i] = u8_value;
+		}
+		array[gid] = kp;
 	}
 }
