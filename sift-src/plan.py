@@ -40,7 +40,8 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 
 """
-import time, math, os, logging, sys, threading
+import time, math, os, logging, threading
+#import sys
 import gc
 import numpy
 import pyopencl, pyopencl.array
@@ -206,7 +207,7 @@ class SiftPlan(object):
             size = kernel_size(increase, True)
             logger.debug("pre-Allocating %s float for blur sigma: %s" % (size, increase))
             self.memory += size * size_of_float
-            prevSigma *= self.sigmaRatio;
+            prevSigma *= self.sigmaRatio
 
     def _allocate_buffers(self):
         """
@@ -231,7 +232,7 @@ class SiftPlan(object):
             self.buffers[scale ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32)
         self.buffers["DoGs" ] = pyopencl.array.empty(self.queue, (par.Scales + 2, shape[0], shape[1]), dtype=numpy.float32)
         wg_float = min(512.0, numpy.sqrt(self.shape[0] * self.shape[1]))
-        wg = 2 ** (int(math.ceil(math.log(wg_float, 2))))
+#        wg = 2 ** (int(math.ceil(math.log(wg_float, 2))))
         self.buffers["max_min"] = pyopencl.array.empty(self.queue, (self.red_size, 2), dtype=numpy.float32)  # temporary buffer for max/min reduction
         self.buffers["min"] = pyopencl.array.empty(self.queue, (1), dtype=numpy.float32)
         self.buffers["max"] = pyopencl.array.empty(self.queue, (1), dtype=numpy.float32)
@@ -270,8 +271,8 @@ class SiftPlan(object):
         logger.debug("Allocating %s float for blur sigma: %s" % (size, sigma))
         if wg_size > self.max_workgroup_size:  # compute on CPU
             x = numpy.arange(size) - (size - 1.0) / 2.0
-            g = numpy.exp(-(x / sigma) ** 2 / 2.0).astype(numpy.float32)
-            g /= g.sum(dtype=numpy.float32)
+            gaus = numpy.exp(-(x / sigma) ** 2 / 2.0).astype(numpy.float32)
+            gaus /= gaus.sum(dtype=numpy.float32)
             gaussian_gpu = pyopencl.array.to_device(self.queue, g)
         else:
             gaussian_gpu = pyopencl.array.empty(self.queue, size, dtype=numpy.float32)
@@ -333,14 +334,14 @@ class SiftPlan(object):
         The processing size should be a multiple of  workgroup size.
         """
         device = self.ctx.devices[0]
-        max_work_group_size = device.max_work_group_size
+#        max_work_group_size = device.max_work_group_size
         max_work_item_sizes = device.max_work_item_sizes
         # we recalculate the shapes ...
         shape = self.shape
         min_size = 2 * par.BorderDist + 2
-        self.max_workgroup_size = min(self.max_workgroup_size, max_work_item_sizes[1])
+        self.max_workgroup_size = min(self.max_workgroup_size, max_work_item_sizes[0])
         while min(shape) > min_size:
-            wg = (min(2 ** int(math.log(shape[1], 2)), self.max_workgroup_size), 1)
+            wg = (min(2 ** int(math.ceil(math.log(shape[-1], 2))), self.max_workgroup_size), 1)
             self.wgsize.append(wg)
             self.procsize.append(calc_size(shape[-1::-1], wg))
             shape = tuple(i // 2 for i in shape)
@@ -403,7 +404,7 @@ class SiftPlan(object):
             if self.profile:self.events.append(("normalize", evt))
 
 
-            octSize = 1.0
+#            octSize = 1.0
             curSigma = 1.0 if par.DoubleImSize else 0.5
             octave = 0
             if par.InitSigma > curSigma:
@@ -647,7 +648,7 @@ class SiftPlan(object):
         procsize = calc_size((self.kpsize,), wgsize)
 
         if kp_counter > 0.9 * self.kpsize:
-               logger.warning("Keypoint counter overflow risk: counted %s / %s" % (kp_counter, self.kpsize))
+            logger.warning("Keypoint counter overflow risk: counted %s / %s" % (kp_counter, self.kpsize))
         logger.info("Compact %s -> %s / %s" % (start, kp_counter, self.kpsize))
 #        self.buffers["cnt"].set(numpy.array([start], dtype=numpy.int32))
         self.cnt[0] = start
@@ -691,12 +692,15 @@ class SiftPlan(object):
 #        self.buffers["cnt"].fill(0, self.queue)
 
     def count_kp(self, output):
+        """
+        Print the number of keypoint per octave
+        """
         kpt = 0
         for octave, data in enumerate(output):
             if output.shape[0] > 0:
-                sum = (data[:, 1] != -1.0).sum()
-                kpt += sum
-                print("octave %i kp count %i/%i size %s ratio:%s" % (octave, sum, self.kpsize, self.scales[octave], 1000.0 * sum / self.scales[octave][1] / self.scales[octave][0]))
+                ksum = (data[:, 1] != -1.0).sum()
+                kpt += ksum
+                print("octave %i kp count %i/%i size %s ratio:%s" % (octave, ksum, self.kpsize, self.scales[octave], 1000.0 * ksum / self.scales[octave][1] / self.scales[octave][0]))
         print("Found total %i guess %s pixels per keypoint" % (kpt, self.shape[0] * self.shape[1] / kpt))
 
     def debug_holes(self, label=""):
@@ -735,7 +739,7 @@ class SiftPlan(object):
 if __name__ == "__main__":
     # Prepare debugging
     import scipy.misc
-    lena = scipy.lena()
+    lena = scipy.misc.lena()
     s = SiftPlan(template=lena)
     s.keypoints(lena)
 

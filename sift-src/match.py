@@ -60,7 +60,7 @@ class MatchPlan(object):
     kp is a nx132 array. the second dimension is composed of x,y, scale and angle as well as 128 floats describing the keypoint
 
     """
-    kernels = {"keypoints_cpu":1024,
+    kernels = {"matching":1024,
                "memset":128, }
 #               "keypoints":128}
     dtype_kp = numpy.dtype([('x', numpy.float32),
@@ -87,12 +87,12 @@ class MatchPlan(object):
             self.device = ocl.select_device(type=devicetype, memory=self.memory, best=True)
         else:
             self.device = device
-        self.ctx = ctx = pyopencl.Context(devices=[pyopencl.get_platforms()[self.device[0]].get_devices()[self.device[1]]])
+        self.ctx = pyopencl.Context(devices=[pyopencl.get_platforms()[self.device[0]].get_devices()[self.device[1]]])
         if profile:
             self.queue = pyopencl.CommandQueue(self.ctx, properties=pyopencl.command_queue_properties.PROFILING_ENABLE)
         else:
             self.queue = pyopencl.CommandQueue(self.ctx)
-        self._calc_workgroups()
+#        self._calc_workgroups()
         self._compile_kernels()
         self._allocate_buffers()
         self.debug = []
@@ -118,3 +118,42 @@ class MatchPlan(object):
         self.buffers[ "Kp_2" ] = pyopencl.array.empty(self.queue, (self.kpsize, 4), dtype=numpy.float32)
         self.buffers[ "match" ] = pyopencl.array.empty(self.queue, (self.kpsize, 2), dtype=numpy.int32)
         # self.buffers["cnt" ] = pyopencl.array.empty(self.queue, 1, dtype=numpy.int32)
+
+    def _free_buffers(self):
+        """
+        free all memory allocated on the device
+        """
+        for buffer_name in self.buffers:
+            if self.buffers[buffer_name] is not None:
+                try:
+                    del self.buffers[buffer_name]
+                    self.buffers[buffer_name] = None
+                except pyopencl.LogicError:
+                    logger.error("Error while freeing buffer %s" % buffer_name)
+       
+    def _compile_kernels(self):
+        """
+        Call the OpenCL compiler
+        """
+        for kernel in self.kernels:
+            kernel_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), kernel + ".cl")
+            kernel_src = open(kernel_file).read()
+            wg_size = min(self.max_workgroup_size, self.kernels[kernel])
+            try:
+                program = pyopencl.Program(self.ctx, kernel_src).build('-D WORKGROUP_SIZE=%s' % wg_size)
+            except pyopencl.MemoryError as error:
+                raise MemoryError(error)
+            except pyopencl.RuntimeError as error:
+                if kernel == "keypoints":
+                    logger.warning("Failed compiling kernel '%s' with workgroup size %s: %s: use low_end alternative", kernel, wg_size, error)
+                    self.LOW_END = True
+                else:
+                    logger.error("Failed compiling kernel '%s' with workgroup size %s: %s", kernel, wg_size, error)
+                    raise error
+            self.programs[kernel] = program
+
+    def _free_kernels(self):
+        """
+        free all kernels
+        """
+        self.programs = {}
