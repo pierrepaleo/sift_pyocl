@@ -111,14 +111,18 @@ class test_matching(unittest.TestCase):
         '''
         tests keypoints matching kernel
         '''    
+        image = scipy.misc.imread(os.path.join("../../test_images/","esrf_grenoble.jpg"),flatten=True).astype(numpy.float32)
+#        image = scipy.misc.lena().astype(numpy.float32)
         
         #get the struct keypoints : (x,y,s,angle,[descriptors])
         import feature
         sc = feature.SiftAlignment()
-        ref_sift = sc.sift(scipy.misc.lena())
+        ref_sift = sc.sift(image)
         ref_sift_2 = numpy.recarray((ref_sift.shape),dtype=ref_sift.dtype)
         ref_sift_2[:] = (ref_sift[::-1])
+        t0_matching = time.time()
         siftmatch = feature.sift_match(ref_sift, ref_sift_2)
+        t1_matching = time.time()
         ref = ref_sift.desc
         
         wg = 64,
@@ -136,9 +140,9 @@ class test_matching(unittest.TestCase):
         
 
         t0 = time.time()
-        k1 = self.program.matching_v2(queue, shape, wg,
+        k1 = self.program.matching(queue, shape, wg,
         		gpu_keypoints1.data, gpu_keypoints2.data, gpu_matchings.data, counter.data,
-        		nb_keypoints, ratio_th, keypoints_end)
+        		nb_keypoints, ratio_th, keypoints_end, keypoints_end)
         res = gpu_matchings.get()
         cnt = counter.get()
         t1 = time.time()
@@ -149,9 +153,10 @@ class test_matching(unittest.TestCase):
         res_sort = res[numpy.argsort(res[:,1])]
 #        ref_sort = ref[numpy.argsort(ref[:,1])]
         
-        print res[0:20]
+#        print res[0:20]
         print ""
 #        print ref_sort[0:20]
+        print("C++ Matching took %.3f ms" %(1000.0*(t1_matching-t0_matching)))
         print("OpenCL: %d match / C++ : %d match" %(cnt,siftmatch.shape[0]/2))
 
 

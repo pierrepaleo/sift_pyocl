@@ -1,6 +1,7 @@
-#define WORKGROUP_SIZE 8
 #define MIN(i,j) ( (i)<(j) ? (i):(j) )
-#define MAX(i,j) ( (i)<(j) ? (j):(i) )
+
+
+#define DOUBLEMIN(a,b,c,d) ((a) < (c) ? ((b) < (c) ? (uint2)(a,b) : (uint2)(a,c)) : ((a) < (d) ? (uint2)(c,a) : (uint2)(c,d)))
 
 /*
 	Keypoint (c, r, s, angle) without its descriptor
@@ -22,7 +23,7 @@ typedef struct t_keypoint {
  *
  * \brief Compute SIFT descriptors matching for two lists of descriptors.
  *		
- * Use L1 distance for speed and atomic_add.
+ *  "Slow version", should work on CPU
  *
  * @param desc1 Pointer to global memory with the first list of descriptors
  * @param desc2: Pointer to global memory with the second list of descriptors
@@ -31,19 +32,10 @@ typedef struct t_keypoint {
  * @param keypoints_start : index start for processing
  * @param keypoints_end: end index for processing
  
- par.MatchRatio = 0.73;
-par.MatchXradius = 1000000.0f;
-par.MatchYradius = 1000000.0f;
 	
 	
 */	
 	
-/*
-	optimizations:
-		-if needed, pre-fetch descriptors in shared memory
-		-each descriptor is processed by one group of thread, each looking in a different region of the vector
-		-we have a N*128 vector: one thread per descriptor value ? (to avoid loops)
-*/
 
 
 
@@ -54,12 +46,12 @@ __kernel void matching(
 	__global int* counter,
 	int max_nb_keypoints,
 	float ratio_th,
-	int start,
-	int end)
+	int size1,
+	int size2)
 {
 
 	int gid0 = get_global_id(0);
-	if (!(start <= gid0 && gid0 < end))
+	if (!(0 <= gid0 && gid0 < size1))
 		return;
 		
 	float dist1 = 1000000000000.0f, dist2 = 1000000000000.0f; //HUGE_VALF ?
@@ -72,7 +64,7 @@ __kernel void matching(
 		desc1[i] = ((keypoints1[gid0]).desc)[i];
 	
 	//each thread gid0 makes a loop on the second list
-	for (int i = start; i<end; i++) {
+	for (int i = 0; i<size2; i++) {
 	
 		//L1 distance between desc1[gid0] and desc2[i]
 		unsigned int dist = 0;
@@ -106,12 +98,89 @@ __kernel void matching(
 
 	
 }
+/*
+	
+	Same kernel as previous, with binary image : we discard keypoints whose coordinates are not valid
 
+*/
 
+__kernel void matching_bin(
+	__global t_keypoint* keypoints1,
+	__global t_keypoint* keypoints2,
+	__global uint2* matchings,
+	__global int* counter,
+	int max_nb_keypoints,
+	float ratio_th,
+	int size1,
+	int size2,
+	__global char* valid,
+	int width,
+	int height)
+{
+
+	int gid0 = get_global_id(0);
+	if (!(0 <= gid0 && gid0 < size1))
+		return;
+		
+	float dist1 = 1000000000000.0f, dist2 = 1000000000000.0f; //HUGE_VALF ?
+	int current_min = 0;
+	int old;
+	
+	//if keypoint from list 1 is not valid, do not do the match
+	keypoint kp = keypoints1[gid0].kp;
+	int r = (int) kp.s1, c = (int) kp.s0;
+	if (r < height && c < width && valid[r*width+c] == 0) { //TODO : -1 ?
+		return;
+	}
+
+	//pre-fetch
+	__local unsigned char desc1[128];
+	for (int i = 0; i<128; i++)
+		desc1[i] = ((keypoints1[gid0]).desc)[i];
+	
+	//each thread gid0 makes a loop on the second list
+	for (int i = 0; i<size2; i++) {
+		t_keypoint keyp;
+		int r = (int) keyp.kp.s1, c = (int) keyp.kp.s0;
+		if (r < height && c < width && valid[r*width+c] == 1) {
+			//L1 distance between desc1[gid0] and desc2[i]
+			unsigned int dist = 0;
+			for (int j=0; j<128; j++) {
+				unsigned char dval1 = desc1[j], dval2 = (keyp.desc)[j];
+				dist += ((dval1 > dval2) ? (dval1 - dval2) : (-dval1 + dval2)); //fabs() ?
+			}
+		
+			if (dist < dist1) { //candidate better than the first
+				dist2 = dist1;
+				dist1 = dist;
+				current_min = i;
+			} 
+			else if (dist < dist2) { //candidate better than the second (but not the first)
+				dist2 = dist;
+			}
+		}//end "valid keypoint"
+	}//end "i loop"	
+	
+
+		//to avoid duplicata : gid0 <= current_min
+	if ((dist1/dist2 < ratio_th && gid0 <= current_min)) {
+	
+		//pair of keypoints
+		uint2 pair = 0;
+		pair.s0 = (unsigned int) gid0;
+		pair.s1 = (unsigned int) current_min;
+		old = atomic_inc(counter);
+		if (old < max_nb_keypoints) matchings[old] = pair;
+	}
+
+	
+}
 
 
 
 /*
+
+	DO NOT USE ! Slow version.
 
 	Let L2 be the length of "keypoints2" and W be the workgroup size.
 	Each thread of the workgroup handles L2/W keypoints : [lid0*L2/W, (lid0+1)*L2/W[ ,
@@ -124,11 +193,14 @@ __kernel void matching(
 	 <---------->
 	L2/W keypoints
 
+	For this kernel W = 64
 
-
-	WORKGROUP SIZE IS FIXED TO 64
+	
+	DO NOT USE ! This version is actually slower than the first one, certainly the fact that we are reading "unsigned char".
+	
 
 */
+
 
 __kernel void matching_v2(
 	__global t_keypoint* keypoints1,
@@ -141,7 +213,7 @@ __kernel void matching_v2(
 {
 
 	int gid = get_group_id(0);
-	int lid0 = get_local_id(0); //[0,128[ !
+	int lid0 = get_local_id(0);
 	if (!(0 <= gid && gid < end))
 		return;
 		
@@ -151,22 +223,21 @@ __kernel void matching_v2(
 	
 	__local unsigned char desc1[64]; //store the descriptor of keypoint we are looking (in list 1)
 	__local uint3 candidates[64];
-
+	__local uint3 parallel[64]; //for the parallel reduction
+	
+	
 	for (int i = 0; i < 2; i++)
 		desc1[i*64+lid0] = ((keypoints1[gid]).desc)[i*64+lid0];
-
+	barrier(CLK_LOCAL_MEM_FENCE);
 	int frac = (end >> 6)+1; //fraction of the list that will be processed by a thread
 	int low_bound = lid0*frac;
 	int up_bound = MIN(low_bound+frac,end);
-	
 	for (int i = low_bound; i<up_bound; i++) {
-	
 		unsigned int dist = 0;
 		for (int j=0; j<128; j++) {
 			unsigned char dval1 = desc1[j], dval2 = ((keypoints2[i]).desc)[j];
 			dist += ((dval1 > dval2) ? (dval1 - dval2) : (-dval1 + dval2));
 		}
-		
 		if (dist < dist1) {
 			dist2 = dist1;
 			dist1 = dist;
@@ -181,68 +252,72 @@ __kernel void matching_v2(
 	candidates[lid0] = (uint3) (dist1, dist2, current_min);
 	barrier(CLK_LOCAL_MEM_FENCE);
 	
-		//Now each block has its pair of best candidates (dist1,dist2) at position current_min
-		//Find the global minimum and the "second minimum" : (min1,min2)
+	//Now each block has its pair of best candidates (dist1,dist2) at position current_min
+	//Find the global minimum and the "second minimum" : (min1,min2)
 		
 	
-	if (lid0 == 5) {
-		unsigned int dist1_t, dist2_t, current_min_t, //values got from other threads
-		dist0 = 0, dist10=429496729, dist20=429496729, index_abs_min = 0;
-		
-		for (int i = 0; i < 64; i++) {
-			
-			dist1_t = candidates[i].s0;
-			dist2_t = candidates[i].s1;
-			current_min_t = candidates[i].s2;
+	unsigned int d1_0, d2_0, d1_1, d2_1, cmin_0, cmin_1, dist0;
+	uint2 sol;
+	
+	//parallel reduction
+	
+	if (lid0 < 32) {
+		d1_0 = candidates[lid0].s0;
+		d2_0 = candidates[lid0].s1;
+		d1_1 = candidates[lid0+32].s0;
+		d2_1 = candidates[lid0+32].s1;
+		cmin_0 = candidates[lid0].s2;
+		cmin_1 = candidates[lid0+32].s2;
+		sol = (uint2) DOUBLEMIN(d1_0,d2_0,d1_1,d2_1);
+		candidates[lid0] = (uint3) (sol.s0, sol.s1, (sol.s0 == d1_0 ? cmin_0 : cmin_1));
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid0 < 16) {
+		d1_0 = candidates[lid0].s0; d2_0 = candidates[lid0].s1; cmin_0 = candidates[lid0].s2;
+		d1_1 = candidates[lid0+16].s0; d2_1 = candidates[lid0+16].s1; cmin_1 = candidates[lid0+16].s2;
+		sol = (uint2) DOUBLEMIN(d1_0,d2_0,d1_1,d2_1);
+		candidates[lid0] = (uint3) (sol.s0, sol.s1, (sol.s0 == d1_0 ? cmin_0 : cmin_1));
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid0 < 8) {
+		d1_0 = candidates[lid0].s0; d2_0 = candidates[lid0].s1; cmin_0 = candidates[lid0].s2;
+		d1_1 = candidates[lid0+8].s0; d2_1 = candidates[lid0+8].s1; cmin_1 = candidates[lid0+8].s2;
+		sol = (uint2) DOUBLEMIN(d1_0,d2_0,d1_1,d2_1);
+		candidates[lid0] = (uint3) (sol.s0, sol.s1, (sol.s0 == d1_0 ? cmin_0 : cmin_1));
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid0 < 4) {
+		d1_0 = candidates[lid0].s0; d2_0 = candidates[lid0].s1; cmin_0 = candidates[lid0].s2;
+		d1_1 = candidates[lid0+4].s0; d2_1 = candidates[lid0+4].s1; cmin_1 = candidates[lid0+4].s2;
+		sol = (uint2) DOUBLEMIN(d1_0,d2_0,d1_1,d2_1);
+		candidates[lid0] = (uint3) (sol.s0, sol.s1, (sol.s0 == d1_0 ? cmin_0 : cmin_1));
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (lid0 < 2) {
+		d1_0 = candidates[lid0].s0; d2_0 = candidates[lid0].s1; cmin_0 = candidates[lid0].s2;
+		d1_1 = candidates[lid0+2].s0; d2_1 = candidates[lid0+2].s1; cmin_1 = candidates[lid0+2].s2;
+		sol = (uint2) DOUBLEMIN(d1_0,d2_0,d1_1,d2_1);
+		candidates[lid0] = (uint3) (sol.s0, sol.s1, (sol.s0 == d1_0 ? cmin_0 : cmin_1));
+	}
+	barrier(CLK_LOCAL_MEM_FENCE);
 
-			//check if d1 can be a global min (or second_min)
-			dist0 = dist1_t;
-			if (dist0 < dist10) {
-				dist20 = dist10;
-				dist10 = dist0;
-				index_abs_min = current_min_t;
-			} 
-			else if (dist0 < dist20) {
-				dist20 = dist0;
-			}
-			//do the same with d2
-			dist0 = dist2_t;
-			if (dist0 < dist10) {
-				dist20 = dist10;
-				dist10 = dist0;
-				index_abs_min = current_min_t;
-			} 
-			else if (dist0 < dist20) {
-				dist20 = dist0;
-			}
-			
-		}//end for
 	
-		if ((dist20 != 0 && (((float) dist10)/ ((float) dist20)) < ratio_th && gid <= index_abs_min)) {
+	if (lid0 == 0) {
+		d1_0 = candidates[lid0].s0; d2_0 = candidates[lid0].s1; cmin_0 = candidates[lid0].s2;
+		d1_1 = candidates[lid0+1].s0; d2_1 = candidates[lid0+1].s1; cmin_1 = candidates[lid0+1].s2;
+		sol = (uint2) DOUBLEMIN(d1_0,d2_0,d1_1,d2_1);
+		float dist10 = (float) sol.s0, dist20 = (float) sol.s1;
+		unsigned int index_abs_min = (sol.s0 == d1_0 ? cmin_0 : cmin_1);
+		if (dist20 != 0 && dist10/dist20 < ratio_th && gid <= index_abs_min) {
 			uint2 pair = 0;
-			pair.s0 = (unsigned int) gid; //dist10; //gid; //current_min; //gid;
-			pair.s1 = (unsigned int) index_abs_min; //candidates[61].s2-low_bound; //candidates[1].s2; //index_abs_min;
+			pair.s0 = gid;
+			pair.s1 = index_abs_min;
 			old = atomic_inc(counter);
 			if (old < max_nb_keypoints) matchings[old] = pair;
 		}
 	}//end lid0 == 0
 
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
