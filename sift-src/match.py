@@ -117,8 +117,8 @@ class MatchPlan(object):
         self.buffers[ "Kp_1" ] = pyopencl.array.empty(self.queue, (self.kpsize,), dtype=self.dtype_kp)
         self.buffers[ "Kp_2" ] = pyopencl.array.empty(self.queue, (self.kpsize,), dtype=self.dtype_kp)
         self.buffers[ "tmp" ] = pyopencl.array.empty(self.queue, (self.kpsize,), dtype=self.dtype_kp)
-        self.buffers[ "match" ] = pyopencl.array.empty(self.queue, (self.kpsize, 2), dtype=numpy.uint32)
-        # self.buffers["cnt" ] = pyopencl.array.empty(self.queue, 1, dtype=numpy.int32)
+        self.buffers[ "match" ] = pyopencl.array.empty(self.queue, (self.kpsize, 2), dtype=numpy.int32)
+        self.buffers["cnt" ] = pyopencl.array.empty(self.queue, 1, dtype=numpy.int32)
 
     def _free_buffers(self):
         """
@@ -176,6 +176,10 @@ class MatchPlan(object):
         if nkp2.size > self.buffers[ "Kp_2" ].size:
             logger.warning("increasing size of keypoint vector 2 to %i" % nkp2.size)
             self.buffers[ "Kp_2" ] = pyopencl.array.empty(self.queue, (nkp2.size,), dtype=self.dtype_kp)
+        if min(nkp2.size, nkp1.size) > self.buffers[ "match" ].size:
+            self.buffers[ "match" ] = pyopencl.array.empty(self.queue, (min(nkp2.size, nkp1.size),), dtype=numpy.int32)
 
-        self.programs["memset"].memset_kp()
-        self.programs["memset"].memset_kp()
+        self.programs["memset"].memset_kp(self.queue, calc_size(self.buffers[ "Kp_1" ].size,), (self.kernels["memset"],), (self.kernels["memset"],),
+                                          self.buffers[ "Kp_1" ].data, numpy.float32(-1.0), numpy.uint8(0), numpy.int32(self.buffers[ "Kp_1" ].size))
+        self.programs["memset"].memset_kp(self.queue, calc_size(self.buffers[ "Kp_2" ].size,), (self.kernels["memset"],), (self.kernels["memset"],),
+                                          self.buffers[ "Kp_2" ].data, numpy.float32(-1.0), numpy.uint8(0), numpy.int32(self.buffers[ "Kp_2" ].size))
