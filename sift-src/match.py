@@ -60,7 +60,7 @@ class MatchPlan(object):
     kp is a nx132 array. the second dimension is composed of x,y, scale and angle as well as 128 floats describing the keypoint
 
     """
-    kernels = {"matching":1024,
+    kernels = {"matching":128,
                "memset":128, }
 
     dtype_kp = numpy.dtype([('x', numpy.float32),
@@ -173,6 +173,7 @@ class MatchPlan(object):
         assert nkp2.ndim == 1
         assert type(nkp1) == numpy.core.records.recarray
         assert type(nkp2) == numpy.core.records.recarray
+        result = None
         with self._sem:
             if nkp1.size > self.buffers[ "Kp_1" ].size:
                 logger.warning("increasing size of keypoint vector 1 to %i" % nkp1.size)
@@ -185,7 +186,29 @@ class MatchPlan(object):
                 self.buffers[ "match" ] = pyopencl.array.empty(self.queue, (min(nkp2.size, nkp1.size),), dtype=numpy.int32)
 
             self._reset_buffer()
-
+            evt1 = pyopencl.enqueue_copy(self.queue, self.buffers["Kp_1"].data, nkp1)
+            evt2 = pyopencl.enqueue_copy(self.queue, self.buffers["Kp_2"].data, nkp2)
+            if self.profile:
+                self.events += [("copy H->D KP_1", evt1), ("copy H->D KP_2", evt2)]
+            evt = self.programs["matching"].matching(self.queue, calc_size(nkp1.size,), (self.kernels["matching"],), (self.kernels["matching"],),
+                                          self.buffers[ "Kp_1" ].data,
+                                          self.buffers[ "Kp_2" ].data,
+                                          self.buffers[ "match" ].data,
+                                          self.buffers[ "cnt" ].data,
+                                          numpy.int32(self.buffers[ "match" ].shape[0]),
+                                          numpy.float32(par.MatchRatio * par.MatchRatio),
+                                          numpy.int32(nkp1.size),
+                                          numpy.int32(nkp2.size))
+            if self.profile:
+                self.events += [("matching", evt)]
+            size = self.buffers["cnt"].get()[0]
+            print "found %s matches" % size
+            result = numpy.recarray(shape=(size, 2), dtype=self.dtype_kp)
+            matching = self.buffers[ "match" ].get()
+            print matching
+            result[:, 0] = nkp1[matching[:size, 0]]
+            result[:, 1] = nkp2[matching[:size, 1]]
+        return results
     def _reset_buffer(self):
 
         ev1 = self.programs["memset"].memset_kp(self.queue, calc_size(self.buffers[ "Kp_1" ].size,), (self.kernels["memset"],), (self.kernels["memset"],),
