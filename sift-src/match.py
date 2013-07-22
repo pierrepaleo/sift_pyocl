@@ -62,7 +62,7 @@ class MatchPlan(object):
     """
     kernels = {"matching":1024,
                "memset":128, }
-#               "keypoints":128}
+
     dtype_kp = numpy.dtype([('x', numpy.float32),
                                 ('y', numpy.float32),
                                 ('scale', numpy.float32),
@@ -114,9 +114,10 @@ class MatchPlan(object):
         gc.collect()
 
     def _allocate_buffers(self):
-        self.buffers[ "Kp_1" ] = pyopencl.array.empty(self.queue, (self.kpsize, 4), dtype=numpy.float32)
-        self.buffers[ "Kp_2" ] = pyopencl.array.empty(self.queue, (self.kpsize, 4), dtype=numpy.float32)
-        self.buffers[ "match" ] = pyopencl.array.empty(self.queue, (self.kpsize, 2), dtype=numpy.int32)
+        self.buffers[ "Kp_1" ] = pyopencl.array.empty(self.queue, (self.kpsize,), dtype=self.dtype_kp)
+        self.buffers[ "Kp_2" ] = pyopencl.array.empty(self.queue, (self.kpsize,), dtype=self.dtype_kp)
+        self.buffers[ "tmp" ] = pyopencl.array.empty(self.queue, (self.kpsize,), dtype=self.dtype_kp)
+        self.buffers[ "match" ] = pyopencl.array.empty(self.queue, (self.kpsize, 2), dtype=numpy.uint32)
         # self.buffers["cnt" ] = pyopencl.array.empty(self.queue, 1, dtype=numpy.int32)
 
     def _free_buffers(self):
@@ -130,7 +131,7 @@ class MatchPlan(object):
                     self.buffers[buffer_name] = None
                 except pyopencl.LogicError:
                     logger.error("Error while freeing buffer %s" % buffer_name)
-       
+
     def _compile_kernels(self):
         """
         Call the OpenCL compiler
@@ -157,3 +158,24 @@ class MatchPlan(object):
         free all kernels
         """
         self.programs = {}
+
+    def match(self, nkp1, nkp2, ROI=None):
+        """
+        calculate the matching of 2 keypoint list
+        
+        TODO: implement the ROI ...
+        """
+        assert nkp1.ndim == 1
+        assert nkp2.ndim == 1
+        assert type(nkp1) == numpy.core.records.recarray
+        assert type(nkp2) == numpy.core.records.recarray
+        if nkp1.size > self.buffers[ "Kp_1" ].size:
+            logger.warning("increasing size of keypoint vector 1 to %i" % nkp1.size)
+            self.buffers[ "Kp_1" ] = pyopencl.array.empty(self.queue, (nkp1.size,), dtype=self.dtype_kp)
+
+        if nkp2.size > self.buffers[ "Kp_2" ].size:
+            logger.warning("increasing size of keypoint vector 2 to %i" % nkp2.size)
+            self.buffers[ "Kp_2" ] = pyopencl.array.empty(self.queue, (nkp2.size,), dtype=self.dtype_kp)
+
+        self.programs["memset"].memset_kp()
+        self.programs["memset"].memset_kp()
