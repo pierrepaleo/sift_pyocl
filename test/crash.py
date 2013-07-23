@@ -1,5 +1,5 @@
 #!/usr/bin/python
-import time, sys, os
+import sys, os, pyopencl
 from math import sin, cos
 here = os.path.dirname(os.path.abspath(__file__))
 there = os.path.join(here, "..", "build")
@@ -10,20 +10,30 @@ import numpy
 import scipy.misc
 import pylab
 lena2 = scipy.misc.lena()
-#lena = scipy.misc.imread("../stream.tiff") #for other tests
-lena = numpy.ascontiguousarray(lena2[0:512,0:512])
+#shape = lena2.shape
+#lena2 = scipy.misc.imread("../aerial.tiff") #for other tests
+#filename = "/users/kieffer/Pictures/2010-01-22/11h59m14-Canon_DIGITAL_IXUS_850_IS-Pano21.jpg"
+#shape = 1001, 1599
+#lena2 = scipy.misc.imread(filename)#, flatten=True)
+#shape = lena2.shape
+#lena = numpy.ascontiguousarray(lena2[:shape[0], 0:shape[1], :])
+lena = lena2
+print lena.shape
+
 # lena[:] = 0
 # lena[100:110, 100:110] = 255
-s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128,devicetype="GPU",device=(1,0))
+s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128, device=(0, 1))
 kpg = s.keypoints(lena)
+#except (Exception, pyopencl.RuntimeError) as error:
+#    print error
+#    s.log_profile()
+#    sys.exit(0)
 kp = numpy.empty((kpg.size, 4), dtype=numpy.float32)
 kp[:, 0] = kpg.x
 kp[:, 1] = kpg.y
 kp[:, 2] = kpg.scale
 kp[:, 3] = kpg.angle
-
-
-
+print "Non infinite", numpy.isfinite(kpg.angle).sum()
 s.log_profile()
 fig = pylab.figure()
 sp1 = fig.add_subplot(1, 2, 1)
@@ -33,38 +43,31 @@ sp2 = fig.add_subplot(1, 2, 2)
 im = sp2.imshow(lena, cmap="gray")
 
 
-def cmp(a,b):
-    if a.scale<b.scale:
+def cmp(a, b):
+    if a.scale < b.scale:
         return True
-    elif a.scale>b.scale:
+    elif a.scale > b.scale:
         return False
     else:
-        if a.angle>b.angle:
+        if a.angle > b.angle:
             return True
         else:
             return False
 
 
+
+
 import feature
 sc = feature.SiftAlignment()
+#lena2 = scipy.misc.imread(filename, flatten=True)
+#lena = numpy.ascontiguousarray(lena2[:shape[0], :shape[1]])
+
 res = sc.sift(lena)
 ref = numpy.empty((res.size, 4), dtype=numpy.float32)
 ref[:, 0] = res.x
 ref[:, 1] = res.y
 ref[:, 2] = res.scale
 ref[:, 3] = res.angle
-
-#numpy.savetxt("opencl_keypoints.txt",kp[numpy.argsort(kpg.y)],fmt='%.4f')
-#numpy.savetxt("cpp_keypoints.txt",ref[numpy.argsort(res.y)],fmt='%.4f')
-numpy.savetxt("opencl_descriptors_4.txt",(kpg[numpy.argsort(kpg.y)]).desc,fmt='%d')
-numpy.savetxt("cpp_descriptors_sort_4.txt",(res[numpy.argsort(res.y)]).desc,fmt='%d')
-
-#numpy.savetxt("opencl_cpu_cpukernels_not_sort.txt",(kpg).desc,fmt='%d')
-
-#numpy.savetxt("cpp_descriptors_kp.txt",(ref[numpy.argsort(ref[:,1])]),fmt='%.3f')
-#numpy.savetxt("opencl_cpukernels_kp.txt",(kp[numpy.argsort(kp[:,1])]),fmt='%.3f')
-
-
 
 sp2.set_title("C++: %s keypoint" % ref.shape[0])
 for i in range(ref.shape[0]):
@@ -87,26 +90,16 @@ for i in range(kp.shape[0]):
                      arrowprops=dict(facecolor='blue', edgecolor='blue', width=1),)
 #print numpy.degrees((ref[numpy.argsort(res.scale)][:392] - kp[numpy.argsort(kpg.scale)][:392])[:,3])
 
-lres = list(res)
-lres.sort(cmp)
-lkpg = list(kpg)
-lkpg.sort(cmp)
-#print numpy.array([i.angle for i in lkpg[:250]])-numpy.array([i.angle for i in lres[:250]])
-
-#res2 = numpy.recarray(shape=res.shape[0]*2,dtype=res.dtype)
-#res2[:res.shape[0]] = res
-#res2[res.shape[0]:] = res
-t0_match = time.time()
+print res[:5]
+print ""*80
+print kpg[:5]
 match = feature.sift_match(res, kpg)
-t1_match = time.time()
-print "Angle1 - Angle0"
-print abs(match.angle1-match.angle0).max()
-#print match
+print match
 print match.shape
-print("Matching took %.3f ms" %(1000.0*(t1_match-t0_match)))
 fig.show()
 
 
 fig.show()
 raw_input()
+
 
