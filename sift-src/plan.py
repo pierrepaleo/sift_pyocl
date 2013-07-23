@@ -15,7 +15,7 @@ __authors__ = ["Jérôme Kieffer"]
 __contact__ = "jerome.kieffer@esrf.eu"
 __license__ = "BSD"
 __copyright__ = "European Synchrotron Radiation Facility, Grenoble, France"
-__date__ = "2013-07-15"
+__date__ = "2013-07-19"
 __status__ = "beta"
 __license__ = """
 Permission is hereby granted, free of charge, to any person
@@ -40,15 +40,16 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 
 """
-import time, math, os, logging, sys
+import time, math, os, logging, threading
+# import sys
 import gc
 import numpy
 import pyopencl, pyopencl.array
 from .param import par
 from .opencl import ocl
-from .utils import calc_size, kernel_size, sizeof
+from .utils import calc_size, kernel_size  # , sizeof
 logger = logging.getLogger("sift.plan")
-from pyopencl import mem_flags as MF
+# from pyopencl import mem_flags as MF
 
 class SiftPlan(object):
     """
@@ -66,8 +67,12 @@ class SiftPlan(object):
                "image":1024,
                "gaussian":1024,
                "reductions":1024,
-               "keypoints":128,
-               "keypoints_cpu":1024}
+               "orientation_cpu":1,
+               "orientation_gpu":128,
+               "keypoints_gpu1":(8, 4, 4),
+               "keypoints_gpu2":(8, 8, 8),
+               "keypoints_cpu":1,
+               "memset":128, }
 #               "keypoints":128}
     converter = {numpy.dtype(numpy.uint8):"u8_to_float",
                  numpy.dtype(numpy.uint16):"u16_to_float",
@@ -106,9 +111,9 @@ class SiftPlan(object):
         self.profile = bool(profile)
         self.max_workgroup_size = max_workgroup_size
         self.events = []
+        self._sem = threading.Semaphore()
         self.scales = []  # in XY order
-        self.procsize = []
-        self.procsize_XY = [] #same as  procsize but with dimension in (X,Y) not (slow, fast)
+        self.procsize = []  # same as  procsize but with dimension in (X,Y) not (slow, fast)
         self.wgsize = []
         self.kpsize = None
         self.buffers = {}
@@ -118,11 +123,12 @@ class SiftPlan(object):
         self.red_size = None
         self._calc_scales()
         self._calc_memory()
+        self.LOW_END = 0
         if device is None:
             self.device = ocl.select_device(type=devicetype, memory=self.memory, best=True)
         else:
             self.device = device
-        self.ctx = ctx = pyopencl.Context(devices=[pyopencl.get_platforms()[self.device[0]].get_devices()[self.device[1]]])
+        self.ctx = pyopencl.Context(devices=[pyopencl.get_platforms()[self.device[0]].get_devices()[self.device[1]]])
         print self.ctx.devices[0]
         if profile:
             self.queue = pyopencl.CommandQueue(self.ctx, properties=pyopencl.command_queue_properties.PROFILING_ENABLE)
@@ -132,14 +138,12 @@ class SiftPlan(object):
         self._compile_kernels()
         self._allocate_buffers()
         self.debug = []
-
+        self.cnt = numpy.empty(1, dtype=numpy.int32)
         self.devicetype = ocl.platforms[self.device[0]].devices[self.device[1]].type
         if (self.devicetype == "CPU"):
             self.USE_CPU = True
         else:
             self.USE_CPU = False
-
-
 
 
 
@@ -161,13 +165,16 @@ class SiftPlan(object):
         shape = self.shape[-1::-1]
         self.scales = [tuple(numpy.int32(i) for i in shape)]
         min_size = 2 * par.BorderDist + 2
-        while min(shape) > min_size * 2:
+        while min(shape) > min_size:
             shape = tuple(numpy.int32(i // 2) for i in shape)
             self.scales.append(shape)
-#        self.scales.pop()
+        self.scales.pop()
         self.octave_max = len(self.scales)
 
     def _calc_memory(self):
+        """
+        Estimates the memory footprint of all buffer to ensure it fits on the device
+        """
         # Just the context + kernel takes about 75MB on the GPU
         self.memory = 75 * 2 ** 20
         size_of_float = numpy.dtype(numpy.float32).itemsize
@@ -177,11 +184,10 @@ class SiftPlan(object):
         self.memory += size * size_of_input  # initial_image (no raw_float)
         if self.RGB:
             self.memory += 2 * size * (size_of_input)  # one of three was already counted
-        for scale in self.scales:
-            nr_blur = par.Scales + 3  # 3 blurs and 2 tmp
-            nr_dogs = par.Scales + 2
-            size = scale[0] * scale[1]
-            self.memory += size * (nr_blur + nr_dogs) * size_of_float
+        nr_blur = par.Scales + 3  # 3 blurs and 2 tmp
+        nr_dogs = par.Scales + 2
+        self.memory += size * (nr_blur + nr_dogs) * size_of_float
+
         self.kpsize = int(self.shape[0] * self.shape[1] // self.PIX_PER_KP)  # Is the number of kp independant of the octave ? int64 causes problems with pyopencl
         self.memory += self.kpsize * size_of_float * 4 * 2  # those are array of float4 to register keypoints, we need two of them
         self.memory += self.kpsize * 128  # stores the descriptors: 128 unsigned chars
@@ -197,7 +203,6 @@ class SiftPlan(object):
         if par.InitSigma > curSigma:
             sigma = math.sqrt(par.InitSigma ** 2 - curSigma ** 2)
             size = kernel_size(sigma, True)
-            # TODO: possible enhancement, if size is even make it odd
             logger.debug("pre-Allocating %s float for init blur" % size)
             self.memory += size * size_of_float
         prevSigma = par.InitSigma
@@ -206,9 +211,12 @@ class SiftPlan(object):
             size = kernel_size(increase, True)
             logger.debug("pre-Allocating %s float for blur sigma: %s" % (size, increase))
             self.memory += size * size_of_float
-            prevSigma *= self.sigmaRatio;
+            prevSigma *= self.sigmaRatio
 
     def _allocate_buffers(self):
+        """
+        All buffers are allocated here
+        """
         shape = self.shape
         if self.dtype != numpy.float32:
             if self.RGB:
@@ -222,22 +230,17 @@ class SiftPlan(object):
         self.buffers["cnt" ] = pyopencl.array.empty(self.queue, 1, dtype=numpy.int32)
         self.buffers["descriptors"] = pyopencl.array.empty(self.queue, (self.kpsize, 128), dtype=numpy.uint8)
 
-        for octave in range(self.octave_max):
-            self.buffers[(octave, "tmp") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32)
-            self.buffers[(octave, "ori") ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32)
-            for scale in range(par.Scales + 3):
-                self.buffers[(octave, scale) ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32)
-            self.buffers[(octave, "DoGs") ] = pyopencl.array.empty(self.queue, (par.Scales + 2, shape[0], shape[1]), dtype=numpy.float32)
-            shape = (shape[0] // 2, shape[1] // 2)
+        self.buffers["tmp"] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32)
+        self.buffers["ori"] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32)
+        for scale in range(par.Scales + 3):
+            self.buffers[scale ] = pyopencl.array.empty(self.queue, shape, dtype=numpy.float32)
+        self.buffers["DoGs" ] = pyopencl.array.empty(self.queue, (par.Scales + 2, shape[0], shape[1]), dtype=numpy.float32)
         wg_float = min(512.0, numpy.sqrt(self.shape[0] * self.shape[1]))
-        wg = 2 ** (int(math.ceil(math.log(wg_float, 2))))
+#        wg = 2 ** (int(math.ceil(math.log(wg_float, 2))))
         self.buffers["max_min"] = pyopencl.array.empty(self.queue, (self.red_size, 2), dtype=numpy.float32)  # temporary buffer for max/min reduction
         self.buffers["min"] = pyopencl.array.empty(self.queue, (1), dtype=numpy.float32)
         self.buffers["max"] = pyopencl.array.empty(self.queue, (1), dtype=numpy.float32)
         self.buffers["255"] = pyopencl.array.to_device(self.queue, numpy.array([255.0], dtype=numpy.float32))
-
-#        for buffer in self.buffers.values():
-#            buffer.fill(0)
         ########################################################################
         # Allocate space for gaussian kernels
         ########################################################################
@@ -272,8 +275,8 @@ class SiftPlan(object):
         logger.debug("Allocating %s float for blur sigma: %s" % (size, sigma))
         if wg_size > self.max_workgroup_size:  # compute on CPU
             x = numpy.arange(size) - (size - 1.0) / 2.0
-            g = numpy.exp(-(x / sigma) ** 2 / 2.0).astype(numpy.float32)
-            g /= g.sum(dtype=numpy.float32)
+            gaus = numpy.exp(-(x / sigma) ** 2 / 2.0).astype(numpy.float32)
+            gaus /= gaus.sum(dtype=numpy.float32)
             gaussian_gpu = pyopencl.array.to_device(self.queue, g)
         else:
             gaussian_gpu = pyopencl.array.empty(self.queue, size, dtype=numpy.float32)
@@ -304,14 +307,24 @@ class SiftPlan(object):
         for kernel in self.kernels:
             kernel_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), kernel + ".cl")
             kernel_src = open(kernel_file).read()
-            wg_size = min(self.max_workgroup_size, self.kernels[kernel])
+            if "__len__" not in dir(self.kernels[kernel]):
+                wg_size = min(self.max_workgroup_size, self.kernels[kernel])
+            else:
+                wg_size = self.max_workgroup_size
             try:
                 program = pyopencl.Program(self.ctx, kernel_src).build('-D WORKGROUP_SIZE=%s' % wg_size)
             except pyopencl.MemoryError as error:
                 raise MemoryError(error)
             except pyopencl.RuntimeError as error:
-                logger.error("Failed compiling kernel %s with workgroup size %s: %s", kernel, wg_size, error)
-                raise error
+                if kernel == "keypoints_gpu2":
+                    logger.warning("Failed compiling kernel '%s' with workgroup size %s: %s: use low_end alternative", kernel, wg_size, error)
+                    self.LOW_END += 1
+                elif kernel == "keypoints_gpu1":
+                    logger.warning("Failed compiling kernel '%s' with workgroup size %s: %s: use CPU alternative", kernel, wg_size, error)
+                    self.LOW_END += 1
+                else:
+                    logger.error("Failed compiling kernel '%s' with workgroup size %s: %s", kernel, wg_size, error)
+                    raise error
             self.programs[kernel] = program
 
     def _free_kernels(self):
@@ -331,17 +344,16 @@ class SiftPlan(object):
         The processing size should be a multiple of  workgroup size.
         """
         device = self.ctx.devices[0]
-        max_work_group_size = device.max_work_group_size
+#        max_work_group_size = device.max_work_group_size
         max_work_item_sizes = device.max_work_item_sizes
         # we recalculate the shapes ...
         shape = self.shape
         min_size = 2 * par.BorderDist + 2
-        self.max_workgroup_size = min(self.max_workgroup_size, max_work_item_sizes[1])
+        self.max_workgroup_size = min(self.max_workgroup_size, max_work_item_sizes[0])
         while min(shape) > min_size:
-            wg = (min(2 ** int(math.log(shape[1], 2)), self.max_workgroup_size), 1)
+            wg = (min(2 ** int(math.ceil(math.log(shape[-1], 2))), self.max_workgroup_size), 1)
             self.wgsize.append(wg)
-            self.procsize.append(calc_size(shape, wg))
-            self.procsize_XY.append(calc_size(shape[-1::-1], wg))
+            self.procsize.append(calc_size(shape[-1::-1], wg))
             shape = tuple(i // 2 for i in shape)
 
 
@@ -352,114 +364,124 @@ class SiftPlan(object):
         Calculates the keypoints of the image
         @param image: ndimage of 2D (or 3D if RGB)
         """
-        total_size = 0
-        keypoints = []
-        descriptors = []
-        assert image.shape[:2] == self.shape
-        assert image.dtype == self.dtype
-        t0 = time.time()
+        self.reset_timer()
+        with self._sem:
+            total_size = 0
+            keypoints = []
+            descriptors = []
+            assert image.shape[:2] == self.shape
+            assert image.dtype == self.dtype
+            t0 = time.time()
 
-        if self.dtype == numpy.float32:
-            evt = pyopencl.enqueue_copy(self.queue, self.buffers[(0, 0)].data, image)
-            if self.profile:self.events.append(("copy H->D", evt))
-        elif (image.ndim == 3) and (self.dtype == numpy.uint8) and (self.RGB):
-            evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
-            if self.profile:self.events.append(("copy H->D", evt))
-            print self.procsize_XY[0], self.wgsize[0]
-            evt = self.programs["preprocess"].rgb_to_float(self.queue, self.procsize_XY[0], self.wgsize[0],
-                                                         self.buffers["raw"].data, self.buffers[(0, 0)].data, *self.scales[0])
-            if self.profile:self.events.append(("RGB -> float", evt))
+            if self.dtype == numpy.float32:
+                evt = pyopencl.enqueue_copy(self.queue, self.buffers[0].data, image)
+                if self.profile:self.events.append(("copy H->D", evt))
+            elif (image.ndim == 3) and (self.dtype == numpy.uint8) and (self.RGB):
+                evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
+                if self.profile:self.events.append(("copy H->D", evt))
+                print self.procsize[0], self.wgsize[0]
+                evt = self.programs["preprocess"].rgb_to_float(self.queue, self.procsize[0], self.wgsize[0],
+                                                             self.buffers["raw"].data, self.buffers[0].data, *self.scales[0])
+                if self.profile:self.events.append(("RGB -> float", evt))
 
-        elif self.dtype in self.converter:
-            program = self.programs["preprocess"].__getattr__(self.converter[self.dtype])
-            evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
-            if self.profile:self.events.append(("copy H->D", evt))
-            evt = program(self.queue, self.procsize_XY[0], self.wgsize[0],
-                    self.buffers["raw"].data, self.buffers[(0, 0)].data, *self.scales[0])
-            if self.profile:self.events.append(("convert -> float", evt))
-        else:
-            raise RuntimeError("invalid input format error")
+            elif self.dtype in self.converter:
+                program = self.programs["preprocess"].__getattr__(self.converter[self.dtype])
+                evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
+                if self.profile:self.events.append(("copy H->D", evt))
+                evt = program(self.queue, self.procsize[0], self.wgsize[0],
+                        self.buffers["raw"].data, self.buffers[0].data, *self.scales[0])
+                if self.profile:self.events.append(("convert -> float", evt))
+            else:
+                raise RuntimeError("invalid input format error")
 
-        k1 = self.programs["reductions"].max_min_global_stage1(self.queue, (self.red_size * self.red_size,), (self.red_size,),
-                                                               self.buffers[(0, 0)].data,
-                                                               self.buffers["max_min"].data,
-                                                               numpy.uint32(self.shape[0] * self.shape[1]))
-        k2 = self.programs["reductions"].max_min_global_stage2(self.queue, (self.red_size,), (self.red_size,),
-                                                               self.buffers["max_min"].data,
-                                                               self.buffers["max"].data,
-                                                               self.buffers["min"].data)
-        if self.profile:
-            self.events.append(("max_min_stage1", k1))
-            self.events.append(("max_min_stage2", k2))
-        evt = self.programs["preprocess"].normalizes(self.queue, self.procsize_XY[0], self.wgsize[0],
-                                               self.buffers[(0, 0)].data,
-                                               self.buffers["min"].data,
-                                               self.buffers["max"].data,
-                                               self.buffers["255"].data,
-                                               *self.scales[0])
-        if self.profile:self.events.append(("normalize", evt))
+            k1 = self.programs["reductions"].max_min_global_stage1(self.queue, (self.red_size * self.red_size,), (self.red_size,),
+                                                                   self.buffers[0].data,
+                                                                   self.buffers["max_min"].data,
+                                                                   numpy.uint32(self.shape[0] * self.shape[1]))
+            k2 = self.programs["reductions"].max_min_global_stage2(self.queue, (self.red_size,), (self.red_size,),
+                                                                   self.buffers["max_min"].data,
+                                                                   self.buffers["max"].data,
+                                                                   self.buffers["min"].data)
+            if self.profile:
+                self.events.append(("max_min_stage1", k1))
+                self.events.append(("max_min_stage2", k2))
+            evt = self.programs["preprocess"].normalizes(self.queue, self.procsize[0], self.wgsize[0],
+                                                   self.buffers[0].data,
+                                                   self.buffers["min"].data,
+                                                   self.buffers["max"].data,
+                                                   self.buffers["255"].data,
+                                                   *self.scales[0])
+            if self.profile:self.events.append(("normalize", evt))
 
 
-        octSize = 1.0
-        curSigma = 1.0 if par.DoubleImSize else 0.5
-        octave = 0
-        if par.InitSigma > curSigma:
-            logger.debug("Bluring image to achieve std: %f", par.InitSigma)
-            sigma = math.sqrt(par.InitSigma ** 2 - curSigma ** 2)
-            self._gaussian_convolution(self.buffers[(0, 0)], self.buffers[(0, 0)], sigma, 0)
-#        else:
-#            pyopencl.enqueue_copy(self.queue, dest=self.buffers[(0, "G_1")].data, src=self.buffers["input"].data)
+#            octSize = 1.0
+            curSigma = 1.0 if par.DoubleImSize else 0.5
+            octave = 0
+            if par.InitSigma > curSigma:
+                logger.debug("Bluring image to achieve std: %f", par.InitSigma)
+                sigma = math.sqrt(par.InitSigma ** 2 - curSigma ** 2)
+                self._gaussian_convolution(self.buffers[0], self.buffers[0], sigma, 0)
+    #        else:
+    #            pyopencl.enqueue_copy(self.queue, dest=self.buffers[(0, "G_1")].data, src=self.buffers["input"].data)
 
-        for octave in range(self.octave_max):
-            kp, descriptor = self.one_octave(octave)
-            print("in octave %i found %i kp" % (octave, kp.shape[0]))
+            for octave in range(self.octave_max):
+                kp, descriptor = self._one_octave(octave)
+                logger.info("in octave %i found %i kp" % (octave, kp.shape[0]))
 
-            if kp.shape[0] > 0:
-                keypoints.append(kp)
-                descriptors.append(descriptor)
-                total_size += kp.shape[0]
+                if kp.shape[0] > 0:
+                    keypoints.append(kp)
+                    descriptors.append(descriptor)
+                    total_size += kp.shape[0]
 
-        ########################################################################
-        # Merge keypoints in central memory
-        ########################################################################
-        output = numpy.recarray(shape=(total_size,), dtype=self.dtype_kp)
-        last = 0
-        for ds, desc in zip(keypoints, descriptors):
-            l = ds.shape[0]
-            if l > 0:
-                output[last:last + l].x = ds[:, 0]
-                output[last:last + l].y = ds[:, 1]
-                output[last:last + l].scale = ds[:, 2]
-                output[last:last + l].angle = ds[:, 3]
-                output[last:last + l].desc = desc
-                last += l
-        print("Execution time: %.3fms" % (1000 * (time.time() - t0)))
-#        self.count_kp(output)
+            ########################################################################
+            # Merge keypoints in central memory
+            ########################################################################
+            output = numpy.recarray(shape=(total_size,), dtype=self.dtype_kp)
+            last = 0
+            for ds, desc in zip(keypoints, descriptors):
+                l = ds.shape[0]
+                if l > 0:
+                    output[last:last + l].x = ds[:, 0]
+                    output[last:last + l].y = ds[:, 1]
+                    output[last:last + l].scale = ds[:, 2]
+                    output[last:last + l].angle = ds[:, 3]
+                    output[last:last + l].desc = desc
+                    last += l
+            logger.info("Execution time: %.3fms" % (1000 * (time.time() - t0)))
+    #        self.count_kp(output)
         return output
 
     def _gaussian_convolution(self, input_data, output_data, sigma, octave=0):
         """
         Calculate the gaussian convolution with precalculated kernels.
 
-        Uses a temporary buffer
+        @param input_data: pyopencl array with input
+        @param output_data: pyopencl array with result
+        @param sigma: width of the gaussian
+        @param octave: related to the size on the input images
+
+        * Uses a temporary buffer
+        * Needs gaussian kernel to be available on device
+
         """
-        temp_data = self.buffers[(octave, "tmp") ]
+        temp_data = self.buffers["tmp"]
         gaussian = self.buffers["gaussian_%s" % sigma]
-        k1 = self.programs["convolution"].horizontal_convolution(self.queue, self.procsize_XY[octave], self.wgsize[octave],
+        k1 = self.programs["convolution"].horizontal_convolution(self.queue, self.procsize[octave], self.wgsize[octave],
                                 input_data.data, temp_data.data, gaussian.data, numpy.int32(gaussian.size), *self.scales[octave])
-        k2 = self.programs["convolution"].vertical_convolution(self.queue, self.procsize_XY[octave], self.wgsize[octave],
+        k2 = self.programs["convolution"].vertical_convolution(self.queue, self.procsize[octave], self.wgsize[octave],
                                 temp_data.data, output_data.data, gaussian.data, numpy.int32(gaussian.size), *self.scales[octave])
 
         if self.profile:
             self.events += [("Blur sigma %s octave %s" % (sigma, octave), k1), ("Blur sigma %s octave %s" % (sigma, octave), k2)]
 
-    def one_octave(self, octave):
+    def _one_octave(self, octave):
         """
-        does all scales within an octave
-        @param
+        Does all scales within an octave
+
+        @param octave: number of the octave
         """
         prevSigma = par.InitSigma
-        print("Calculating octave %i" % octave)
+        logger.info("Calculating octave %i" % octave)
         wgsize = (128,)  # (max(self.wgsize[octave]),) #TODO: optimize
         kpsize32 = numpy.int32(self.kpsize)
         self._reset_keypoints()
@@ -467,193 +489,266 @@ class SiftPlan(object):
         last_start = numpy.int32(0)
         for scale in range(par.Scales + 2):
             sigma = prevSigma * math.sqrt(self.sigmaRatio ** 2 - 1.0)
-            print("Octave %i scale %s blur with sigma %s" % (octave, scale, sigma))
+            logger.info("Octave %i scale %s blur with sigma %s" % (octave, scale, sigma))
 
             ########################################################################
             # Calculate gaussian blur and DoG
             ########################################################################
 
-            self._gaussian_convolution(self.buffers[(octave, scale)], self.buffers[(octave, scale + 1)], sigma, octave)
+            self._gaussian_convolution(self.buffers[scale], self.buffers[scale + 1], sigma, octave)
             prevSigma *= self.sigmaRatio
-            evt = self.programs["algebra"].combine(self.queue, self.procsize_XY[octave], self.wgsize[octave],
-                                             self.buffers[(octave, scale + 1)].data, numpy.float32(-1.0),
-                                             self.buffers[(octave, scale)].data, numpy.float32(+1.0),
-                                             self.buffers[(octave, "DoGs")].data, numpy.int32(scale),
+            evt = self.programs["algebra"].combine(self.queue, self.procsize[octave], self.wgsize[octave],
+                                             self.buffers[scale + 1].data, numpy.float32(-1.0),
+                                             self.buffers[scale].data, numpy.float32(+1.0),
+                                             self.buffers["DoGs"].data, numpy.int32(scale),
                                              *self.scales[octave])
             if self.profile:self.events.append(("DoG %s %s" % (octave, scale), evt))
         for scale in range(1, par.Scales + 1):
 #                print("Before local_maxmin, cnt is %s %s %s" % (self.buffers["cnt"].get()[0], self.procsize[octave], self.wgsize[octave]))
-                evt = self.programs["image"].local_maxmin(self.queue, self.procsize_XY[octave], self.wgsize[octave],
-                                                self.buffers[(octave, "DoGs")].data,  # __global float* DOGS,
-                                                self.buffers["Kp_1"].data,  # __global keypoint* output,
-                                                numpy.int32(par.BorderDist),  # int border_dist,
-                                                numpy.float32(par.PeakThresh),  # float peak_thresh,
-                                                octsize,  # int octsize,
-                                                numpy.float32(par.EdgeThresh1),  # float EdgeThresh0,
-                                                numpy.float32(par.EdgeThresh),  # float EdgeThresh,
-                                                self.buffers["cnt"].data,  # __global int* counter,
-                                                kpsize32,  # int nb_keypoints,
-                                                numpy.int32(scale),  # int scale,
-                                                *self.scales[octave])  # int width, int height)
-                if self.profile:self.events.append(("local_maxmin %s %s" % (octave, scale), evt))
+            evt = self.programs["image"].local_maxmin(self.queue, self.procsize[octave], self.wgsize[octave],
+                                            self.buffers["DoGs"].data,  # __global float* DOGS,
+                                            self.buffers["Kp_1"].data,  # __global keypoint* output,
+                                            numpy.int32(par.BorderDist),  # int border_dist,
+                                            numpy.float32(par.PeakThresh),  # float peak_thresh,
+                                            octsize,  # int octsize,
+                                            numpy.float32(par.EdgeThresh1),  # float EdgeThresh0,
+                                            numpy.float32(par.EdgeThresh),  # float EdgeThresh,
+                                            self.buffers["cnt"].data,  # __global int* counter,
+                                            kpsize32,  # int nb_keypoints,
+                                            numpy.int32(scale),  # int scale,
+                                            *self.scales[octave])  # int width, int height)
+            if self.profile:self.events.append(("local_maxmin %s %s" % (octave, scale), evt))
 #                print("after local_max_min:")
 #                print(self.buffers["Kp_1"].get()[:5])
 
 #                self.debug_holes("After local_maxmin %s %s" % (octave, scale))
-                procsize = calc_size((self.kpsize,), wgsize)
-    #           Refine keypoints
-                kp_counter = self.buffers["cnt"].get()[0]
-                evt = self.programs["image"].interp_keypoint(self.queue, procsize, wgsize,
-                                              self.buffers[(octave, "DoGs")].data,  # __global float* DOGS,
-                                              self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
-                                              last_start,  # int start_keypoint,
-                                              kp_counter,  # int end_keypoint,
-                                              numpy.float32(par.PeakThresh),  # float peak_thresh,
-                                              numpy.float32(par.InitSigma),  # float InitSigma,
-                                              *self.scales[octave])  # int width, int height)
-                if self.profile:self.events.append(("interp_keypoint %s %s" % (octave, scale), evt))
+            procsize = calc_size((self.kpsize,), wgsize)
+#           Refine keypoints
+#                kp_counter = self.buffers["cnt"].get()[0]
+            cp_evt = pyopencl.enqueue_copy(self.queue, self.cnt, self.buffers["cnt"].data)
+#                kp_counter = self.cnt[0]
+            # TODO: modify interp_keypoint so that it reads end_keypoint from GPU memory
+            evt = self.programs["image"].interp_keypoint(self.queue, procsize, wgsize,
+                                          self.buffers["DoGs"].data,  # __global float* DOGS,
+                                          self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
+                                          last_start,  # int start_keypoint,
+                                          self.cnt[0],  # int end_keypoint,
+                                          numpy.float32(par.PeakThresh),  # float peak_thresh,
+                                          numpy.float32(par.InitSigma),  # float InitSigma,
+                                          *self.scales[octave])  # int width, int height)
+            if self.profile:
+                self.events += [("get cnt", cp_evt),
+                                ("interp_keypoint %s %s" % (octave, scale), evt)
+                                ]
 
 #                self.debug_holes("After interp_keypoint %s %s" % (octave, scale))
-                newcnt = self.compact(last_start)
+            newcnt = self._compact(last_start)
 #                print("after compaction:")
 #                print(self.buffers["Kp_1"].get()[:5])
 #                self.debug_holes("After compact %s %s" % (octave, scale))
+#                self.debug.append(self.buffers[ scale)].get())
+            evt = self.programs["image"].compute_gradient_orientation(self.queue, self.procsize[octave], self.wgsize[octave],
+                               self.buffers[scale].data,  # __global float* igray,
+                               self.buffers["tmp"].data,  # __global float *grad,
+                               self.buffers["ori"].data,  # __global float *ori,
+                               *self.scales[octave])  # int width,int height
+            if self.profile:self.events.append(("compute_gradient_orientation %s %s" % (octave, scale), evt))
 
-                # recycle buffers G_2 and tmp to store ori and grad
-                ori = self.buffers[(octave, "ori")]
-                grad = self.buffers[(octave, "tmp")]
-#                self.debug.append(self.buffers[(octave, scale)].get())
-                evt = self.programs["image"].compute_gradient_orientation(self.queue, self.procsize_XY[octave], self.wgsize[octave],
-                                   self.buffers[(octave, scale)].data,  # __global float* igray,
-                                   grad.data,  # __global float *grad,
-                                   ori.data,  # __global float *ori,
-                                   *self.scales[octave])  # int width,int height
-                if self.profile:self.events.append(("compute_gradient_orientation %s %s" % (octave, scale), evt))
+#           Orientation assignement: 1D kernel, rather heavy kernel
+            if newcnt and newcnt > last_start:  # launch kernel only if neededwgsize = (128,)
 
-    #           Orientation assignement: 1D kernel, rather heavy kernel
-                if newcnt and newcnt > last_start:  # launch kernel only if neededwgsize = (128,)
+                if self.USE_CPU:
+                    file_to_use = "orientation_cpu"
+#                    logger.info("Computing orientation with CPU-optimized kernels")
+                else:
+                    file_to_use = "orientation_gpu"
 
-                    if self.USE_CPU:
-                        wgsize2 = 1,
-                        file_to_use = "keypoints_cpu"
-                        print "NOTICE: computing orientation with CPU-optimized kernels"
+                wgsize2 = self.kernels[file_to_use],
+                procsize = int(newcnt * wgsize2[0]),
+#                print "orientation_assignment:", procsize, wgsize2, last_start, self.buffers["cnt"].get()[0], newcnt
+#                self.debug.append(grad.get())
+#                self.debug.append(ori.get())
+                evt = self.programs[file_to_use].orientation_assignment(self.queue, procsize, wgsize2,
+                                      self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
+                                      self.buffers["tmp"].data,  # __global float* grad,
+                                      self.buffers["ori"].data,  # __global float* ori,
+                                      self.buffers["cnt"].data,  # __global int* counter,
+                                      octsize,  # int octsize,
+                                      numpy.float32(par.OriSigma),  # float OriSigma, //WARNING: (1.5), it is not "InitSigma (=1.6)"
+                                      kpsize32,  # int max of nb_keypoints,
+                                      numpy.int32(last_start),  # int keypoints_start,
+                                      newcnt,  # int keypoints_end,
+                                      *self.scales[octave])  # int grad_width, int grad_height)
+                # newcnt = self.buffers["cnt"].get()[0] #do not forget to update numbers of keypoints, modified above !
+                evt_cp = pyopencl.enqueue_copy(self.queue, self.cnt, self.buffers["cnt"].data)
+                newcnt = self.cnt[0]  # do not forget to update numbers of keypoints, modified above !
+
+                if self.USE_CPU or self.LOW_END == 2:
+                    file_to_use = "keypoints_cpu"
+                    logger.info("Computing descriptors with CPU optimized kernels")
+                    wgsize2 = self.kernels[file_to_use],
+                    procsize2 = int(newcnt * wgsize2[0]),
+
+                else:
+                    if self.LOW_END == 1 :
+                        file_to_use = "keypoints_gpu1"
+                        logger.info("Computing descriptors with older-GPU optimized kernels")
+                        wgsize2 = self.kernels[file_to_use]
                     else:
-                        wgsize2 = wgsize
-                        file_to_use = "keypoints"
-
-                    procsize = int(newcnt * wgsize[0]),
-                    print "orientation_assignment:", procsize, wgsize2, last_start, self.buffers["cnt"].get()[0], newcnt
-#                    self.debug.append(grad.get())
-#                    self.debug.append(ori.get())
-                    evt = self.programs[file_to_use].orientation_assignment(self.queue, procsize, wgsize2,
+                        file_to_use = "keypoints_gpu2"
+                        logger.info("Computing descriptors with newer-GPU optimized kernels")
+                        wgsize2 = self.kernels[file_to_use]
+                    procsize2 = int(newcnt * wgsize2[0]), wgsize2[1], wgsize2[2]
+                try:
+                    evt2 = self.programs[file_to_use].descriptor(self.queue, procsize2, wgsize2,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
-                                          grad.data,  # __global float* grad,
-                                          ori.data,  # __global float* ori,
-                                          self.buffers["cnt"].data,  # __global int* counter,
+                                          self.buffers["descriptors"].data,  # ___global unsigned char *descriptors
+                                          self.buffers["tmp"].data,  # __global float* grad,
+                                          self.buffers["ori"].data,  # __global float* ori,
                                           octsize,  # int octsize,
-                                          numpy.float32(par.OriSigma),  # float OriSigma, //WARNING: (1.5), it is not "InitSigma (=1.6)"
-                                          kpsize32,  # int max of nb_keypoints,
                                           numpy.int32(last_start),  # int keypoints_start,
-                                          newcnt,  # int keypoints_end,
+                                          self.buffers["cnt"].data,  # int* keypoints_end,
                                           *self.scales[octave])  # int grad_width, int grad_height)
-                    evt.wait()
-                    newcnt = self.buffers["cnt"].get()[0] #do not forget to update numbers of keypoints, modified above !
-                    if self.USE_CPU:
-                        wgsize2 = 1,
+                except pyopencl.RuntimeError as error:
+                    self.LOW_END += 1
+                    logger.error("Descriptor failed with %s. Switching to lower_end mode" % error)
+                    if self.USE_CPU or self.LOW_END == 2:
                         file_to_use = "keypoints_cpu"
+                        logger.info("Computing descriptors with CPU optimized kernels")
+                        wgsize2 = self.kernels[file_to_use],
                         procsize2 = int(newcnt * wgsize2[0]),
-                        print "NOTICE: computing descriptors with CPU-optimized kernels"
+
                     else:
-                        wgsize2 = (8, 8, 8) # hard-coded for this kernel, do not modify these values !
-                        file_to_use = "keypoints"
+                        if self.LOW_END == 1 :
+                            file_to_use = "keypoints_gpu1"
+                            logger.info("Computing descriptors with older-GPU optimized kernels")
+                            wgsize2 = self.kernels[file_to_use]
+                        else:
+                            file_to_use = "keypoints_gpu2"
+                            logger.info("Computing descriptors with newer-GPU optimized kernels")
+                            wgsize2 = self.kernels[file_to_use]
                         procsize2 = int(newcnt * wgsize2[0]), wgsize2[1], wgsize2[2]
 
                     evt2 = self.programs[file_to_use].descriptor(self.queue, procsize2, wgsize2,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
-                                          self.buffers["descriptors"].data, #___global unsigned char *descriptors
-                                          grad.data,  # __global float* grad,
-                                          ori.data,  # __global float* ori,
-                                          octsize,   #int octsize,
+                                          self.buffers["descriptors"].data,  # ___global unsigned char *descriptors
+                                          self.buffers["tmp"].data,  # __global float* grad,
+                                          self.buffers["ori"].data,  # __global float* ori,
+                                          octsize,  # int octsize,
                                           numpy.int32(last_start),  # int keypoints_start,
-                                          newcnt,  # int keypoints_end,
+                                          self.buffers["cnt"].data,  # int* keypoints_end,
                                           *self.scales[octave])  # int grad_width, int grad_height)
-                    evt2.wait()
-                    if self.profile:
-                        self.events.append(("orientation_assignment %s %s" % (octave, scale), evt))
-                        self.events.append(("descriptors %s %s" % (octave, scale), evt2))
+                if self.profile:
+                    self.events += [("orientation_assignment %s %s" % (octave, scale), evt),
+                                    ("copy cnt D->H", evt_cp),
+                                    ("descriptors %s %s" % (octave, scale), evt2)]
 
 #                self.debug_holes("After orientation %s %s" % (octave, scale))
-                last_start = self.buffers["cnt"].get()[0]
+#                last_start = self.buffers["cnt"].get()[0]
+            evt_cp = pyopencl.enqueue_copy(self.queue, self.cnt, self.buffers["cnt"].data)
+            last_start = self.cnt[0]
+            if self.profile:
+                self.events.append(("copy cnt D->H", evt_cp))
 
         ########################################################################
-        # Rescale all images to populate all octaves TODO: scale G3 -> G'0
+        # Rescale all images to populate all octaves
         ########################################################################
         if octave < self.octave_max - 1:
-            evt = self.programs["preprocess"].shrink(self.queue, self.procsize_XY[octave + 1], self.wgsize[octave + 1],
-                                                self.buffers[(octave, par.Scales)].data, self.buffers[(octave + 1, 0)].data,
-                                                numpy.int32(2), numpy.int32(2), self.scales[octave][0], self.scales[octave][1],
-                                                *self.scales[octave + 1])
-            if self.profile:self.events.append(("shrink %s->%s" % (self.scales[octave], self.scales[octave + 1]), evt))
+            evt = self.programs["preprocess"].shrink(self.queue, self.procsize[octave + 1], self.wgsize[octave + 1],
+                                                    self.buffers[par.Scales].data,
+                                                    self.buffers[0].data,
+                                                    numpy.int32(2), numpy.int32(2),
+                                                    self.scales[octave][0], self.scales[octave][1],
+                                                    *self.scales[octave + 1])
+            if self.profile:
+                self.events.append(("shrink %s->%s" % (self.scales[octave], self.scales[octave + 1]), evt))
         results = numpy.empty((last_start, 4), dtype=numpy.float32)
         descriptors = numpy.empty((last_start, 128), dtype=numpy.uint8)
         if last_start:
             evt = pyopencl.enqueue_copy(self.queue, results, self.buffers["Kp_1"].data)
             evt2 = pyopencl.enqueue_copy(self.queue, descriptors, self.buffers["descriptors"].data)
             if self.profile:
-                self.events.append(("copy D->H", evt))
-                self.events.append(("copy D->H", evt2))
+                self.events += [("copy D->H", evt),
+                                ("copy D->H", evt2)]
         return results, descriptors
 
-    def compact(self, start=numpy.int32(0)):
+    def _compact(self, start=numpy.int32(0)):
         """
         Compact the vector of keypoints starting from start
 
         @param start: start compacting at this adress. Before just copy
         @type start: numpy.int32
         """
-        wgsize = (8,)  # (max(self.wgsize[0]),) #TODO: optimize
+        wgsize = self.max_workgroup_size,  # (max(self.wgsize[0]),) #TODO: optimize
         kpsize32 = numpy.int32(self.kpsize)
-        kp_counter = self.buffers["cnt"].get()[0]
+#        kp_counter = self.buffers["cnt"].get()[0]
+        cp0_evt = pyopencl.enqueue_copy(self.queue, self.cnt, self.buffers["cnt"].data)
+        kp_counter = self.cnt[0]
         procsize = calc_size((self.kpsize,), wgsize)
 
         if kp_counter > 0.9 * self.kpsize:
-               logger.warning("Keypoint counter overflow risk: counted %s / %s" % (kp_counter, self.kpsize))
-        print("Compact %s -> %s / %s" % (start, kp_counter, self.kpsize))
-        self.buffers["cnt"].set(numpy.array([start], dtype=numpy.int32))
+            logger.warning("Keypoint counter overflow risk: counted %s / %s" % (kp_counter, self.kpsize))
+        logger.info("Compact %s -> %s / %s" % (start, kp_counter, self.kpsize))
+#        self.buffers["cnt"].set(numpy.array([start], dtype=numpy.int32))
+        self.cnt[0] = start
+        cp1_evt = pyopencl.enqueue_copy(self.queue, self.buffers["cnt"].data, self.cnt)
         evt = self.programs["algebra"].compact(self.queue, procsize, wgsize,
                         self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
                         self.buffers["Kp_2"].data,  # __global keypoint* output,
                         self.buffers["cnt"].data,  # __global int* counter,
                         start,  # int start,
                         kp_counter)  # int nbkeypoints
-        if self.profile:self.events.append(("compact", evt))
-        newcnt = self.buffers["cnt"].get()[0]
+#        newcnt = self.buffers["cnt"].get()[0]
+        cp2_evt = pyopencl.enqueue_copy(self.queue, self.cnt, self.buffers["cnt"].data)
         # print("After compaction, %i (-%i)" % (newcnt, kp_counter - newcnt))
         # swap keypoints:
         self.buffers["Kp_1"], self.buffers["Kp_2"] = self.buffers["Kp_2"], self.buffers["Kp_1"]
-        self.buffers["Kp_2"].fill(-1, self.queue)
-        return newcnt
+        # memset buffer Kp_2
+#        self.buffers["Kp_2"].fill(-1, self.queue)
+        mem_evt = self.programs["memset"].memset_float(self.queue, calc_size((4 * self.kpsize,), wgsize), wgsize, self.buffers["Kp_2"].data, numpy.float32(-1), numpy.int32(4 * self.kpsize))
+        if self.profile:
+            self.events += [("copy cnt D->H", cp0_evt),
+                            ("copy cnt H->D", cp1_evt),
+                            ("compact", evt),
+                            ("copy cnt D->H", cp2_evt),
+                            ("memset 2", mem_evt)
+                            ]
+        return self.cnt[0]
 
 
     def _reset_keypoints(self):
         """
         Todo: implement directly in OpenCL instead of relying on pyOpenCL
         """
-        self.buffers["Kp_1"].fill(-1, self.queue)
-        self.buffers["Kp_2"].fill(-1, self.queue)
-        self.buffers["cnt"].fill(0, self.queue)
+        wg_size = min(self.max_workgroup_size, self.kernels["memset"]),
+        evt1 = self.programs["memset"].memset_float(self.queue, calc_size((4 * self.kpsize,), wg_size), wg_size, self.buffers["Kp_1"].data, numpy.float32(-1), numpy.int32(4 * self.kpsize))
+#        evt2 = self.programs["memset"].memset_float(self.queue, calc_size((4 * self.kpsize,), wg_size), wg_size, self.buffers["Kp_2"].data, numpy.float32(-1), numpy.int32(4 * self.kpsize))
+        evt3 = self.programs["memset"].memset_int(self.queue, (1,), (1,), self.buffers["cnt"].data, numpy.int32(0), numpy.int32(1))
+        if self.profile:
+            self.events += [("memset 1", evt1), ("memset cnt", evt3)]
+#        self.buffers["Kp_1"].fill(-1, self.queue)
+#        self.buffers["Kp_2"].fill(-1, self.queue)
+#        self.buffers["cnt"].fill(0, self.queue)
 
     def count_kp(self, output):
+        """
+        Print the number of keypoint per octave
+        """
         kpt = 0
         for octave, data in enumerate(output):
             if output.shape[0] > 0:
-                sum = (data[:, 1] != -1.0).sum()
-                kpt += sum
-                print("octave %i kp count %i/%i size %s ratio:%s" % (octave, sum, self.kpsize, self.scales[octave], 1000.0 * sum / self.scales[octave][1] / self.scales[octave][0]))
+                ksum = (data[:, 1] != -1.0).sum()
+                kpt += ksum
+                print("octave %i kp count %i/%i size %s ratio:%s" % (octave, ksum, self.kpsize, self.scales[octave], 1000.0 * ksum / self.scales[octave][1] / self.scales[octave][0]))
         print("Found total %i guess %s pixels per keypoint" % (kpt, self.shape[0] * self.shape[1] / kpt))
+
     def debug_holes(self, label=""):
         print("%s %s" % (label, numpy.where(self.buffers["Kp_1"].get()[:, 1] == -1)[0]))
+
     def log_profile(self):
+        """
+        If we are in debugging mode, prints out all timing for every single OpenCL call
+        """
         t = 0.0
         orient = 0.0
         descr = 0.0
@@ -672,12 +767,21 @@ class SiftPlan(object):
         print("%50s:\t%.3fms" % ("Total execution time", t))
         print("%50s:\t%.3fms" % ("Total Orientation assignment", orient))
         print("%50s:\t%.3fms" % ("Total Descriptors", descr))
+
+    def reset_timer(self):
+        """
+        Resets the profiling timers
+        """
+        with self._sem:
+            self.events = []
+
 if __name__ == "__main__":
     # Prepare debugging
     import scipy.misc
-    lena = scipy.lena()
+    lena = scipy.misc.lena()
     s = SiftPlan(template=lena)
     s.keypoints(lena)
+
 
 
 

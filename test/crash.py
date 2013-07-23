@@ -1,5 +1,5 @@
 #!/usr/bin/python
-import sys, os
+import time, sys, os
 from math import sin, cos
 here = os.path.dirname(os.path.abspath(__file__))
 there = os.path.join(here, "..", "build")
@@ -11,10 +11,10 @@ import scipy.misc
 import pylab
 lena2 = scipy.misc.lena()
 #lena = scipy.misc.imread("../stream.tiff") #for other tests
-lena = numpy.ascontiguousarray(lena2[0:209,0:507]) #TODO: correct shrink
+lena = numpy.ascontiguousarray(lena2[0:512,0:512])
 # lena[:] = 0
 # lena[100:110, 100:110] = 255
-s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128,devicetype="GPU")
+s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128,devicetype="GPU",device=(1,0))
 kpg = s.keypoints(lena)
 kp = numpy.empty((kpg.size, 4), dtype=numpy.float32)
 kp[:, 0] = kpg.x
@@ -56,8 +56,8 @@ ref[:, 3] = res.angle
 
 #numpy.savetxt("opencl_keypoints.txt",kp[numpy.argsort(kpg.y)],fmt='%.4f')
 #numpy.savetxt("cpp_keypoints.txt",ref[numpy.argsort(res.y)],fmt='%.4f')
-#numpy.savetxt("opencl_cpu_cpukernels.txt",(kpg[numpy.argsort(kpg.y)]).desc,fmt='%d')
-#numpy.savetxt("cpp_descriptors_sort.txt",(res[numpy.argsort(res.y)]).desc,fmt='%d')
+numpy.savetxt("opencl_descriptors_4.txt",(kpg[numpy.argsort(kpg.y)]).desc,fmt='%d')
+numpy.savetxt("cpp_descriptors_sort_4.txt",(res[numpy.argsort(res.y)]).desc,fmt='%d')
 
 #numpy.savetxt("opencl_cpu_cpukernels_not_sort.txt",(kpg).desc,fmt='%d')
 
@@ -96,11 +96,14 @@ lkpg.sort(cmp)
 #res2 = numpy.recarray(shape=res.shape[0]*2,dtype=res.dtype)
 #res2[:res.shape[0]] = res
 #res2[res.shape[0]:] = res
+t0_match = time.time()
 match = feature.sift_match(res, kpg)
+t1_match = time.time()
 print "Angle1 - Angle0"
 print abs(match.angle1-match.angle0).max()
 #print match
 print match.shape
+print("Matching took %.3f ms" %(1000.0*(t1_match-t0_match)))
 fig.show()
 
 

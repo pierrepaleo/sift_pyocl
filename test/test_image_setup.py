@@ -26,12 +26,12 @@ def local_maxmin_setup():
     peakthresh = numpy.float32(255.0 * 0.04 / 3.0) #SIFT uses 255.0 * 0.04 / 3.0
     EdgeThresh = numpy.float32(0.06) #SIFT
     EdgeThresh0 = numpy.float32(0.08) #SIFT
-    octsize = numpy.int32(1) #initially 1, then twiced at each new octave
+    octsize = numpy.int32(4) #initially 1, then twiced at each new octave
     scale = numpy.int32(1) #1,2 or 3
     nb_keypoints = 1000 #constant size !
         
     l2 = scipy.misc.lena().astype(numpy.float32)#[100:250,100:250] #use a part of the image to fasten tests
-    l2 = numpy.ascontiguousarray(l2[0:507,0:209]);
+    l2 = numpy.ascontiguousarray(l2[0:512,0:512]);
     #l2 = scipy.misc.imread("../aerial.tiff").astype(numpy.float32)
     l = normalize_image(l2) #do not forget to normalize the image if you want to compare with sift.cpp
     for octave_cnt in range(1,int(numpy.log2(octsize))+1+1):
