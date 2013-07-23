@@ -41,15 +41,15 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 """
 import time, math, os, logging, threading
-#import sys
+# import sys
 import gc
 import numpy
 import pyopencl, pyopencl.array
 from .param import par
 from .opencl import ocl
-from .utils import calc_size, kernel_size#, sizeof
+from .utils import calc_size, kernel_size  # , sizeof
 logger = logging.getLogger("sift.plan")
-#from pyopencl import mem_flags as MF
+# from pyopencl import mem_flags as MF
 
 class SiftPlan(object):
     """
@@ -113,7 +113,7 @@ class SiftPlan(object):
         self.events = []
         self._sem = threading.Semaphore()
         self.scales = []  # in XY order
-        self.procsize = [] #same as  procsize but with dimension in (X,Y) not (slow, fast)
+        self.procsize = []  # same as  procsize but with dimension in (X,Y) not (slow, fast)
         self.wgsize = []
         self.kpsize = None
         self.buffers = {}
@@ -455,7 +455,14 @@ class SiftPlan(object):
         """
         Calculate the gaussian convolution with precalculated kernels.
 
-        Uses a temporary buffer
+        @param input_data: pyopencl array with input
+        @param output_data: pyopencl array with result
+        @param sigma: width of the gaussian
+        @param octave: related to the size on the input images
+
+        * Uses a temporary buffer
+        * Needs gaussian kernel to be available on device
+
         """
         temp_data = self.buffers["tmp"]
         gaussian = self.buffers["gaussian_%s" % sigma]
@@ -520,7 +527,7 @@ class SiftPlan(object):
 #                kp_counter = self.buffers["cnt"].get()[0]
             cp_evt = pyopencl.enqueue_copy(self.queue, self.cnt, self.buffers["cnt"].data)
 #                kp_counter = self.cnt[0]
-            #TODO: modify interp_keypoint so that it reads end_keypoint from GPU memory
+            # TODO: modify interp_keypoint so that it reads end_keypoint from GPU memory
             evt = self.programs["image"].interp_keypoint(self.queue, procsize, wgsize,
                                           self.buffers["DoGs"].data,  # __global float* DOGS,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
@@ -572,9 +579,9 @@ class SiftPlan(object):
                                       numpy.int32(last_start),  # int keypoints_start,
                                       newcnt,  # int keypoints_end,
                                       *self.scales[octave])  # int grad_width, int grad_height)
-                #newcnt = self.buffers["cnt"].get()[0] #do not forget to update numbers of keypoints, modified above !
+                # newcnt = self.buffers["cnt"].get()[0] #do not forget to update numbers of keypoints, modified above !
                 evt_cp = pyopencl.enqueue_copy(self.queue, self.cnt, self.buffers["cnt"].data)
-                newcnt = self.cnt[0] #do not forget to update numbers of keypoints, modified above !
+                newcnt = self.cnt[0]  # do not forget to update numbers of keypoints, modified above !
 
                 if self.USE_CPU or self.LOW_END == 2:
                     file_to_use = "keypoints_cpu"
@@ -595,10 +602,10 @@ class SiftPlan(object):
                 try:
                     evt2 = self.programs[file_to_use].descriptor(self.queue, procsize2, wgsize2,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
-                                          self.buffers["descriptors"].data, #___global unsigned char *descriptors
+                                          self.buffers["descriptors"].data,  # ___global unsigned char *descriptors
                                           self.buffers["tmp"].data,  # __global float* grad,
                                           self.buffers["ori"].data,  # __global float* ori,
-                                          octsize,   #int octsize,
+                                          octsize,  # int octsize,
                                           numpy.int32(last_start),  # int keypoints_start,
                                           self.buffers["cnt"].data,  # int* keypoints_end,
                                           *self.scales[octave])  # int grad_width, int grad_height)
@@ -624,10 +631,10 @@ class SiftPlan(object):
 
                     evt2 = self.programs[file_to_use].descriptor(self.queue, procsize2, wgsize2,
                                           self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
-                                          self.buffers["descriptors"].data, #___global unsigned char *descriptors
+                                          self.buffers["descriptors"].data,  # ___global unsigned char *descriptors
                                           self.buffers["tmp"].data,  # __global float* grad,
                                           self.buffers["ori"].data,  # __global float* ori,
-                                          octsize,   #int octsize,
+                                          octsize,  # int octsize,
                                           numpy.int32(last_start),  # int keypoints_start,
                                           self.buffers["cnt"].data,  # int* keypoints_end,
                                           *self.scales[octave])  # int grad_width, int grad_height)
@@ -672,7 +679,7 @@ class SiftPlan(object):
         @param start: start compacting at this adress. Before just copy
         @type start: numpy.int32
         """
-        wgsize = self.max_workgroup_size, #(max(self.wgsize[0]),) #TODO: optimize
+        wgsize = self.max_workgroup_size,  # (max(self.wgsize[0]),) #TODO: optimize
         kpsize32 = numpy.int32(self.kpsize)
 #        kp_counter = self.buffers["cnt"].get()[0]
         cp0_evt = pyopencl.enqueue_copy(self.queue, self.cnt, self.buffers["cnt"].data)
@@ -696,7 +703,7 @@ class SiftPlan(object):
         # print("After compaction, %i (-%i)" % (newcnt, kp_counter - newcnt))
         # swap keypoints:
         self.buffers["Kp_1"], self.buffers["Kp_2"] = self.buffers["Kp_2"], self.buffers["Kp_1"]
-        #memset buffer Kp_2
+        # memset buffer Kp_2
 #        self.buffers["Kp_2"].fill(-1, self.queue)
         mem_evt = self.programs["memset"].memset_float(self.queue, calc_size((4 * self.kpsize,), wgsize), wgsize, self.buffers["Kp_2"].data, numpy.float32(-1), numpy.int32(4 * self.kpsize))
         if self.profile:
@@ -774,6 +781,7 @@ if __name__ == "__main__":
     lena = scipy.misc.lena()
     s = SiftPlan(template=lena)
     s.keypoints(lena)
+
 
 
 

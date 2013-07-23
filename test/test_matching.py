@@ -77,10 +77,11 @@ For Python implementation of tested functions, see "test_image_functions.py"
 
 class test_matching(unittest.TestCase):
     def setUp(self):
-
-        kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), "matching.cl")
+        
+        kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), ("matching_gpu.cl" if not(USE_CPU) else "matching_cpu.cl"))
+        print kernel_path
         kernel_src = open(kernel_path).read()
-        self.program = pyopencl.Program(ctx, kernel_src).build()
+        self.program = pyopencl.Program(ctx, kernel_src).build() #.build('-D WORKGROUP_SIZE=%s' % wg_size)
         self.wg = (1, 128)
 
 
@@ -88,6 +89,20 @@ class test_matching(unittest.TestCase):
     def tearDown(self):
         self.mat = None
         self.program = None
+        
+        
+        
+        
+        
+#    def find_optimal_workgroupsize(self,L2,max_wg_size):
+#       '''
+#       given the size L2 of the keypoints vector,
+#       find the best workgroup size W so that each keypoint has the same amount of work,
+#       that is, (L2%W) is minimum
+#       '''
+#       #revert the list to get the biggest workgroup size
+#       WG = numpy.array(map(lambda i : (L2%(2**i)),numpy.arange(1,numpy.log2(max_wg_size)+1)))[::-1]
+#       return int(2**(WG.shape[0]-WG.argmin()))
 
 
 
@@ -97,33 +112,38 @@ class test_matching(unittest.TestCase):
         '''
         tests keypoints matching kernel
         '''    
+        image = scipy.misc.imread(os.path.join("../../test_images/","esrf_grenoble.jpg"),flatten=True).astype(numpy.float32)
+#        image = scipy.misc.lena().astype(numpy.float32)
         
         #get the struct keypoints : (x,y,s,angle,[descriptors])
         import feature
         sc = feature.SiftAlignment()
-        ref_sift = sc.sift(scipy.misc.lena())
+        ref_sift = sc.sift(image)
         ref_sift_2 = numpy.recarray((ref_sift.shape),dtype=ref_sift.dtype)
         ref_sift_2[:] = (ref_sift[::-1])
+        t0_matching = time.time()
         siftmatch = feature.sift_match(ref_sift, ref_sift_2)
+        t1_matching = time.time()
         ref = ref_sift.desc
         
-        wg = 1,
-        shape = ref_sift.shape[0]*wg[0], #TODO: bound for the min size of the two keypoints lists
+        if (USE_CPU): wg = 1,
+        else: wg = 64,
+        shape = ref_sift.shape[0]*wg[0],
+        
         ratio_th = numpy.float32(0.5329) #sift.cpp : 0.73*0.73
         keypoints_start, keypoints_end = 0, min(ref_sift.shape[0],ref_sift_2.shape[0])
         
         gpu_keypoints1 = pyopencl.array.to_device(queue, ref_sift)
         gpu_keypoints2 = pyopencl.array.to_device(queue, ref_sift_2)
-        gpu_matchings = pyopencl.array.zeros(queue, (keypoints_end-keypoints_start,2),dtype=numpy.uint32, order="C")
+        gpu_matchings = pyopencl.array.zeros(queue, (keypoints_end-keypoints_start,2),dtype=numpy.int32, order="C")
         keypoints_start, keypoints_end = numpy.int32(keypoints_start), numpy.int32(keypoints_end)
         nb_keypoints = numpy.int32(10000)
         counter = pyopencl.array.zeros(queue, (1,1),dtype=numpy.int32, order="C")
-        
 
         t0 = time.time()
         k1 = self.program.matching(queue, shape, wg,
         		gpu_keypoints1.data, gpu_keypoints2.data, gpu_matchings.data, counter.data,
-        		nb_keypoints, ratio_th, keypoints_start, keypoints_end)
+        		nb_keypoints, ratio_th, keypoints_end, keypoints_end)
         res = gpu_matchings.get()
         cnt = counter.get()
         t1 = time.time()
@@ -137,7 +157,8 @@ class test_matching(unittest.TestCase):
         print res[0:20]
         print ""
 #        print ref_sort[0:20]
-        print("OpenCL: %d match / C++ : %d match" %(cnt,siftmatch.shape[0]/2))
+        print("C++ Matching took %.3f ms" %(1000.0*(t1_matching-t0_matching)))
+        print("OpenCL: %d match / C++ : %d match" %(cnt,siftmatch.shape[0]))
 
 
         #sort to compare added keypoints
