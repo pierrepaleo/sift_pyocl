@@ -77,8 +77,9 @@ For Python implementation of tested functions, see "test_image_functions.py"
 
 class test_matching(unittest.TestCase):
     def setUp(self):
-
-        kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), "matching.cl")
+        
+        kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), ("matching_gpu.cl" if not(USE_CPU) else "matching_cpu.cl"))
+        print kernel_path
         kernel_src = open(kernel_path).read()
         self.program = pyopencl.Program(ctx, kernel_src).build() #.build('-D WORKGROUP_SIZE=%s' % wg_size)
         self.wg = (1, 128)
@@ -125,19 +126,19 @@ class test_matching(unittest.TestCase):
         t1_matching = time.time()
         ref = ref_sift.desc
         
-        wg = 64,
-        shape = ref_sift.shape[0]*wg[0], #TODO: bound for the min size of the two keypoints lists
+        if (USE_CPU): wg = 1,
+        else: wg = 64,
+        shape = ref_sift.shape[0]*wg[0],
         
         ratio_th = numpy.float32(0.5329) #sift.cpp : 0.73*0.73
         keypoints_start, keypoints_end = 0, min(ref_sift.shape[0],ref_sift_2.shape[0])
         
         gpu_keypoints1 = pyopencl.array.to_device(queue, ref_sift)
         gpu_keypoints2 = pyopencl.array.to_device(queue, ref_sift_2)
-        gpu_matchings = pyopencl.array.zeros(queue, (keypoints_end-keypoints_start,2),dtype=numpy.uint32, order="C")
+        gpu_matchings = pyopencl.array.zeros(queue, (keypoints_end-keypoints_start,2),dtype=numpy.int32, order="C")
         keypoints_start, keypoints_end = numpy.int32(keypoints_start), numpy.int32(keypoints_end)
         nb_keypoints = numpy.int32(10000)
         counter = pyopencl.array.zeros(queue, (1,1),dtype=numpy.int32, order="C")
-        
 
         t0 = time.time()
         k1 = self.program.matching(queue, shape, wg,
@@ -153,11 +154,11 @@ class test_matching(unittest.TestCase):
         res_sort = res[numpy.argsort(res[:,1])]
 #        ref_sort = ref[numpy.argsort(ref[:,1])]
         
-#        print res[0:20]
+        print res[0:20]
         print ""
 #        print ref_sort[0:20]
         print("C++ Matching took %.3f ms" %(1000.0*(t1_matching-t0_matching)))
-        print("OpenCL: %d match / C++ : %d match" %(cnt,siftmatch.shape[0]/2))
+        print("OpenCL: %d match / C++ : %d match" %(cnt,siftmatch.shape[0]))
 
 
         #sort to compare added keypoints
