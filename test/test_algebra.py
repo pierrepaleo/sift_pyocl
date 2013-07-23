@@ -150,8 +150,9 @@ class test_algebra(unittest.TestCase):
         nb_ones = 0
         for i in range(0, nbkeypoints):
             if ((numpy.random.rand(1))[0] < 0.25):
-                keypoints[i] = (-1, -1, -1, -1)
+                keypoints[i] = (-1, -1, i, -1)
                 nb_ones += 1
+            else: keypoints[i,2] = i
 
         gpu_keypoints = pyopencl.array.to_device(queue, keypoints)
         output = pyopencl.array.empty(queue, (nbkeypoints, 4), dtype=numpy.float32, order="C")
@@ -173,9 +174,9 @@ class test_algebra(unittest.TestCase):
 
         print("Kernel counter : %s / Python counter : %s / True value : %s" % (count, count_ref, nbkeypoints - nb_ones))
 
-        res_sort_arg = res[:, 0].argsort(axis=0)
+        res_sort_arg = res[:, 2].argsort(axis=0)
         res_sort = res[res_sort_arg]
-        ref_sort_arg = ref[:, 0].argsort(axis=0)
+        ref_sort_arg = ref[:, 2].argsort(axis=0)
         ref_sort = ref[ref_sort_arg]
         print (abs(res_sort - ref_sort) > 1e-5).sum()
         delta = abs((res_sort - ref_sort)).max()
