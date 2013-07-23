@@ -28,17 +28,21 @@ typedef struct t_keypoint {
  *
  * \brief Compute SIFT descriptors matching for two lists of descriptors.
  *
- *  "Slow version", should work on CPU
+ *  This version is optimized for GPU (vectorized instructions).
+ *  As a descriptor value is a 1-byte data, we are reading 4 descriptor values at the same time in order to get coalesced memory access aligned on 32bits.
+ *  This kernel works well if launched with a workgroup size of 64.
  *
- * @param desc1 Pointer to global memory with the first list of descriptors
- * @param desc2: Pointer to global memory with the second list of descriptors
+ * @param keypoints1 Pointer to global memory with the first list of keypoints
+ * @param keypoints: Pointer to global memory with the second list of keypoints
  * @param matchings: Pointer to global memory with the output pair of matchings (keypoint1, keypoint2)
- * @param counter:
- * @param keypoints_start : index start for processing
- * @param keypoints_end: end index for processing
-
-
-
+ * @param counter: Pointer to global memory with the resulting number of matchings
+ * @param max_nb_match: Absolute size limit for the resulting list of pairs
+ * @param ratio_th: threshold for distances ; two descriptors whose distance is below this will not be considered as near. Default for sift.cpp implementation is 0.73*0.73 for L1 distance
+ * @param size1: end index for processing list 1
+ * @param size2: end index for processing list 2
+ *
+ * NOTE: a keypoint is (x,y,s,angle,[descriptors])
+ *
 */
 
 
@@ -73,10 +77,9 @@ __kernel void matching(
 
 		//L1 distance between desc1[gid0] and desc2[i]
 		int dist = 0;
-		for (int j=0; j<32; j++) { //1 thread handles 4 values (uint4) = 
+		for (int j=0; j<32; j++) { //1 thread handles 4 values
 			uchar4 dval1 = desc1[j];
 			uchar4 dval2 = (uchar4) (((keypoints2[i]).desc)[4*j], ((keypoints2[i]).desc)[4*j+1],((keypoints2[i]).desc)[4*j+2],((keypoints2[i]).desc)[4*j+3]);
-//			dist += ((dval1 > dval2) ? (dval1 - dval2) : (-dval1 + dval2));
 			dist += ABS4(dval1,dval2);
 
 		}
@@ -103,15 +106,113 @@ __kernel void matching(
 
 
 
-
-
 /*
-
-	Same kernel as previous, with binary image : we discard keypoints whose coordinates are not valid
-
+ *
+ * \brief Compute SIFT descriptors matching for two lists of descriptors, discarding descriptors outside a region of interest.
+ *
+ *  This version is optimized for GPU (vectorized instructions).
+ *  As a descriptor value is a 1-byte data, we are reading 4 descriptor values at the same time in order to get coalesced memory access aligned on 32bits.
+ *  This kernel works well if launched with a workgroup size of 64.
+ *
+ * @param keypoints1 Pointer to global memory with the first list of keypoints
+ * @param keypoints: Pointer to global memory with the second list of keypoints
+ * @param valid: Pointer to global memory with the region of interest (binary picture)
+ * @param roi_width: Width of the Region Of Interest
+ * @param roi_height: Height of the Region Of Interest
+ * @param matchings: Pointer to global memory with the output pair of matchings (keypoint1, keypoint2)
+ * @param counter: Pointer to global memory with the resulting number of matchings
+ * @param max_nb_match: Absolute size limit for the resulting list of pairs
+ * @param ratio_th: threshold for distances ; two descriptors whose distance is below this will not be considered as near. Default for sift.cpp implementation is 0.73*0.73 for L1 distance
+ * @param size1: end index for processing list 1
+ * @param size2: end index for processing list 2
+ *
+ * NOTE: a keypoint is (x,y,s,angle,[descriptors])
+ *
 */
 
-//TODO! 
+
+__kernel void matching_valid(
+	__global t_keypoint* keypoints1,
+	__global t_keypoint* keypoints2,
+	__global char* valid,
+	int roi_width,
+	int roi_height,
+	__global int2* matchings,
+	__global int* counter,
+	int max_nb_match,
+	float ratio_th,
+	int size1,
+	int size2)
+{
+	int gid0 = get_global_id(0);
+	if (!(0 <= gid0 && gid0 < size1))
+		return;
+
+	float dist1 = 1000000000000.0f, dist2 = 1000000000000.0f; //HUGE_VALF ?
+	int current_min = 0;
+	int old;
+
+	keypoint kp = keypoints1[gid0].kp;
+	int c = kp.s0, r = kp.s1;
+	//processing only valid keypoints
+	if (r < roi_height && c < roi_width && valid[r*roi_width+c] == 0) return;
+
+	//pre-fetch
+	uchar4 desc1[32];
+	for (int i = 0; i<32; i++)
+		desc1[i] = (uchar4) (((keypoints1[gid0]).desc)[4*i], ((keypoints1[gid0]).desc)[4*i+1], ((keypoints1[gid0]).desc)[4*i+2],
+		((keypoints1[gid0]).desc)[4*i+3]);
+
+	//each thread gid0 makes a loop on the second list
+	for (int i = 0; i<size2; i++) {
+
+		//L1 distance between desc1[gid0] and desc2[i]
+		int dist = 0;
+		for (int j=0; j<32; j++) { //1 thread handles 4 values
+			kp = keypoints2[i].kp;
+			c = kp.s0, r = kp.s1;
+			if (r < roi_height && c < roi_width && valid[r*roi_width+c] != 0) {
+				uchar4 dval1 = desc1[j];
+				uchar4 dval2 = (uchar4) (((keypoints2[i]).desc)[4*j], ((keypoints2[i]).desc)[4*j+1],((keypoints2[i]).desc)[4*j+2],((keypoints2[i]).desc)[4*j+3]);
+				dist += ABS4(dval1,dval2);
+			}
+		}
+		
+		if (dist < dist1) { //candidate better than the first
+			dist2 = dist1;
+			dist1 = dist;
+			current_min = i;
+		}
+		else if (dist < dist2) { //candidate better than the second (but not the first)
+			dist2 = dist;
+		}
+		
+	}//end "i loop"
+
+	if (dist2 != 0 && dist1/dist2 < ratio_th) {
+		int2 pair = 0;
+		pair.s0 = gid0;
+		pair.s1 = current_min;
+		old = atomic_inc(counter);
+		if (old < max_nb_match) matchings[old] = pair;
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
