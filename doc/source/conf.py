@@ -11,7 +11,7 @@
 # All configuration values have a default; values that are commented out
 # serve to show the default.
 
-import sys, os
+import sys, os, glob
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
@@ -35,7 +35,18 @@ except:
     sphinx.ext.mathjax = mathjax
     sys.modules["sphinx.ext.mathjax"] = mathjax
 
+try:
+    import sift
+except:
+    print "no sift"
+    dn = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    dn2 = os.path.join(dn, "build", "lib*")
+    dn3 = glob.glob(dn2)
+    sys.path.append(dn3[0])
+
 extensions = ['sphinx.ext.autodoc', 'sphinx.ext.mathjax']
+
+
 
 #extensions = ['sphinx.ext.autodoc', 'sphinx.ext.todo', 'sphinx.ext.pngmath']#, 'sphinx.ext.jsmath']
 
