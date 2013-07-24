@@ -92,6 +92,7 @@ class test_transform(unittest.TestCase):
         '''    
 #        image = scipy.misc.imread(os.path.join("../../test_images/","esrf_grenoble.jpg"),flatten=True).astype(numpy.float32)
         image = scipy.misc.lena().astype(numpy.float32)
+        image = numpy.ascontiguousarray(image[0:511,0:352])
         
         image_height, image_width = image.shape
         output_height, output_width = int(image_height*numpy.sqrt(2)), int(image_width*numpy.sqrt(2))
@@ -106,7 +107,7 @@ class test_transform(unittest.TestCase):
         mode = numpy.int32(0)
         
         wg = 1,1
-        shape = calc_size((output_height,output_width), self.wg)
+        shape = calc_size((output_width,output_height), self.wg)
         
         gpu_image = pyopencl.array.to_device(queue, image)
         gpu_output = pyopencl.array.empty(queue, (output_height, output_width), dtype=numpy.float32, order="C")
@@ -121,18 +122,15 @@ class test_transform(unittest.TestCase):
         		image_width, image_height, output_width, output_height, fill_value, mode)
         res = gpu_output.get()
         t1 = time.time()
-#        ref = scipy.ndimage.interpolation.rotate(image,numpy.degrees(angle))
+
         ref = scipy.ndimage.interpolation.affine_transform(image,matrix,
         	offset=offset_value, output_shape=(output_height,output_width), order=1, mode="constant", cval=fill_value)
-        
         t2 = time.time()
         
         delta = abs(res-ref)
         delta_arg = delta.argmax()
         delta_max = delta.max()
-        print delta_max, (delta_arg/output_width, delta_arg%output_width)
-        print delta[290:295,290:295]
-        
+        print("Max error: %f at (%d, %d)" %(delta_max, delta_arg/output_width, delta_arg%output_width))
         
         SHOW_FIGURES = True
         if SHOW_FIGURES:

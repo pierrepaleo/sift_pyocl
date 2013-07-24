@@ -58,7 +58,8 @@ __kernel void transform(
 	
 	float interp = fill;
 	
-	if (0 <= tx_next && tx_next < image_width && 0 <= ty_prev && ty_next < image_height) {
+	//why "0 <= tx && 0 <= ty" rather than "0 <= tx_prev && 0 <= ty_prev" ?!	
+	if (0 <= tx && tx_next < image_width && 0 <= ty && ty_next < image_height) {
 	
 		//bilinear interpolation
 		float interp1 = ((float) (tx_next - tx))/((float) (tx_next - tx_prev)) * image[ty_prev*image_width+tx_prev]
