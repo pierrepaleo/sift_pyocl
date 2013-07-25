@@ -91,22 +91,6 @@ class test_matching(unittest.TestCase):
         self.program = None
         
         
-        
-        
-        
-#    def find_optimal_workgroupsize(self,L2,max_wg_size):
-#       '''
-#       given the size L2 of the keypoints vector,
-#       find the best workgroup size W so that each keypoint has the same amount of work,
-#       that is, (L2%W) is minimum
-#       '''
-#       #revert the list to get the biggest workgroup size
-#       WG = numpy.array(map(lambda i : (L2%(2**i)),numpy.arange(1,numpy.log2(max_wg_size)+1)))[::-1]
-#       return int(2**(WG.shape[0]-WG.argmin()))
-
-
-
-
 
     def test_matching(self):
         '''

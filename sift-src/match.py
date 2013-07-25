@@ -15,7 +15,7 @@ __authors__ = ["Jérôme Kieffer"]
 __contact__ = "jerome.kieffer@esrf.eu"
 __license__ = "BSD"
 __copyright__ = "European Synchrotron Radiation Facility, Grenoble, France"
-__date__ = "2013-07-16"
+__date__ = "2013-07-23"
 __status__ = "beta"
 __license__ = """
 Permission is hereby granted, free of charge, to any person
@@ -40,7 +40,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 
 """
-import time, math, os, logging, sys
+import time, math, os, logging, sys, threading
 import gc
 import numpy
 import pyopencl, pyopencl.array
@@ -190,7 +190,7 @@ class MatchPlan(object):
             evt2 = pyopencl.enqueue_copy(self.queue, self.buffers["Kp_2"].data, nkp2)
             if self.profile:
                 self.events += [("copy H->D KP_1", evt1), ("copy H->D KP_2", evt2)]
-            evt = self.programs["matching"].matching(self.queue, calc_size(nkp1.size,), (self.kernels["matching"],), (self.kernels["matching"],),
+            evt = self.programs["matching"].matching(self.queue, calc_size((nkp1.size,), (self.kernels["matching"],)), (self.kernels["matching"],),
                                           self.buffers[ "Kp_1" ].data,
                                           self.buffers[ "Kp_2" ].data,
                                           self.buffers[ "match" ].data,
@@ -202,26 +202,24 @@ class MatchPlan(object):
             if self.profile:
                 self.events += [("matching", evt)]
             size = self.buffers["cnt"].get()[0]
-            print "found %s matches" % size
             result = numpy.recarray(shape=(size, 2), dtype=self.dtype_kp)
             matching = self.buffers[ "match" ].get()
-            print matching
             result[:, 0] = nkp1[matching[:size, 0]]
             result[:, 1] = nkp2[matching[:size, 1]]
-        return results
+        return result
     def _reset_buffer(self):
 
-        ev1 = self.programs["memset"].memset_kp(self.queue, calc_size(self.buffers[ "Kp_1" ].size,), (self.kernels["memset"],), (self.kernels["memset"],),
+        ev1 = self.programs["memset"].memset_kp(self.queue, calc_size((self.buffers[ "Kp_1" ].size,), (self.kernels["memset"],)), (self.kernels["memset"],),
                                           self.buffers[ "Kp_1" ].data, numpy.float32(-1.0), numpy.uint8(0), numpy.int32(self.buffers[ "Kp_1" ].size))
-        ev2 = self.programs["memset"].memset_kp(self.queue, calc_size(self.buffers[ "Kp_2" ].size,), (self.kernels["memset"],), (self.kernels["memset"],),
+        ev2 = self.programs["memset"].memset_kp(self.queue, calc_size((self.buffers[ "Kp_2" ].size,), (self.kernels["memset"],)), (self.kernels["memset"],),
                                           self.buffers[ "Kp_2" ].data, numpy.float32(-1.0), numpy.uint8(0), numpy.int32(self.buffers[ "Kp_2" ].size))
-        ev3 = self.programs["memset"].memset_int(self.queue, calc_size((self.buffers[ "match" ].size,),(self.kernels["memset"],)),(self.kernels["memset"],),
+        ev3 = self.programs["memset"].memset_int(self.queue, calc_size((self.buffers[ "match" ].size,), (self.kernels["memset"],)), (self.kernels["memset"],),
                                                  self.buffers[ "match" ].data, numpy.int32(-1), numpy.int32(self.buffers[ "match" ].size))
         ev4 = self.programs["memset"].memset_int(self.queue, (1,), (1,),
                                                  self.buffers[ "cnt" ].data, numpy.int32(0), numpy.int32(1))
         if self.profile:
-            self.events+=[("memset Kp1",ev1),
-                          ("memset Kp2",ev2),
+            self.events += [("memset Kp1", ev1),
+                          ("memset Kp2", ev2),
                           ("memset match", ev3),
                           ("memset cnt", ev4), ]
     def reset_timer(self):
@@ -248,3 +246,4 @@ class MatchPlan(object):
         with self._sem:
             self.roi = None
             self.buffers["ROI"] = None
+

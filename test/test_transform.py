@@ -92,17 +92,18 @@ class test_transform(unittest.TestCase):
         '''    
 #        image = scipy.misc.imread(os.path.join("../../test_images/","esrf_grenoble.jpg"),flatten=True).astype(numpy.float32)
         image = scipy.misc.lena().astype(numpy.float32)
-        image = numpy.ascontiguousarray(image[0:511,0:352])
+        image = numpy.ascontiguousarray(image[0:510,0:352])
         
         image_height, image_width = image.shape
         output_height, output_width = int(image_height*numpy.sqrt(2)), int(image_width*numpy.sqrt(2))
 
         #transformation
-        angle = numpy.pi/4.0
-        matrix = numpy.array([[numpy.cos(angle),-numpy.sin(angle)],[numpy.sin(angle),numpy.sin(angle)]],dtype=numpy.float32)
+        angle = 0.35 #numpy.pi/5.0
+        matrix = numpy.array([[numpy.cos(angle),-numpy.sin(angle)],[numpy.sin(angle),numpy.cos(angle)]],dtype=numpy.float32)
+#        matrix = numpy.array([[2.0,0.0],[0.0,2.0]],dtype=numpy.float32)
         #important for float4
         matrix_for_gpu = matrix.reshape(4,1)
-        offset_value = numpy.array([0.0, 0.0],dtype=numpy.float32)
+        offset_value = numpy.array([-0.0, -0.0],dtype=numpy.float32)
         fill_value = numpy.float32(0.0)
         mode = numpy.int32(0)
         
@@ -124,7 +125,8 @@ class test_transform(unittest.TestCase):
         t1 = time.time()
 
         ref = scipy.ndimage.interpolation.affine_transform(image,matrix,
-        	offset=offset_value, output_shape=(output_height,output_width), order=1, mode="constant", cval=fill_value)
+        	offset=offset_value, output_shape=(output_height,output_width), 
+        	order=1, mode="constant", cval=fill_value)
         t2 = time.time()
         
         delta = abs(res-ref)
@@ -140,7 +142,7 @@ class test_transform(unittest.TestCase):
             sp2 = fig.add_subplot(222,title="Reference")
             sp2.imshow(ref, interpolation="nearest")
             sp3 = fig.add_subplot(223,title="delta (max = %f)" %delta_max)
-            sh3 = sp3.imshow(delta, interpolation="nearest")
+            sh3 = sp3.imshow(delta[:,:], interpolation="nearest")
             cbar = fig.colorbar(sh3)
             fig.show()
             raw_input("enter")

@@ -266,7 +266,7 @@ def getLogger(filename=__file__):
 
 import sift
 from sift.opencl import ocl
-ctx = ocl.create_context("CPU")
+ctx = ocl.create_context("GPU")
 logger.info("working on %s" % ctx.devices[0].name)
 
 

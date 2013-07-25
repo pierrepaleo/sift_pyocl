@@ -46,10 +46,11 @@ __kernel void transform(
 	int x = gid0,
 		y = gid1;
 	
-	float tx = dot(mat.s02,(float2) (x,y)),	//x' = a*x + b*y + c
-		ty = dot(mat.s13,(float2) (x,y));	//y' = d*x + e*y + f
-	tx += off.s0;
-	ty += off.s1;
+	float tx = mat.s0*x+mat.s2*y,
+		ty = mat.s1*x+mat.s3*y;
+
+	tx += off.s1;
+	ty += off.s0;
 	
 	int tx_next = ((int) tx) +1,
 		tx_prev = (int) tx,
@@ -58,18 +59,18 @@ __kernel void transform(
 	
 	float interp = fill;
 	
-	//why "0 <= tx && 0 <= ty" rather than "0 <= tx_prev && 0 <= ty_prev" ?!	
+	//why this rather than "0 <= tx_prev && 0 <= ty_prev && tx_next < image_width && ty_next < image_height" ?	
 	if (0 <= tx && tx_next < image_width && 0 <= ty && ty_next < image_height) {
 	
 		//bilinear interpolation
-		float interp1 = ((float) (tx_next - tx))/((float) (tx_next - tx_prev)) * image[ty_prev*image_width+tx_prev]
-					  + ((float) (tx - tx_prev))/((float) (tx_next - tx_prev)) * image[ty_prev*image_width+tx_next],
+		float interp1 = ((float) (tx_next - tx)) * image[ty_prev*image_width+tx_prev]
+					  + ((float) (tx - tx_prev)) * image[ty_prev*image_width+tx_next],
 					
-			interp2 = ((float) (tx_next - tx))/((float) (tx_next - tx_prev)) * image[ty_next*image_width+tx_prev]
-					+ ((float) (tx - tx_prev))/((float) (tx_next - tx_prev)) * image[ty_next*image_width+tx_next];
+			interp2 = ((float) (tx_next - tx)) * image[ty_next*image_width+tx_prev]
+					+ ((float) (tx - tx_prev)) * image[ty_next*image_width+tx_next];
 	
-		interp = ((float) (ty_next - ty))/((float) (ty_next - ty_prev)) * interp1
-			   + ((float) (ty - ty_prev))/((float) (ty_next - ty_prev)) * interp2;
+		interp = ((float) (ty_next - ty)) * interp1
+			   + ((float) (ty - ty_prev)) * interp2;
 	
 	}
 

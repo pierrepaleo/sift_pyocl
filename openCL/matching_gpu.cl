@@ -240,6 +240,7 @@ __kernel void matching_valid(
 */
 
 
+
 __kernel void matching_v2(
 	__global t_keypoint* keypoints1,
 	__global t_keypoint* keypoints2,
