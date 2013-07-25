@@ -46,6 +46,9 @@ __kernel void transform(
 	int x = gid0,
 		y = gid1;
 	
+//	float tx = dot(mat.s02,(float2) (x,y)),
+//		ty = dot(mat.s13,(float2) (x,y));
+
 	float tx = mat.s0*x+mat.s2*y,
 		ty = mat.s1*x+mat.s3*y;
 
@@ -58,21 +61,56 @@ __kernel void transform(
 		ty_prev = (int) ty;
 	
 	float interp = fill;
+
+	if (0.0f <= tx && tx < image_width && 0.0f <= ty && ty < image_height) {
 	
 	//why this rather than "0 <= tx_prev && 0 <= ty_prev && tx_next < image_width && ty_next < image_height" ?	
-	if (0 <= tx && tx_next < image_width && 0 <= ty && ty_next < image_height) {
+//	if (0 <= tx && tx_next < image_width && 0 <= ty && ty_next < image_height) {
+
+
+		float image_p = image[ty_prev*image_width+tx_prev],
+			image_x = image[ty_prev*image_width+tx_next],
+			image_y = image[ty_next*image_width+tx_prev],
+			image_n = image[ty_next*image_width+tx_next];
+			
+		if (tx_next >= image_width) {
+			image_x = fill;
+			image_n = fill;
+		}
+		if (ty_next >= image_height) {
+			image_y = fill;
+			image_n = fill;
+		}
 	
+		
 		//bilinear interpolation
-		float interp1 = ((float) (tx_next - tx)) * image[ty_prev*image_width+tx_prev]
-					  + ((float) (tx - tx_prev)) * image[ty_prev*image_width+tx_next],
-					
-			interp2 = ((float) (tx_next - tx)) * image[ty_next*image_width+tx_prev]
-					+ ((float) (tx - tx_prev)) * image[ty_next*image_width+tx_next];
-	
+		float interp1 = ((float) (tx_next - tx)) * image_p //image[ty_prev*image_width+tx_prev]
+					  + ((float) (tx - tx_prev)) * image_x, //image[ty_prev*image_width+tx_next],
+				
+			interp2 = ((float) (tx_next - tx)) * image_y //image[ty_next*image_width+tx_prev]
+					+ ((float) (tx - tx_prev)) * image_n; //image[ty_next*image_width+tx_next];
+
 		interp = ((float) (ty_next - ty)) * interp1
 			   + ((float) (ty - ty_prev)) * interp2;
-	
+
 	}
+	
+	
+
+	float u = -0.5; //-0.95
+	float v = -0.5;
+	if (tx >= image_width+u) {
+		interp = fill;
+	}
+	if (ty >= image_height+v) {
+		interp = fill;
+	}
+
+
+
+	
+	
+	
 
 	output[gid1*output_width+gid0] = interp;
 

@@ -92,15 +92,15 @@ class test_transform(unittest.TestCase):
         '''    
 #        image = scipy.misc.imread(os.path.join("../../test_images/","esrf_grenoble.jpg"),flatten=True).astype(numpy.float32)
         image = scipy.misc.lena().astype(numpy.float32)
-        image = numpy.ascontiguousarray(image[0:510,0:352])
+        image = numpy.ascontiguousarray(image[0:410,0:352])
         
         image_height, image_width = image.shape
         output_height, output_width = int(image_height*numpy.sqrt(2)), int(image_width*numpy.sqrt(2))
 
         #transformation
         angle = 0.35 #numpy.pi/5.0
-        matrix = numpy.array([[numpy.cos(angle),-numpy.sin(angle)],[numpy.sin(angle),numpy.cos(angle)]],dtype=numpy.float32)
-#        matrix = numpy.array([[2.0,0.0],[0.0,2.0]],dtype=numpy.float32)
+#        matrix = numpy.array([[numpy.cos(angle),-numpy.sin(angle)],[numpy.sin(angle),numpy.cos(angle)]],dtype=numpy.float32)
+        matrix = numpy.array([[2.0,-1.5],[0.7,2.0]],dtype=numpy.float32)
         #important for float4
         matrix_for_gpu = matrix.reshape(4,1)
         offset_value = numpy.array([-0.0, -0.0],dtype=numpy.float32)
@@ -132,7 +132,10 @@ class test_transform(unittest.TestCase):
         delta = abs(res-ref)
         delta_arg = delta.argmax()
         delta_max = delta.max()
-        print("Max error: %f at (%d, %d)" %(delta_max, delta_arg/output_width, delta_arg%output_width))
+        at_0, at_1 = delta_arg/output_width, delta_arg%output_width
+        print("Max error: %f at (%d, %d)" %(delta_max, at_0, at_1))
+        print res[at_0,at_1]
+        print ref[at_0,at_1]
         
         SHOW_FIGURES = True
         if SHOW_FIGURES:
