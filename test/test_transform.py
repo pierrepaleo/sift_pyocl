@@ -92,45 +92,56 @@ class test_transform(unittest.TestCase):
         '''    
 #        image = scipy.misc.imread(os.path.join("../../test_images/","esrf_grenoble.jpg"),flatten=True).astype(numpy.float32)
         image = scipy.misc.lena().astype(numpy.float32)
-        image2 = numpy.zeros((724,724),dtype=numpy.float32)
-        image2[106:-106,106:-106] = image
+        image = numpy.ascontiguousarray(image[0:511,0:352])
         
+        image_height, image_width = image.shape
+        output_height, output_width = int(image_height*numpy.sqrt(2)), int(image_width*numpy.sqrt(2))
+
         #transformation
         angle = numpy.pi/4.0
-        param1 = numpy.array([numpy.cos(angle),-numpy.sin(angle),0.0],dtype=numpy.float32)
-        param2 = numpy.array([numpy.sin(angle),numpy.sin(angle),0.0],dtype=numpy.float32)
+        matrix = numpy.array([[numpy.cos(angle),-numpy.sin(angle)],[numpy.sin(angle),numpy.sin(angle)]],dtype=numpy.float32)
+        #important for float4
+        matrix_for_gpu = matrix.reshape(4,1)
+        offset_value = numpy.array([0.0, 0.0],dtype=numpy.float32)
         fill_value = numpy.float32(0.0)
         mode = numpy.int32(0)
-        image_height, image_width = image2.shape
         
-        if (USE_CPU): wg = 1,1
-        else: wg = 1,1
-        shape = calc_size((image_height,image_width), self.wg)
+        wg = 1,1
+        shape = calc_size((output_width,output_height), self.wg)
         
-        gpu_image = pyopencl.array.to_device(queue, image2)
-        gpu_output = pyopencl.array.empty(queue, (image_height, image_width), dtype=numpy.float32, order="C")
-        gpu_param1 = pyopencl.array.to_device(queue,param1)
-        gpu_param2 = pyopencl.array.to_device(queue,param2)
+        gpu_image = pyopencl.array.to_device(queue, image)
+        gpu_output = pyopencl.array.empty(queue, (output_height, output_width), dtype=numpy.float32, order="C")
+        gpu_matrix = pyopencl.array.to_device(queue,matrix_for_gpu)
+        gpu_offset = pyopencl.array.to_device(queue,offset_value)
         image_height, image_width = numpy.int32((image_height, image_width))
+        output_height, output_width = numpy.int32((output_height, output_width))
         
         t0 = time.time()
         k1 = self.program.transform(queue, shape, wg,
-        		gpu_image.data, gpu_output.data, gpu_param1.data, gpu_param2.data, 
-        		image_width, image_height, fill_value, mode)
+        		gpu_image.data, gpu_output.data, gpu_matrix.data, gpu_offset.data, 
+        		image_width, image_height, output_width, output_height, fill_value, mode)
         res = gpu_output.get()
         t1 = time.time()
-        print res[0,0]
-        
-        ref = scipy.ndimage.interpolation.rotate(image,numpy.degrees(angle))
+
+        ref = scipy.ndimage.interpolation.affine_transform(image,matrix,
+        	offset=offset_value, output_shape=(output_height,output_width), order=1, mode="constant", cval=fill_value)
         t2 = time.time()
+        
+        delta = abs(res-ref)
+        delta_arg = delta.argmax()
+        delta_max = delta.max()
+        print("Max error: %f at (%d, %d)" %(delta_max, delta_arg/output_width, delta_arg%output_width))
         
         SHOW_FIGURES = True
         if SHOW_FIGURES:
             fig = pylab.figure()
-            sp1 = fig.add_subplot(121)
+            sp1 = fig.add_subplot(221,title="Output")
             sp1.imshow(res, interpolation="nearest")
-            sp2 = fig.add_subplot(122)
+            sp2 = fig.add_subplot(222,title="Reference")
             sp2.imshow(ref, interpolation="nearest")
+            sp3 = fig.add_subplot(223,title="delta (max = %f)" %delta_max)
+            sh3 = sp3.imshow(delta, interpolation="nearest")
+            cbar = fig.colorbar(sh3)
             fig.show()
             raw_input("enter")
 
