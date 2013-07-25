@@ -98,19 +98,19 @@ memset_int( __global int *array,
 
 __kernel void
 memset_kp( __global t_keypoint *array,
-				const float value,
+				const float fvalue,
+				const unsigned char uvalue,
 				const int SIZE
 ){
 	int gid = get_global_id(0);
 	if (gid<SIZE){
 		t_keypoint kp;
-		float u8_value =  (unsigned char)value;
-		kp.x =  value;
-		kp.y =  value;
-		kp.scale =  value;
-		kp.angle =  value;
+		kp.x =  fvalue;
+		kp.y =  fvalue;
+		kp.scale =  fvalue;
+		kp.angle =  fvalue;
 		for (int i=0;i<128;i++){
-			kp.desc[i] = u8_value;
+			kp.desc[i] = uvalue;
 		}
 		array[gid] = kp;
 	}
