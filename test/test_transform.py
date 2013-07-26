@@ -141,9 +141,9 @@ class test_transform(unittest.TestCase):
         else: output_height, output_width = int(image_height*numpy.sqrt(2)),int(image_width*numpy.sqrt(2))#TODO: automatic calculation
         #transformation
         angle = 0.35 #numpy.pi/5.0
-        matrix = numpy.array([[numpy.cos(angle),-numpy.sin(angle)],[numpy.sin(angle),numpy.cos(angle)]],dtype=numpy.float32)
-#        matrix = numpy.array([[2.0,-1.5],[0.7,2.0]],dtype=numpy.float32)
-        offset_value = numpy.array([-0.0, -0.0],dtype=numpy.float32)
+#        matrix = numpy.array([[numpy.cos(angle),-numpy.sin(angle)],[numpy.sin(angle),numpy.cos(angle)]],dtype=numpy.float32)
+        matrix = numpy.array([[0.2,-0.75],[0.7,0.5]],dtype=numpy.float32)
+        offset_value = numpy.array([800.0, -100.0],dtype=numpy.float32)
         fill_value = numpy.float32(0.0)
         mode = numpy.int32(0)
         image2 = scipy.ndimage.interpolation.affine_transform(image,matrix,offset=offset_value,order=1, mode="constant")
@@ -173,6 +173,7 @@ class test_transform(unittest.TestCase):
                 image_width, image_height, output_width, output_height, fill_value, mode)
         res = gpu_output.get()
         t1 = time.time()
+        print res[0,0]
         
         ref = scipy.ndimage.interpolation.affine_transform(image2,correction_matrix,
         	offset=offset_value, output_shape=(output_height,output_width),order=1, mode="constant", cval=fill_value)
