@@ -46,11 +46,8 @@ __kernel void transform(
 	int x = gid0,
 		y = gid1;
 	
-//	float tx = dot(mat.s02,(float2) (x,y)),
-//		ty = dot(mat.s13,(float2) (x,y));
-
-	float tx = mat.s0*x+mat.s2*y,
-		ty = mat.s1*x+mat.s3*y;
+	float tx = dot(mat.s23,(float2) (y,x)), //be careful to the order that differs from Python...Here Fortran convention is used
+		ty = dot(mat.s01,(float2) (y,x));
 
 	tx += off.s1;
 	ty += off.s0;
@@ -64,35 +61,38 @@ __kernel void transform(
 
 	if (0.0f <= tx && tx < image_width && 0.0f <= ty && ty < image_height) {
 	
-	//why this rather than "0 <= tx_prev && 0 <= ty_prev && tx_next < image_width && ty_next < image_height" ?	
-//	if (0 <= tx && tx_next < image_width && 0 <= ty && ty_next < image_height) {
+	
+		if (mode == 1) { //bilinear interpolation
 
-
-		float image_p = image[ty_prev*image_width+tx_prev],
-			image_x = image[ty_prev*image_width+tx_next],
-			image_y = image[ty_next*image_width+tx_prev],
-			image_n = image[ty_next*image_width+tx_next];
+			float image_p = image[ty_prev*image_width+tx_prev],
+				image_x = image[ty_prev*image_width+tx_next],
+				image_y = image[ty_next*image_width+tx_prev],
+				image_n = image[ty_next*image_width+tx_next];
 			
-		if (tx_next >= image_width) {
-			image_x = fill;
-			image_n = fill;
-		}
-		if (ty_next >= image_height) {
-			image_y = fill;
-			image_n = fill;
+			if (tx_next >= image_width) {
+				image_x = fill;
+				image_n = fill;
+			}
+			if (ty_next >= image_height) {
+				image_y = fill;
+				image_n = fill;
+			}
+	
+			//bilinear interpolation
+			float interp1 = ((float) (tx_next - tx)) * image_p //image[ty_prev*image_width+tx_prev]
+						  + ((float) (tx - tx_prev)) * image_x, //image[ty_prev*image_width+tx_next],
+				
+				interp2 = ((float) (tx_next - tx)) * image_y //image[ty_next*image_width+tx_prev]
+						+ ((float) (tx - tx_prev)) * image_n; //image[ty_next*image_width+tx_next];
+
+			interp = ((float) (ty_next - ty)) * interp1
+				   + ((float) (ty - ty_prev)) * interp2;
+
 		}
 	
-		
-		//bilinear interpolation
-		float interp1 = ((float) (tx_next - tx)) * image_p //image[ty_prev*image_width+tx_prev]
-					  + ((float) (tx - tx_prev)) * image_x, //image[ty_prev*image_width+tx_next],
-				
-			interp2 = ((float) (tx_next - tx)) * image_y //image[ty_next*image_width+tx_prev]
-					+ ((float) (tx - tx_prev)) * image_n; //image[ty_next*image_width+tx_next];
-
-		interp = ((float) (ty_next - ty)) * interp1
-			   + ((float) (ty - ty_prev)) * interp2;
-
+		else { //no interpolation
+			interp = image[((int) ty)*image_width+((int) tx)];
+		}
 	}
 	
 	

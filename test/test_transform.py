@@ -110,7 +110,8 @@ class test_transform(unittest.TestCase):
         #A = numpy.dot(X.transpose(),X)
         #sol = numpy.dot(numpy.linalg.inv(A),numpy.dot(X.transpose(),y))
         sol = numpy.dot(numpy.linalg.pinv(X),y)
-        return sol
+        MSE = numpy.linalg.norm(y - numpy.dot(X,sol))**2/N #value of the sum of residuals at "sol"
+        return sol, MSE
 
 
 
@@ -129,7 +130,7 @@ class test_transform(unittest.TestCase):
         
         IMAGE_RESHAPE = True
         if IMAGE_RESHAPE:
-            image3_height, image3_width = int(1024), int(1024) #choose the re-scaled size
+            image3_height, image3_width = int(900), int(900) #choose the re-scaled size
             image3 = numpy.zeros((image3_height,image3_width),dtype=numpy.float32)
             d1 = (image3_width - image_width)/2
             d0 = (image3_height - image_height)/2
@@ -139,17 +140,21 @@ class test_transform(unittest.TestCase):
             output_height, output_width = image.shape
        
         else: output_height, output_width = int(image_height*numpy.sqrt(2)),int(image_width*numpy.sqrt(2))#TODO: automatic calculation
+        
+        print "Image : (%s, %s) -- Output: (%s, %s)" %(image_height, image_width , output_height, output_width)
+        
         #transformation
-        angle = 0.35 #numpy.pi/5.0
+        angle = 1.9 #numpy.pi/5.0
 #        matrix = numpy.array([[numpy.cos(angle),-numpy.sin(angle)],[numpy.sin(angle),numpy.cos(angle)]],dtype=numpy.float32)
-        matrix = numpy.array([[0.2,-0.75],[0.7,0.5]],dtype=numpy.float32)
-        offset_value = numpy.array([800.0, -100.0],dtype=numpy.float32)
+        matrix = numpy.array([[1.0,-0.75],[0.7,0.5]],dtype=numpy.float32)
+        offset_value = numpy.array([250.0, -150.0],dtype=numpy.float32)
+#        offset_value = numpy.array([1000.0, 100.0],dtype=numpy.float32)
         fill_value = numpy.float32(0.0)
-        mode = numpy.int32(0)
+        mode = numpy.int32(1)
         image2 = scipy.ndimage.interpolation.affine_transform(image,matrix,offset=offset_value,order=1, mode="constant")
         
         #perform correction by least square
-        sol = self.matching_correction(image,image2)
+        sol, MSE = self.matching_correction(image,image2)
         
         correction_matrix = numpy.zeros((2,2),dtype=numpy.float32)
         correction_matrix[0] = sol[0:2,0]
@@ -157,6 +162,8 @@ class test_transform(unittest.TestCase):
         matrix_for_gpu = correction_matrix.reshape(4,1) #for float4 struct
         offset_value[0] = sol[2,0]
         offset_value[1] = sol[5,0]
+        print "correction : %s" %matrix_for_gpu
+        print "offset : %s" %offset_value
         
         wg = 1,1
         shape = calc_size((output_width,output_height), self.wg)
@@ -179,11 +186,16 @@ class test_transform(unittest.TestCase):
         	offset=offset_value, output_shape=(output_height,output_width),order=1, mode="constant", cval=fill_value)
         t2 = time.time()
         
-#        delta = abs(res-ref)
-#        delta_arg = delta.argmax()
-#        delta_max = delta.max()
-#        at_0, at_1 = delta_arg/output_width, delta_arg%output_width
-#        print("Max error: %f at (%d, %d)" %(delta_max, at_0, at_1))
+        delta = abs(res-image)
+        delta_arg = delta.argmax()
+        delta_max = delta.max()
+#        delta_mse_res = ((res-image)**2).sum()/image.size
+#        delta_mse_ref = ((ref-image)**2).sum()/image.size
+        at_0, at_1 = delta_arg/output_width, delta_arg%output_width
+        print("Max error: %f at (%d, %d)" %(delta_max, at_0, at_1))
+#        print("Mean Squared Error Res/Original : %f" %(delta_mse_res))
+#        print("Mean Squared Error Ref/Original: %f" %(delta_mse_ref))
+        print("minimal MSE according to least squares : %f" %MSE)
 #        print res[at_0,at_1]
 #        print ref[at_0,at_1]
         
