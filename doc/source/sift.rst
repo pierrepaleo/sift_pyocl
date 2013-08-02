@@ -11,7 +11,7 @@ SIFT (Scale-Invariant Feature Transform) is an algorithm developped by David Low
 Introduction
 ------------
 
-The European Synchrotron Radiation Facility (ESRF) beamline ID21 developed a full-field method for X-ray absorption near-edge spectroscopy (XANES). Since the flat field images are not acquired simultaneously with the sample transmission images, a realignment procedure has to be performed. SIFT is currently used, but takes about 8 seconds per frame, and one stack can have up to 500 frames. It is a bottleneck in the global process, therefore a parallel version of this algorithm would enable a crucial speed-up.
+The European Synchrotron Radiation Facility (ESRF) beamline ID21 developed a full-field method for X-ray absorption near-edge spectroscopy (XANES). Since the flat field images are not acquired simultaneously with the sample transmission images, a realignment procedure has to be performed. SIFT is currently used, but takes about 8 seconds per frame, and one stack can have up to 500 frames. It is a bottleneck in the global process, therefore a parallel version of this algorithm can provide a crucial speed-up.
 
 
 
@@ -56,12 +56,21 @@ The Python sources are in the "sift-src" folder. The file "plan.py" executes the
 
 
 
+~~~~~~~~~~~~~
+
+The different steps of SIFT are handled by ``plan.py``.
+
+
+
+
+
+
 Image matching and alignment
 ----------------------------
 
 
 
-There is a demo file "demo_match.py" that can be run to have a keypoints matching demonstration. Matching can also be run from ipython : suppose we got two list of keypoints "kp1" and "kp2" according to :ref:`example1`.
+There is a demo file "demo_match.py" that can be run to have a keypoints matching demonstration. Matching can also be run from ipython : suppose we got two list of keypoints "kp1" and "kp2" according to example1_.
 
 .. _example2:
 .. code-block:: python
@@ -75,15 +84,17 @@ There is a demo file "demo_match.py" that can be run to have a keypoints matchin
 Performances
 ------------
 
+The aim of SIFT_PyOCL is to fasten the image alignment by running it on GPU.
+
+
+.. figure:: img/bench_gpu_res.png
+   :align: center
+   :alt: Benchmark GPU vs CPU
 
 
 
 
-
-
-
-
-
+ 
 
 
 
