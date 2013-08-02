@@ -85,11 +85,17 @@ Matching can also be run from ipython : suppose we got two list of keypoints ``k
    print("Number of Keypoints with for image 1 : %i, For image 2 : %i, Matching keypoints: %i" % (kp1.size, kp2.size, match.shape[0]))
 
 
+.. figure:: img/match1.png
+   :align: center
+   :alt: Example of image matching for pattern recognition
+   
+
+
 
 Performances
 ------------
 
-The aim of SIFT_PyOCL is to fasten the image alignment by running it on GPU. On big images with many keypoints, it enables a speed-up between 30 and 50.
+The aim of SIFT_PyOCL is to fasten the image alignment by running it on GPU. On big images with many keypoints, it enables a speed-up between 30 and 50. The following benchmark was done on an Intel Xeon E5-2667 (2.90GHz, 2x6 cores) CPU, and a NVidia Tesla K20m GPU.
 
 
 .. figure:: img/bench_gpu0.png
@@ -113,7 +119,9 @@ Command line parameters
 .......................
 
 When launched from the command line, SIFT_PyOCL can handle several options like the device to run on and the *number of pixels per keypoint*. By default ``PIX_PER_KP`` is 10, meaning that we gess one keypoint will be found for every 10 pixels. This is for buffers allocation on the device, as the number of keypoints that will be found is unknown, and strongly depends of the type of image. 10 pixels per keypoint is a high estimation, even for images with many features like landscapes. For example, this 5.8 MPixels image_ gives about 2500 keypoints, which makes 2270 pixels per keypoints.
+
 .. _image: http://www.lightsources.org/imagebank/image/esr032
+
 If you have big images with few features and the image does not fit on the GPU, you can augment ``PIX_PER_KP`` in the command line options in order to decrease the amount of memory required.
 
 
@@ -160,7 +168,6 @@ It both fastens the processing and avoids to do match keypoints that are not on 
 References
 ..........
 
-- David G. Lowe, Distinctive image features from scale-invariant keypoints, International Journal of Computer Vision, vol. 60, no 2, 2004, p. 91–110
-http://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf
+- David G. Lowe, Distinctive image features from scale-invariant keypoints, International Journal of Computer Vision, vol. 60, no 2, 2004, p. 91–110 - http://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf
 
 
