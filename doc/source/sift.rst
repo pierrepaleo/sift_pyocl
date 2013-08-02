@@ -124,35 +124,11 @@ The file ``param.py`` contains SIFT default parameters, recommended by David Low
 
 ``PeakThresh`` (255 * 0.04/3.0 by default) is the grayscale threshold for keypoints refinement. To discard low-contrast keypoints, every pixel which grayscale value is below this threshold can not become a keypoint. Decreasing this threshold will lead to a larger number of keypoints, which can be useful for detecting features in low-contrast areas.
 
-``EdgeThresh`` (0.06 by default) and ``EdgeThresh1`` (0.08 by default) are the limit ratio of principal curvatures while testing if keypoints are located on an edge. Those points are not reliable for they are sensivite to noise. For such points, the principal curvature across the edge is much larger than the principal curvature along it. Finding these principal curvatures amounts to solving for the eigenvalues of the second-order Hessian matrix of the current DoG. The ratio of the eigenvalues :math:`r` is compared to a threshold :
-..math:: 
-  \dfrac{(r+1)^2}{r} < R
+``EdgeThresh`` (0.06 by default) and ``EdgeThresh1`` (0.08 by default) are the limit ratio of principal curvatures while testing if keypoints are located on an edge. Those points are not reliable for they are sensivite to noise. For such points, the principal curvature across the edge is much larger than the principal curvature along it. Finding these principal curvatures amounts to solving for the eigenvalues of the second-order Hessian matrix of the current DoG. The ratio of the eigenvalues :math:`r` is compared to a threshold :math:`\dfrac{(r+1)^2}{r} < R` with R defined by taking r=10, which gives :math:`\frac{(r+1)^2}{r} = 12.1`, and 1/12.1 = 0.08. In the first octave, the value 0.06 is taken instead of 0.08. Decreasing these values lead to a larger number of keypoints, but sensivite to noise because they are located on edges.
 
-With R defined by taking r=10, which gives :math:`\frac{(r+1)^2}{r} = 12.1`, and 1/12.1 = 0.08.
+``OriSigma`` (1.5 by default) is related to the radius of gaussian weighting in orientation assignment. In this stage, for a given keypoint, we look in a region of radius :math:`3 \times s \times \text{OriSigma}` with :math:`s` the scale of the current keypoint. Increasing it will not lead to increase the number of keypoints found ; it will take a larger area into account while computing the orientation assignment.
 
-
-
-for keypoints refinment
-
-#To detect an edge response, we require the ratio of smallest
-#to largest principle curvatures of the DOG function
-#(eigenvalues of the Hessian) to be below a threshold.  For
-#efficiency, we use Harris' idea of requiring the determinant to
-#be above par.EdgeThresh times the squared trace, as for eigenvalues
-#A and B, det = AB, trace = A+B.  So if A = 10B, then det = 10B**2,
-#and trace**2 = (11B)**2 = 121B**2, so par.EdgeThresh = 10/121 =
-#0.08 to require ratio of eigenvalues less than 10.
-            OriBins=36,
-            OriSigma=1.5,
-            OriHistThresh=0.8,
-            MaxIndexVal=0.2,
-            MagFactor=3,
-            IndexSigma=1.0,
-            IgnoreGradSign=0,
-            MatchRatio=0.73,
-            MatchXradius=1000000.0,
-            MatchYradius=1000000.0,
-            noncorrectlylocalized=0)
+``MatchRatio`` (0.73 by default) is the threshold used for image alignment. Descriptors are compared with a :math:`L^1`-distance. For a given descriptor, if the ratio between the closest-neighbor the second-closest-neighbor is below this threshold, then a matching is added to the list. Increasing this value leads to a larger number of matchings, certainly less accurate.
 
 
 Region of Interest for image alignment
