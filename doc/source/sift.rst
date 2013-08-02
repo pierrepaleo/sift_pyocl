@@ -25,7 +25,7 @@ Before image alignment, descriptors have to be computed from each image. The who
 How to use it
 .............
 
-SIFT_PyOCL can be installed as a standard Debian package, or with "python setup.py build". It generates a library that can be imported, then used to compute a list of descriptors from an image. The image can be in RGB values, but all the process is done on grayscale values. One can specify the device, either CPU or GPU. Although being integrated in EDNA framework for online image alignment, and thus mostly used by developers, SIFT_PyOCL provides example scripts.
+SIFT_PyOCL can be installed as a standard Debian package, or with ``python setup.py build``. It generates a library that can be imported, then used to compute a list of descriptors from an image. The image can be in RGB values, but all the process is done on grayscale values. One can specify the device, either CPU or GPU. Although being integrated in EDNA framework for online image alignment, and thus mostly used by developers, SIFT_PyOCL provides example scripts.
 
 .. code-block:: python
 
@@ -52,13 +52,14 @@ One can also launch SIFT_PyOCL interactively with iPython :
 SIFT_PyOCL Files
 ................
 
-The Python sources are in the "sift-src" folder. The file "plan.py" executes the whole process, from kernel compilation to descriptors computation. The OpenCL kernels in the "openCL" folder are compiled on the fly. Several kernels have multiple implementations, depending the architecture to run on.
+The Python sources are in the ``sift-src`` folder. The file ``plan.py`` executes the whole process, from kernel compilation to descriptors computation. The OpenCL kernels in the "openCL" folder are compiled on the fly. Several kernels have multiple implementations, depending the architecture to run on.
 
 
+Overall process
+~~~~~~~~~~~~~~~
 
-~~~~~~~~~~~~~
-
-The different steps of SIFT are handled by ``plan.py``.
+The different steps of SIFT are handled by ``plan.py``. When launched, it automatically choose the best device to run on, unless a device is explicitly provided in the options. All the OpenCL kernels that can be compiled are built on the fly.
+ 
 
 
 
@@ -70,7 +71,7 @@ Image matching and alignment
 
 
 
-There is a demo file "demo_match.py" that can be run to have a keypoints matching demonstration. Matching can also be run from ipython : suppose we got two list of keypoints "kp1" and "kp2" according to example1_.
+There is a demo file ``demo_match.py`` that can be run to have a keypoints matching demonstration. Matching can also be run from ipython : suppose we got two list of keypoints ``kp1`` and ``kp2`` according to example1_.
 
 .. _example2:
 .. code-block:: python
@@ -101,12 +102,36 @@ The aim of SIFT_PyOCL is to fasten the image alignment by running it on GPU.
 
 
 
+SIFT parameters
+---------------
+
+Command line parameters
+~~~~~~~~~~~~~~~~~~~~~~~
+
+When launched from the command line, SIFT_PyOCL can handle several options like the device to run on and the *number of pixels per keypoint*. By default ``PIX_PER_KP`` is 10, meaning that we gess one keypoint will be found for every 10 pixels. This is for buffers allocation on the device, as the number of keypoints that will be found is unknown, and strongly depends of the type of image. 10 pixels per keypoint is a high estimation, even for images with many features like landscapes. For example, this 5.8 MPixels image_ gives about 2500 keypoints, which makes 2270 pixels per keypoints.
+
+.. _image: http://www.lightsources.org/imagebank/image/esr032
+
+If you have big images with few features and the image does not fit on the GPU, you can augment ``PIX_PER_KP`` in the command line options in order to decrease the amount of memory required.
+
+
+Advanced SIFT parameters
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 
 
 
+Region of Interest for image alignment
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When processing the image matching, a region of interest (ROI) can be specified on the image. It is a binary image which can have any shape. For instance, if a sample is centered on the image, the user can select the center of the image before processing. 
 
 
+.. figure:: img/frame_ROI.png
+   :align: center
+   :alt: Sample with region of interest
+
+It both fastens the processing and avoids to do match keypoints that are not on the sample.
 
 
 
