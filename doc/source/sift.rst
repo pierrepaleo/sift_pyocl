@@ -98,7 +98,7 @@ SIFT parameters
 ---------------
 
 Command line parameters
-***********************
+.......................
 
 When launched from the command line, SIFT_PyOCL can handle several options like the device to run on and the *number of pixels per keypoint*. By default ``PIX_PER_KP`` is 10, meaning that we gess one keypoint will be found for every 10 pixels. This is for buffers allocation on the device, as the number of keypoints that will be found is unknown, and strongly depends of the type of image. 10 pixels per keypoint is a high estimation, even for images with many features like landscapes. For example, this 5.8 MPixels image_ gives about 2500 keypoints, which makes 2270 pixels per keypoints.
 
@@ -108,13 +108,13 @@ If you have big images with few features and the image does not fit on the GPU, 
 
 
 Advanced SIFT parameters
-************************
+........................
 
-
+blah blah
 
 
 Region of Interest for image alignment
-**************************************
+......................................
 
 When processing the image matching, a region of interest (ROI) can be specified on the image. It is a binary image which can have any shape. For instance, if a sample is centered on the image, the user can select the center of the image before processing. 
 
