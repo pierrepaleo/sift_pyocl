@@ -11,15 +11,16 @@ SIFT (Scale-Invariant Feature Transform) is an algorithm developped by David Low
 Introduction
 ------------
 
-The European Synchrotron Radiation Facility (ESRF) beamline ID21 developed a full-field method for X-ray absorption near-edge spectroscopy (XANES). Since the flat field images are not acquired simultaneously with the sample transmission images, a realignment procedure has to be performed. SIFT is currently used, but takes about 8 seconds per frame, and one stack can have up to 500 frames. It is a bottleneck in the global process, therefore a parallel version of this algorithm can provide a crucial speed-up.
+The European Synchrotron Radiation Facility (ESRF) beamline ID21 developed a full-field method for X-ray absorption near-edge spectroscopy (XANES). Since the flat field images are not acquired simultaneously with the sample transmission images, a realignment procedure has to be performed. SIFT is currently used, but takes about 8 seconds per frame, and one stack can have up to 500 frames. It is a bottleneck in the global process, therefore a parallel version had to be implemented. SIFT_PyOCL differs from existing parallel implementations of SIFT in the way that the whole process is done on the device, enabling crucial speed-ups.
 
 
 
 
-SIFT descriptors computation
-----------------------------
 
-Before image alignment, descriptors have to be computed from each image. The whole process can be launched by several lines of code.
+SIFT keypoints computation
+--------------------------
+
+Before image alignment, keypoints have to be computed from each image. The whole process can be launched by several lines of code.
 
 
 How to use it
@@ -95,7 +96,7 @@ Matching can also be run from ipython : suppose we got two list of keypoints ``k
 Performances
 ------------
 
-The aim of SIFT_PyOCL is to fasten the image alignment by running it on GPU. On big images with many keypoints, it enables a speed-up between 30 and 50. The following benchmark was done on an Intel Xeon E5-2667 (2.90GHz, 2x6 cores) CPU, and a NVidia Tesla K20m GPU.
+The aim of SIFT_PyOCL is to fasten the SIFT algorithm execution by running it on GPU. On big images with many keypoints, it enables a speed-up between 30 and 50. The following benchmark was done on an Intel Xeon E5-2667 (2.90GHz, 2x6 cores) CPU, and a NVidia Tesla K20m GPU.
 
 
 .. figure:: img/bench_gpu0.png
