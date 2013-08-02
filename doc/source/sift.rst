@@ -101,16 +101,58 @@ Command line parameters
 .......................
 
 When launched from the command line, SIFT_PyOCL can handle several options like the device to run on and the *number of pixels per keypoint*. By default ``PIX_PER_KP`` is 10, meaning that we gess one keypoint will be found for every 10 pixels. This is for buffers allocation on the device, as the number of keypoints that will be found is unknown, and strongly depends of the type of image. 10 pixels per keypoint is a high estimation, even for images with many features like landscapes. For example, this 5.8 MPixels image_ gives about 2500 keypoints, which makes 2270 pixels per keypoints.
-
 .. _image: http://www.lightsources.org/imagebank/image/esr032
-
 If you have big images with few features and the image does not fit on the GPU, you can augment ``PIX_PER_KP`` in the command line options in order to decrease the amount of memory required.
 
 
 Advanced SIFT parameters
 ........................
 
-blah blah
+The file ``param.py`` contains SIFT default parameters, recommended by David Lowe in his paper_ or by the authors of the C++ version in ASIFT_. You should not modify these values unless you know what you are doing. Some parameters require to understand several aspects of the algorithm, explained in Lowe's original paper.
+
+.. _paper: www.cs.ubc.ca/~lowe/papers/ijcv04.pdf
+.. _ASIFT: http://www.ipol.im/pub/art/2011/my-asift
+
+
+``DoubleImSize`` (0 by default) is for the pre-blur factor of the image. At the beginning, the original image is blurred (*prior-smoothing*) to eliminate noise. The standard deviation of the gaussian filter is either ``1.52`` if DoubleImSize is 0, or ``1.25`` if DoubleImSize is 1. Setting this parameter to 1 decrease the prior-smoothing factor, the algorithm will certainly find more keypoints but less accurate.
+
+``InitSigma`` (1.6 by default) is the prior-smoothing factor. The original image is blurred by a gaussian filter which standard deviation is :math:`\sqrt{\text{InitSigma}^2 - c^2}`. with ``c == 0.5`` if ``DoubleImSize == 0`` or ``c == 1`` otherwise. If the prior-smoothing factor is decreased, the algorithm will certainly find more keypoint, but they will be less accurate.
+
+``BorderDist`` (5 by default) is the minimal distance to borders : pixels that are less than ``BorderDist`` pixels from the border will be ignored for the processing. If features are likely to be near the borders, decreasing this parameter will enable to detect them.
+
+``Scales`` (3 by default) is the number of Difference of Gaussians (DoG) that will actually be used for keypoints detection. In the gaussian pyramid, Scales+3 blurs are made, from which Scales+2 DoGs are computed. The DoGs in the middle are used to detect keypoints in the scale-space. If ``Scales`` is 3, there will be 6 blurs and 5 DoGs in an octave, and 3 DoGs will be used for local extrema detection. Increasing Scales will make more blurred images in an octave, so SIFT can detect a few more strong keypoints. However, it will slow the algorithm for a few keypoints.
+
+``PeakThresh`` (255 * 0.04/3.0 by default) is the grayscale threshold for keypoints refinement. To discard low-contrast keypoints, every pixel which grayscale value is below this threshold can not become a keypoint. Decreasing this threshold will lead to a larger number of keypoints, which can be useful for detecting features in low-contrast areas.
+
+``EdgeThresh`` (0.06 by default) and ``EdgeThresh1`` (0.08 by default) are the limit ratio of principal curvatures while testing if keypoints are located on an edge. Those points are not reliable for they are sensivite to noise. For such points, the principal curvature across the edge is much larger than the principal curvature along it. Finding these principal curvatures amounts to solving for the eigenvalues of the second-order Hessian matrix of the current DoG. The ratio of the eigenvalues :math:`r` is compared to a threshold :
+..math:: 
+  \dfrac{(r+1)^2}{r} < R
+
+With R defined by taking r=10, which gives :math:`\frac{(r+1)^2}{r} = 12.1`, and 1/12.1 = 0.08.
+
+
+
+for keypoints refinment
+
+#To detect an edge response, we require the ratio of smallest
+#to largest principle curvatures of the DOG function
+#(eigenvalues of the Hessian) to be below a threshold.  For
+#efficiency, we use Harris' idea of requiring the determinant to
+#be above par.EdgeThresh times the squared trace, as for eigenvalues
+#A and B, det = AB, trace = A+B.  So if A = 10B, then det = 10B**2,
+#and trace**2 = (11B)**2 = 121B**2, so par.EdgeThresh = 10/121 =
+#0.08 to require ratio of eigenvalues less than 10.
+            OriBins=36,
+            OriSigma=1.5,
+            OriHistThresh=0.8,
+            MaxIndexVal=0.2,
+            MagFactor=3,
+            IndexSigma=1.0,
+            IgnoreGradSign=0,
+            MatchRatio=0.73,
+            MatchXradius=1000000.0,
+            MatchYradius=1000000.0,
+            noncorrectlylocalized=0)
 
 
 Region of Interest for image alignment
@@ -119,7 +161,7 @@ Region of Interest for image alignment
 When processing the image matching, a region of interest (ROI) can be specified on the image. It is a binary image which can have any shape. For instance, if a sample is centered on the image, the user can select the center of the image before processing. 
 
 
-.. figure:: img/frame_ROI.png
+.. figure:: img/frame_ROI.jpg
    :align: center
    :alt: Sample with region of interest
 
