@@ -26,7 +26,8 @@ How to use it
 .............
 
 SIFT_PyOCL can be installed as a standard Debian package, or with ``python setup.py build``. It generates a library that can be imported, then used to compute a list of descriptors from an image. The image can be in RGB values, but all the process is done on grayscale values. One can specify the device, either CPU or GPU.
-Although being integrated in EDNA framework for online image alignment, and thus mostly used by developers, SIFT_PyOCL provides example scripts.
+
+Although being integrated in ESRF EDNA framework for online image alignment, and thus mostly used by developers, SIFT_PyOCL provides example scripts.
 
 .. code-block:: python
 
@@ -53,7 +54,9 @@ SIFT_PyOCL Files
 ................
 
 The Python sources are in the ``sift-src`` folder. The file ``plan.py`` executes the whole process, from kernel compilation to descriptors computation. The OpenCL kernels in the "openCL" folder are compiled on the fly. Several kernels have multiple implementations, depending the architecture to run on.
+
 The file ``match.py`` does the match between two lists of keypoints returned by ``plan.py``.
+
 The file ``alignment.py`` does the image alignment : it computes the keypoints from two images (``plan.py``), then uses the matching result (``match.py``) to find out the transformation aligning the second image on the first.
 
 
@@ -61,7 +64,9 @@ Overall process
 ***************
 
 The different steps of SIFT are handled by ``plan.py``. When launched, it automatically choose the best device to run on, unless a device is explicitly provided in the options. All the OpenCL kernels that can be compiled are built on the fly.
-One the keypoints are computed, one can compare keypoints of two differents images. This matching is handled by ``match.py``.
+
+Once the keypoints are computed, one can compare keypoints of two differents images. This matching is handled by ``match.py``.
+
 For image alignment, ``alignment.py`` takes the matching between two images and determines the transformation to be done in order to align the second image on the first.
 
 
@@ -70,6 +75,7 @@ Image matching and alignment
 
 
 There is a demo file ``demo_match.py`` that can be run to have a keypoints matching demonstration with ``python demo_match.py --type=GPU``, but the user have to edit the file to specify the two input images.
+
 Matching can also be run from ipython : suppose we got two list of keypoints ``kp1`` and ``kp2`` according to the previous example.
 
 .. code-block:: python
