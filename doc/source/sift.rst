@@ -11,16 +11,16 @@ SIFT (Scale-Invariant Feature Transform) is an algorithm developped by David Low
 Introduction
 ------------
 
-The European Synchrotron Radiation Facility (ESRF) beamline ID21 developed a full-field method for X-ray absorption near-edge spectroscopy (XANES). Since the flat field images are not acquired simultaneously with the sample transmission images, a realignment procedure has to be performed. SIFT is currently used, but takes about 8 seconds per frame, and one stack can have up to 500 frames. It is a bottleneck in the global process, therefore a parallel version had to be implemented. SIFT_PyOCL differs from existing parallel implementations of SIFT in the way that the whole process is done on the device, enabling crucial speed-ups.
+The European Synchrotron Radiation Facility (ESRF) beamline ID21 developed a full-field method for X-ray absorption near-edge spectroscopy (XANES). Since the flat field images are not acquired simultaneously with the sample transmission images, a realignment procedure has to be performed. The SIFT algorithm is currently used, but takes about 8 seconds per frame, and one stack can have up to 500 frames. It is a bottleneck in the global process, therefore a parallel version had to be implemented. SIFT_PyOCL differs from existing parallel implementations of SIFT in the way that the whole process is done on the device, enabling crucial speed-ups.
 
 
 
 
 
-SIFT keypoints computation
---------------------------
+Launching SIFT_PyOCL
+--------------------
 
-Before image alignment, keypoints have to be computed from each image. The whole process can be launched by several lines of code.
+Before image alignment, points of interest (keypoints) have to be detected in each image. The whole process can be launched by several lines of code.
 
 
 How to use it
@@ -50,7 +50,6 @@ One can also launch SIFT_PyOCL interactively with iPython :
 
 
 
-
 SIFT_PyOCL Files
 ................
 
@@ -66,9 +65,58 @@ Overall process
 
 The different steps of SIFT are handled by ``plan.py``. When launched, it automatically choose the best device to run on, unless a device is explicitly provided in the options. All the OpenCL kernels that can be compiled are built on the fly.
 
-Once the keypoints are computed, one can compare keypoints of two differents images. This matching is handled by ``match.py``.
+Once the keypoints are computed, one can compare keypoints of two differents images. This matching is done by ``match.py``.
 
 For image alignment, ``alignment.py`` takes the matching between two images and determines the transformation to be done in order to align the second image on the first.
+
+
+
+
+
+SIFT keypoints computation
+--------------------------
+
+The keypoints are detected in several steps according to Lowe's paper_ :
+.. _paper: www.cs.ubc.ca/~lowe/papers/ijcv04.pdf
+
+* Keypoints detection: local extrema are detected in the *scale-space* :math:`(x, y, s)`. Every pixel is compared to its neighborhood in the image itself, and in the previous/next scale factor images. 
+* Keypoints refinement: keypoints located on corners are discarded. Additionaly, a second-order interpolation is done to improve the keypoints accuracy, modifying the coordinates :math:`(x, y, s)`.
+* Orientation assignment: a characteristic orientation is assigned to the keypoints :math:`(x,y,s, \theta)`
+* Descriptor computation: a histogram of orientations is built around every keypoint, then concatenated in a 128-values vector. This vector is called *SIFT descriptor*, it is robust to rotation, illumination, translation and scaling.
+
+The scale variation is simulated by blurring the image. A very blurred image represents a scene seen from a distance, for small details are not visible. 
+
+
+Keypoints detection
+*******************
+
+The image is increasingly blurred to imitate the scale variations. This is done by convolving by a gaussian kernel. Then, consecutives blurs are substracted to get *differences of gaussians (DoG)*. In these DoG, every pixel is tested. Let :math:`(x,y)` be the pixel position in the current (blurred) image, and :math:`s` its *scale* (that is, the blur factor). The point :math:`(x,y,s)` is a local maximum in the scale-space if
+
+* :math:`D(x-1, y, s) < D(x,y,s)` and :math:`D(x,y,s) > D(x+1, y, s)` (local maximum in :math:`x`)
+* :math:`D(x, y-1, s) < D(x,y,s)` and :math:`D(x,y,s) > D(x, y+1, s)` (local maximum in :math:`y`)
+* :math:`D(x, y, s -1) < D(x,y,s)` and :math:`D(x,y,s) > D(x, y, s+1)` (local maximum in :math:`s`)
+\end{itemize}
+
+.. figure:: img/dog1.png
+   :align: center
+   :alt: detection in scale-space
+
+Keypoints refinement
+********************
+
+
+Orientation assignment
+**********************
+
+Descriptor computation
+**********************
+
+
+
+
+
+
+
 
 
 Image matching and alignment
@@ -141,13 +189,13 @@ The file ``param.py`` contains SIFT default parameters, recommended by David Low
 
 ``BorderDist`` (5 by default) is the minimal distance to borders : pixels that are less than ``BorderDist`` pixels from the border will be ignored for the processing. If features are likely to be near the borders, decreasing this parameter will enable to detect them.
 
-``Scales`` (3 by default) is the number of Difference of Gaussians (DoG) that will actually be used for keypoints detection. In the gaussian pyramid, Scales+3 blurs are made, from which Scales+2 DoGs are computed. The DoGs in the middle are used to detect keypoints in the scale-space. If ``Scales`` is 3, there will be 6 blurs and 5 DoGs in an octave, and 3 DoGs will be used for local extrema detection. Increasing Scales will make more blurred images in an octave, so SIFT can detect a few more strong keypoints. However, it will slow the algorithm for a few keypoints.
+``Scales`` (3 by default) is the number of Difference of Gaussians (DoG) that will actually be used for keypoints detection. In the gaussian pyramid, Scales+3 blurs are made, from which Scales+2 DoGs are computed. The DoGs in the middle are used to detect keypoints in the scale-space. If ``Scales`` is 3, there will be 6 blurs and 5 DoGs in an octave, and 3 DoGs will be used for local extrema detection. Increasing Scales will make more blurred images in an octave, so SIFT can detect a few more strong keypoints. However, it will slow down the algorithm for a few additional keypoints.
 
 ``PeakThresh`` (255 * 0.04/3.0 by default) is the grayscale threshold for keypoints refinement. To discard low-contrast keypoints, every pixel which grayscale value is below this threshold can not become a keypoint. Decreasing this threshold will lead to a larger number of keypoints, which can be useful for detecting features in low-contrast areas.
 
 ``EdgeThresh`` (0.06 by default) and ``EdgeThresh1`` (0.08 by default) are the limit ratio of principal curvatures while testing if keypoints are located on an edge. Those points are not reliable for they are sensivite to noise. For such points, the principal curvature across the edge is much larger than the principal curvature along it. Finding these principal curvatures amounts to solving for the eigenvalues of the second-order Hessian matrix of the current DoG. The ratio of the eigenvalues :math:`r` is compared to a threshold :math:`\dfrac{(r+1)^2}{r} < R` with R defined by taking r=10, which gives :math:`\frac{(r+1)^2}{r} = 12.1`, and 1/12.1 = 0.08. In the first octave, the value 0.06 is taken instead of 0.08. Decreasing these values lead to a larger number of keypoints, but sensivite to noise because they are located on edges.
 
-``OriSigma`` (1.5 by default) is related to the radius of gaussian weighting in orientation assignment. In this stage, for a given keypoint, we look in a region of radius :math:`3 \times s \times \text{OriSigma}` with :math:`s` the scale of the current keypoint. Increasing it will not lead to increase the number of keypoints found ; it will take a larger area into account while computing the orientation assignment.
+``OriSigma`` (1.5 by default) is related to the radius of gaussian weighting in orientation assignment. In this stage, for a given keypoint, we look in a region of radius :math:`3 \times s \times \text{OriSigma}` with :math:`s` the scale of the current keypoint. Increasing it will not lead to increase the number of keypoints found ; it will take a larger area into account while computing the orientation assignment. Thus, the descriptor will be characteristic of a larger neighbourhood.
 
 ``MatchRatio`` (0.73 by default) is the threshold used for image alignment. Descriptors are compared with a :math:`L^1`-distance. For a given descriptor, if the ratio between the closest-neighbor the second-closest-neighbor is below this threshold, then a matching is added to the list. Increasing this value leads to a larger number of matchings, certainly less accurate.
 
