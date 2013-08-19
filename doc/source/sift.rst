@@ -88,6 +88,10 @@ The keypoints are detected in several steps according to Lowe's paper_ :
 The scale variation is simulated by blurring the image. A very blurred image represents a scene seen from a distance, for small details are not visible. 
 
 
+Unlike existing parallel versions of SIFT, the entire process is done on the device to avoid time-consuming transfers between CPU and GPU. This leads to several tricky parts like the use of atomic instructions, or writing different versions of the same kernel to adapt to every platform.
+
+
+
 Keypoints detection
 ...................
 
@@ -138,8 +142,7 @@ The parallel implementation of this step is complex, and the performances strong
 Descriptor computation
 ......................
 
-A histogram of orientations is built around every keypoint. The neighborhood is divided into 4 regions of 4 subregions of 4x4 pixels. In every subregion, a 8-bin histogram is computed ; then, all the histograms are concatenated in a 128-values descriptor. The histogram is weighted by the gradient magnitudes and the current scale factor, so that the descriptor is robust to rotation, illumination, translation and scaling.
-
+A histogram of orientations is built around every keypoint. The neighborhood is divided into 4 regions of 4 subregions of 4x4 pixels. In every subregion, a 8-bin histogram is computed ; then, all the histograms are concatenated in a 128-values descriptor. The histogram is weighted by the gradient magnitudes and the current scale factor, so that the descriptor is robust to rotation, illumination, translation and scaling. Here again, there are several files adapted to different platforms.
 
 
 Image matching and alignment
