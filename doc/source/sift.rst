@@ -95,7 +95,7 @@ The image is increasingly blurred to imitate the scale variations. This is done 
 * :math:`D(x-1, y, s) < D(x,y,s)` and :math:`D(x,y,s) > D(x+1, y, s)` (local maximum in :math:`x`)
 * :math:`D(x, y-1, s) < D(x,y,s)` and :math:`D(x,y,s) > D(x, y+1, s)` (local maximum in :math:`y`)
 * :math:`D(x, y, s -1) < D(x,y,s)` and :math:`D(x,y,s) > D(x, y, s+1)` (local maximum in :math:`s`)
-\end{itemize}
+
 
 .. figure:: img/dog1.png
    :align: center
