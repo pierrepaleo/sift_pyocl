@@ -88,7 +88,7 @@ The scale variation is simulated by blurring the image. A very blurred image rep
 
 
 Keypoints detection
-*******************
+...................
 
 The image is increasingly blurred to imitate the scale variations. This is done by convolving by a gaussian kernel. Then, consecutives blurs are substracted to get *differences of gaussians (DoG)*. In these DoG, every pixel is tested. Let :math:`(x,y)` be the pixel position in the current (blurred) image, and :math:`s` its *scale* (that is, the blur factor). The point :math:`(x,y,s)` is a local maximum in the scale-space if
 
@@ -102,16 +102,19 @@ The image is increasingly blurred to imitate the scale variations. This is done 
    :alt: detection in scale-space
 
 Keypoints refinement
-********************
+....................
 
+TODO
 
 Orientation assignment
-**********************
+......................
+
+TODO
 
 Descriptor computation
-**********************
+......................
 
-
+TODO
 
 
 
