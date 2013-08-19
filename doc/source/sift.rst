@@ -77,6 +77,7 @@ SIFT keypoints computation
 --------------------------
 
 The keypoints are detected in several steps according to Lowe's paper_ :
+
 .. _paper: www.cs.ubc.ca/~lowe/papers/ijcv04.pdf
 
 * Keypoints detection: local extrema are detected in the *scale-space* :math:`(x, y, s)`. Every pixel is compared to its neighborhood in the image itself, and in the previous/next scale factor images. 
@@ -101,24 +102,43 @@ The image is increasingly blurred to imitate the scale variations. This is done 
    :align: center
    :alt: detection in scale-space
 
+
+For these steps, we highly benefit from the parallelism : every pixel is handled by a GPU thread. Besides, convolution is implemented in the direct space (without FT) and is quite fast (50 times faster than the convolutions done by the C++ reference implementation).
+
+
 Keypoints refinement
 ....................
 
-TODO
+At this stage, many keypoints are not reliable. Low-contrast keypoints are discarded, and keypoints located on an edge are rejected as well. For keypoints located on an edge, principal curvature across the edge is much larger than the principal curvature along it. Finding these principal curvatures amounts to solving for the eigenvalues of the second-order Hessian matrix of the current DoG. The ratio of the eigenvalues :math:`r` is compared to a threshold :math:`\dfrac{(r+1)^2}{r} < R` with R defined by taking r=10.
+
+To improve keypoints accuracy, the coordinates are interpolated with a second-order Taylor development
+  
+   .. math ::
+
+      D \left( \vec{x} + \vec{\delta_x} \right) \simeq D + \dfrac{\partial D}{\partial \vec{x}} \cdot \vec{\delta_x} + \dfrac{1}{2} \left( \vec{\delta_x} \right)^T \cdot \left( H \right) \cdot \vec{\delta_x} \qquad \text{with } H = \dfrac{\partial^2 D}{\partial \vec{x}^2}
+
+Keypoints that were too far from a *true* (interpolated) extremum are rejected.
+
+
 
 Orientation assignment
 ......................
 
-TODO
+An orientation has to be assigned to each keypoint so that SIFT descriptors will be invariant to rotation. For each blurred version of the image, the gradient magnitude and orientation are computed. From the neighborhood of a keypoint, a histogram of orientations is built (36 bins, 1 bin per 10 degrees).
+
+.. figure:: img/orientation.png
+   :align: center
+   :alt: orientation assignment
+
+The maximum value of this histogram is the dominant orientation ; it is defined as the characteristic orientation of the keypoint. Additionaly, every peak greater than 80% of the maximum generates a new keypoint with a different orientation.
+
+The parallel implementation of this step is complex, and the performances strongly depend on the graphic card the program is running on. That is why there are different files for this kernel, adapted for different platforms. The file to compile is automatically determined in ``plan.py``.
+
 
 Descriptor computation
 ......................
 
-TODO
-
-
-
-
+A histogram of orientations is built around every keypoint. The neighborhood is divided into 4 regions of 4 subregions of 4x4 pixels. In every subregion, a 8-bin histogram is computed ; then, all the histograms are concatenated in a 128-values descriptor. The histogram is weighted by the gradient magnitudes and the current scale factor, so that the descriptor is robust to rotation, illumination, translation and scaling.
 
 
 
