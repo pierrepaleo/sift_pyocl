@@ -165,7 +165,7 @@ Matching can also be run from ipython : suppose we got two list of keypoints ``k
    :alt: Example of image matching for pattern recognition
    
 
-.. figure:: img/match2.png
+.. figure:: img/match2.jpg
    :align: center
    :alt: Another example of image matching for pattern recognition
    
