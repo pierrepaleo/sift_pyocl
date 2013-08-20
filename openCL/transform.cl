@@ -1,27 +1,23 @@
-
-
-
-
 /*
  *
  *	Computes the transformation to correct the image given a set of parameters
  *		[[a b c]         
  *		[d e f]]  
  *
- *		= [matrix offset]
+ *		= [matrix, offset]
  *
  * @param image: Pointer to global memory with the input image
  * @param output: Pointer to global memory with the outpu image
- * @param p1: 3-tuple, part of the transformation parameters ([a b c])
- * @param p2: 3-tuple, part of the transformation parameters ([d e f])
- * @param width: width of the input image
- * @param height: height of the input image
+ * @param matrix: "float4" struct for the transformation matrix
+ * @param offset: "float2" struct for the offset vector
+ * @param image_width Image width
+ * @param image_height Image height
+ * @param output_width Output width, can differ from image width
+ * @param output_height Ouput height, can differ from image height
  * @param fill: Default value to fill the image with
- *		
+ * @param mode: Interpolation mode. 0 = no interpolation, 1 = bilinear interpolation		
  *
  */
-
-//TODO: do not interpolate at the borders
 
 __kernel void transform(
 	__global float* image,
@@ -79,11 +75,11 @@ __kernel void transform(
 			}
 	
 			//bilinear interpolation
-			float interp1 = ((float) (tx_next - tx)) * image_p //image[ty_prev*image_width+tx_prev]
-						  + ((float) (tx - tx_prev)) * image_x, //image[ty_prev*image_width+tx_next],
+			float interp1 = ((float) (tx_next - tx)) * image_p
+						  + ((float) (tx - tx_prev)) * image_x,
 				
-				interp2 = ((float) (tx_next - tx)) * image_y //image[ty_next*image_width+tx_prev]
-						+ ((float) (tx - tx_prev)) * image_n; //image[ty_next*image_width+tx_next];
+				interp2 = ((float) (tx_next - tx)) * image_y
+						+ ((float) (tx - tx_prev)) * image_n;
 
 			interp = ((float) (ty_next - ty)) * interp1
 				   + ((float) (ty - ty_prev)) * interp2;
@@ -96,7 +92,7 @@ __kernel void transform(
 	}
 	
 	
-
+	//to be coherent with scipy.ndimage.interpolation.affine_transform
 	float u = -0.5; //-0.95
 	float v = -0.5;
 	if (tx >= image_width+u) {
@@ -105,11 +101,6 @@ __kernel void transform(
 	if (ty >= image_height+v) {
 		interp = fill;
 	}
-
-
-
-	
-	
 	
 
 	output[gid1*output_width+gid0] = interp;

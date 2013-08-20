@@ -96,8 +96,8 @@ class test_matching(unittest.TestCase):
         '''
         tests keypoints matching kernel
         '''    
-        image = scipy.misc.imread(os.path.join("../../test_images/","esrf_grenoble.jpg"),flatten=True).astype(numpy.float32)
-#        image = scipy.misc.lena().astype(numpy.float32)
+#        image = scipy.misc.imread(os.path.join("../../test_images/","esrf_grenoble.jpg"),flatten=True).astype(numpy.float32)
+        image = scipy.misc.lena().astype(numpy.float32)
         
         #get the struct keypoints : (x,y,s,angle,[descriptors])
         import feature

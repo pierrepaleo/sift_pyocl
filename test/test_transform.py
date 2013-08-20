@@ -130,7 +130,7 @@ class test_transform(unittest.TestCase):
         
         IMAGE_RESHAPE = True
         if IMAGE_RESHAPE:
-            image3_height, image3_width = int(900), int(900) #choose the re-scaled size
+            image3_height, image3_width = int(1024), int(1024) #choose the re-scaled size
             image3 = numpy.zeros((image3_height,image3_width),dtype=numpy.float32)
             d1 = (image3_width - image_width)/2
             d0 = (image3_height - image_height)/2
@@ -146,9 +146,11 @@ class test_transform(unittest.TestCase):
         #transformation
         angle = 1.9 #numpy.pi/5.0
 #        matrix = numpy.array([[numpy.cos(angle),-numpy.sin(angle)],[numpy.sin(angle),numpy.cos(angle)]],dtype=numpy.float32)
+#        offset_value = numpy.array([1000.0, 100.0],dtype=numpy.float32)
+#        matrix = numpy.array([[0.9,0.2],[-0.4,0.9]],dtype=numpy.float32)
+#        offset_value = numpy.array([-20.0,256.0],dtype=numpy.float32)
         matrix = numpy.array([[1.0,-0.75],[0.7,0.5]],dtype=numpy.float32)
         offset_value = numpy.array([250.0, -150.0],dtype=numpy.float32)
-#        offset_value = numpy.array([1000.0, 100.0],dtype=numpy.float32)
         fill_value = numpy.float32(0.0)
         mode = numpy.int32(1)
         image2 = scipy.ndimage.interpolation.affine_transform(image,matrix,offset=offset_value,order=1, mode="constant")
@@ -162,11 +164,9 @@ class test_transform(unittest.TestCase):
         matrix_for_gpu = correction_matrix.reshape(4,1) #for float4 struct
         offset_value[0] = sol[2,0]
         offset_value[1] = sol[5,0]
-        print "correction : %s" %matrix_for_gpu
-        print "offset : %s" %offset_value
         
-        wg = 1,1
-        shape = calc_size((output_width,output_height), self.wg)
+        wg = 8,8
+        shape = calc_size((output_width,output_height), wg)
         gpu_image = pyopencl.array.to_device(queue, image2)
         gpu_output = pyopencl.array.empty(queue, (output_height, output_width), dtype=numpy.float32, order="C")
         gpu_matrix = pyopencl.array.to_device(queue,matrix_for_gpu)
@@ -180,7 +180,7 @@ class test_transform(unittest.TestCase):
                 image_width, image_height, output_width, output_height, fill_value, mode)
         res = gpu_output.get()
         t1 = time.time()
-        print res[0,0]
+#        print res[0,0]
         
         ref = scipy.ndimage.interpolation.affine_transform(image2,correction_matrix,
         	offset=offset_value, output_shape=(output_height,output_width),order=1, mode="constant", cval=fill_value)

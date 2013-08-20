@@ -44,10 +44,10 @@ import numpy
 import pyopencl, pyopencl.array
 from .param import par
 from .opencl import ocl
-from .utils import calc_size, kernel_size, sizeof
+from .utils import calc_size, kernel_size, sizeof, matching_correction 
 logger = logging.getLogger("sift.match")
 from pyopencl import mem_flags as MF
-from scipy.optimize import leastsq
+#from scipy.optimize import leastsq
 from . import MatchPlan, SiftPlan
 
 class LinearAlign(object):
@@ -71,7 +71,17 @@ class LinearAlign(object):
         kp = self.sift.keypoints(img)
         matching = self.match(kp, self.kp)
         #TODO optimize match so that the keypoint2 can be optional
-        #then leastsq
-        #then correct image
+        
+        transform_matrix = matching_correction(matching)
+        #TODO : call transform kernel to correct image
+        
         newimg = numpy.empty_like(img)
         return newimg
+        
+        
+        
+        
+        
+        
+        
+        

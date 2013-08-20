@@ -20,6 +20,8 @@ The European Synchrotron Radiation Facility (ESRF) beamline ID21 developed a ful
 Launching SIFT_PyOCL
 --------------------
 
+SIFT_PyOCL is written in Python, and handles the OpenCL kernels with PyOpenCL. This enables a simple and efficient access to GPU resources. The project is installed as a Python library and can be imported in a script.
+
 Before image alignment, points of interest (keypoints) have to be detected in each image. The whole process can be launched by several lines of code.
 
 
@@ -63,13 +65,11 @@ The file ``alignment.py`` does the image alignment : it computes the keypoints f
 Overall process
 ***************
 
-The different steps of SIFT are handled by ``plan.py``. When launched, it automatically choose the best device to run on, unless a device is explicitly provided in the options. All the OpenCL kernels that can be compiled are built on the fly.
+The different steps of SIFT are handled by ``plan.py``. When launched, it automatically choose the best device to run on, unless a device is explicitly provided in the options. All the OpenCL kernels that can be compiled are built on the fly. Buffers are pre-allocated on the device, and all the steps are executed on GPU. At each *octave* (scale level), keypoints are returned to the CPU and the buffers are re-used.
 
-Once the keypoints are computed, one can compare keypoints of two differents images. This matching is done by ``match.py``.
+Once the keypoints are computed, the keypoints of two different images can be compared. This matching is done by ``match.py``. It simply takes the descriptors of the two lists of keypoints, and compare them with a L1 distance. It returns a vector of *matchings*, i.e couples of similar keypoints.
 
-For image alignment, ``alignment.py`` takes the matching between two images and determines the transformation to be done in order to align the second image on the first.
-
-
+For image alignment, ``alignment.py`` takes the matching vector between two images and determines the transformation to be done in order to align the second image on the first.
 
 
 
