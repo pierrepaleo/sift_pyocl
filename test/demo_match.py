@@ -15,8 +15,8 @@ except:
     feature = None
     res = numpy.empty(0)
     
-img1 = scipy.misc.imread("../../test_match/test11.jpg")
-img2 = scipy.misc.imread("../../test_match/test15.jpg")
+img1 = scipy.misc.imread("../../test_match/wiw2.jpg")
+img2 = scipy.misc.imread("../../test_match/waldo.jpg")
 '''
 img1 = scipy.misc.imread("../test_images/fruit_bowl.png")
 tmp = scipy.misc.imread("../test_images/banana.png")
@@ -44,8 +44,8 @@ fig.show()
 for i in range(m.shape[0]):
     k1 = m[i, 0]
     k2 = m[i, 1]
-    con = ConnectionPatch(xyA=(k1.x, k1.y), xyB=(k2.x, k2.y), coordsA="data", coordsB="data", axesA=sp1, axesB=sp2, color="red")
-    con2 = ConnectionPatch(xyA=(k2.x, k2.y), xyB=(k1.x, k1.y), coordsA="data", coordsB="data", axesA=sp2, axesB=sp1, color="red")
+    con = ConnectionPatch(xyA=(k1.x, k1.y), xyB=(k2.x, k2.y), coordsA="data", coordsB="data", axesA=sp1, axesB=sp2, color="blue")
+    con2 = ConnectionPatch(xyA=(k2.x, k2.y), xyB=(k1.x, k1.y), coordsA="data", coordsB="data", axesA=sp2, axesB=sp1, color="blue")
     sp1.add_artist(con)
     sp2.add_artist(con2)
 #    sp2.add_artist(con)

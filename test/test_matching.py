@@ -96,67 +96,71 @@ class test_matching(unittest.TestCase):
         '''
         tests keypoints matching kernel
         '''    
-#        image = scipy.misc.imread(os.path.join("../../test_images/","esrf_grenoble.jpg"),flatten=True).astype(numpy.float32)
         image = scipy.misc.lena().astype(numpy.float32)
+        try:
+            import feature
+        except:
+            logger.error("WARNING: feature module is not available to compare results with C++ implementation. Matching cannot be tested.")
+            feature = None
         
-        #get the struct keypoints : (x,y,s,angle,[descriptors])
-        import feature
-        sc = feature.SiftAlignment()
-        ref_sift = sc.sift(image)
-        ref_sift_2 = numpy.recarray((ref_sift.shape),dtype=ref_sift.dtype)
-        ref_sift_2[:] = (ref_sift[::-1])
-        t0_matching = time.time()
-        siftmatch = feature.sift_match(ref_sift, ref_sift_2)
-        t1_matching = time.time()
-        ref = ref_sift.desc
-        
-        if (USE_CPU): wg = 1,
-        else: wg = 64,
-        shape = ref_sift.shape[0]*wg[0],
-        
-        ratio_th = numpy.float32(0.5329) #sift.cpp : 0.73*0.73
-        keypoints_start, keypoints_end = 0, min(ref_sift.shape[0],ref_sift_2.shape[0])
-        
-        gpu_keypoints1 = pyopencl.array.to_device(queue, ref_sift)
-        gpu_keypoints2 = pyopencl.array.to_device(queue, ref_sift_2)
-        gpu_matchings = pyopencl.array.zeros(queue, (keypoints_end-keypoints_start,2),dtype=numpy.int32, order="C")
-        keypoints_start, keypoints_end = numpy.int32(keypoints_start), numpy.int32(keypoints_end)
-        nb_keypoints = numpy.int32(10000)
-        counter = pyopencl.array.zeros(queue, (1,1),dtype=numpy.int32, order="C")
-
-        t0 = time.time()
-        k1 = self.program.matching(queue, shape, wg,
-        		gpu_keypoints1.data, gpu_keypoints2.data, gpu_matchings.data, counter.data,
-        		nb_keypoints, ratio_th, keypoints_end, keypoints_end)
-        res = gpu_matchings.get()
-        cnt = counter.get()
-        t1 = time.time()
-
-#        ref_python, nb_match = my_matching(kp1, kp2, keypoints_start, keypoints_end)
-        t2 = time.time()
-        
-        res_sort = res[numpy.argsort(res[:,1])]
-#        ref_sort = ref[numpy.argsort(ref[:,1])]
-        
-        print res[0:20]
-        print ""
-#        print ref_sort[0:20]
-        print("C++ Matching took %.3f ms" %(1000.0*(t1_matching-t0_matching)))
-        print("OpenCL: %d match / C++ : %d match" %(cnt,siftmatch.shape[0]))
-
-
-        #sort to compare added keypoints
-        '''
-        delta = abs(res_sort-ref_sort).max()
-        self.assert_(delta == 0, "delta=%s" % (delta)) #integers
-        logger.info("delta=%s" % delta)
-        '''
-
-        if PROFILE:
-            logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
-            logger.info("Matching took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+        if (feature != None):
+            #get the struct keypoints : (x,y,s,angle,[descriptors])
+            sc = feature.SiftAlignment()
+            ref_sift = sc.sift(image)
+            ref_sift_2 = numpy.recarray((ref_sift.shape),dtype=ref_sift.dtype)
+            ref_sift_2[:] = (ref_sift[::-1])
+            t0_matching = time.time()
+            siftmatch = feature.sift_match(ref_sift, ref_sift_2)
+            t1_matching = time.time()
+            ref = ref_sift.desc
             
+            if (USE_CPU): wg = 1,
+            else: wg = 64,
+            shape = ref_sift.shape[0]*wg[0],
             
+            ratio_th = numpy.float32(0.5329) #sift.cpp : 0.73*0.73
+            keypoints_start, keypoints_end = 0, min(ref_sift.shape[0],ref_sift_2.shape[0])
+            
+            gpu_keypoints1 = pyopencl.array.to_device(queue, ref_sift)
+            gpu_keypoints2 = pyopencl.array.to_device(queue, ref_sift_2)
+            gpu_matchings = pyopencl.array.zeros(queue, (keypoints_end-keypoints_start,2),dtype=numpy.int32, order="C")
+            keypoints_start, keypoints_end = numpy.int32(keypoints_start), numpy.int32(keypoints_end)
+            nb_keypoints = numpy.int32(10000)
+            counter = pyopencl.array.zeros(queue, (1,1),dtype=numpy.int32, order="C")
+
+            t0 = time.time()
+            k1 = self.program.matching(queue, shape, wg,
+                    gpu_keypoints1.data, gpu_keypoints2.data, gpu_matchings.data, counter.data,
+                    nb_keypoints, ratio_th, keypoints_end, keypoints_end)
+            res = gpu_matchings.get()
+            cnt = counter.get()
+            t1 = time.time()
+
+    #        ref_python, nb_match = my_matching(kp1, kp2, keypoints_start, keypoints_end)
+            t2 = time.time()
+            
+            res_sort = res[numpy.argsort(res[:,1])]
+    #        ref_sort = ref[numpy.argsort(ref[:,1])]
+            
+            print res[0:20]
+            print ""
+    #        print ref_sort[0:20]
+            print("C++ Matching took %.3f ms" %(1000.0*(t1_matching-t0_matching)))
+            print("OpenCL: %d match / C++ : %d match" %(cnt,siftmatch.shape[0]))
+
+
+            #sort to compare added keypoints
+            '''
+            delta = abs(res_sort-ref_sort).max()
+            self.assert_(delta == 0, "delta=%s" % (delta)) #integers
+            logger.info("delta=%s" % delta)
+            '''
+
+            if PROFILE:
+                logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
+                logger.info("Matching took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
+                
+                
             
             
 

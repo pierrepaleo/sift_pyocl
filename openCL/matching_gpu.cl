@@ -95,7 +95,7 @@ __kernel void matching(
 		}
 		
 	}//end "i loop"
-
+	
 	if (dist2 != 0 && dist1/dist2 < ratio_th) {
 		int2 pair = 0;
 		pair.s0 = gid0;
