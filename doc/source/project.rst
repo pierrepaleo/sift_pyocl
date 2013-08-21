@@ -53,33 +53,27 @@ Test suites ensure both non regression over time and ease the distribution under
 
 SIFT_PyOCL comes with test-suites for different stages of the process. All the OpenCL kernels (23 in total) are tested and compared to a Python implementation. For the last steps (keypoints orientation assignment and descriptor computation), the Python implementation is slow ; the ASIFT version can be used for the comparisons (see https://github.com/kif/imageAlignment/tree/numpy).
 
-To run all the tests, type ``python test/test_all.py``. 
+To run all the tests, use ``python test/test_all.py``. 
 
 
 .. csv-table:: List of test suites
    :header: "Name", "Stmts", "Miss", "Cover"
    :widths: 50, 8, 8, 8
    
-   "benchmark.py"
    "test_all.py"
    "test_image.py"
    "test_leastsq.py"
-   "crash.py"
    "test_convol.py"
    "test_transform.py"
    "test_image_functions.py"
    "test_matching.py"
-   "demo.py"
-   "profile.py"
    "test_image_setup.py"
    "utilstest.py"
-   "demo_match.py"
    "test_cuda_shm.py"
    "test_preproc.py"
    "test_algebra.py"
    "test_gaussian.py"
    "test_keypoints.py"
-   "match.py"
    "test_reductions.py"
 
 
@@ -119,18 +113,18 @@ In the file ``test/test_image_setup.py``, SIFT parameters can be modified. The t
 | Parameter name | Default value  | Description                                                  |
 +================+================+==============================================================+
 | border_dist    | 5              | Distance to the border. The pixels located at ``border_dist``| 
-|                |                |  pixels from the border will be ignored                      |
+|                |                | pixels from the border will be ignored                       |
 +----------------+----------------+--------------------------------------------------------------+
 | peakthresh     | 255.0*0.04/3.0 | Threshold for the gray scale. Pixels whose grayscale is below|
-|                |                |  will be ignored.                                            |
+|                |                | will be ignored.                                             |
 +----------------+----------------+--------------------------------------------------------------+
 | EdgeThresh     | 0.06           | Threshold for the ratio of principal curvatures when testing |
-|                |                |  if point lies on an edge                                    |
-+----------------+-------------------------------------------------------------------------------+
+|                |                | if point lies on an edge                                     |
++----------------+----------------+--------------------------------------------------------------+
 | EdgeThresh0    | 0.08           | Threshold for the ratio of principal curvatures(first octave)|
 +----------------+----------------+--------------------------------------------------------------+
 | doubleimsize   | 0              | The pre-blur factor is :math:`\sqrt{\sigma_0^2 - c^2`}       |
-|                |                |  with ``c = 0.5`` if ``doubleimsize = 0``, ``1.0`` otherwise |
+|                |                | with ``c = 0.5`` if ``doubleimsize = 0``, ``1.0`` otherwise  |
 +----------------+----------------+--------------------------------------------------------------+
 | initsigma      | 1.6            | Initial blur factor (standard deviation of gaussian kernel)  |
 +----------------+----------------+--------------------------------------------------------------+
@@ -142,7 +136,7 @@ In the file ``test/test_image_setup.py``, SIFT parameters can be modified. The t
 +----------------+----------------+--------------------------------------------------------------+
 
 
-Additionally, the test image can be modified. Default is ``l2 = scipy.misc.lena().astype(numpy.float32)``.
+Additionally, the test image can be modified. Default is ``l2 = scipy.misc.lena().astype(numpy.float32)``. You can also specify the device to run on, at the bottom of ``test/utilstest.py`` :  ``ctx = ocl.create_context("GPU")``. Simply remplace "GPU" by "CPU" will run all the tests on the CPU.
 
 The test suites files can have the following constant defined at the top of the file.
 
@@ -159,7 +153,7 @@ The test suites files can have the following constant defined at the top of the 
 +----------------+-------------------------------------------------------------------------------+
 
 
-
+To fasten the tests, you can choose ``octsize = 4`` and ``scale = 1`` for example, as there are certainly less keypoints found in the superior octaves.
 
 
 
