@@ -86,7 +86,7 @@ Folder structure
 
 Each test file in the ``test/`` folder aims at testing an OpenCL kernels files. For example, ``test/test_image.py`` is a test suite for ``openCL/image.cl``. All the OpenCL kernels have a reference implementation in Python, in file ``test/test_image_functions.py`` -- that is, SIFT is almost entirely re-written in Python, however, the functions are not written to be efficient.
 
-For the last steps (orientation assignment, descriptors computation, matching), the Python implementation becomes slow for all the previous functions have to be called. Instead, one can use the ``feature`` module available here_.
+For the last steps (orientation assignment, descriptors computation, matching), the Python implementation becomes slow because all the previous functions have to be called. Instead, one can use the ``feature`` module available here_.
 
 .. _here: https://github.com/kif/imageAlignment/tree/numpy
 
@@ -99,7 +99,7 @@ It contains a Python wrapper for a SIFT C++ implementation. After installing it 
    s = feature.SiftAlignment()
    u = s.sift(l);
 
-This module can be used to compare SIFT_PyOCL with ``feature.SiftAlignment`` results.
+This module can be used to compare SIFT_PyOCL with ``feature.SiftAlignment`` results. SIFT_PyOCL was based on this implementation.
 
 
 Customizing tests parameters
