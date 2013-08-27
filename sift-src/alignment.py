@@ -44,8 +44,9 @@ import numpy
 import pyopencl, pyopencl.array
 from .param import par
 from .opencl import ocl
-from .utils import calc_size, kernel_size, sizeof, matching_correction 
-logger = logging.getLogger("sift.match")
+from .utils import calc_size, kernel_size, sizeof, matching_correction
+import logging
+logger = logging.getLogger("sift.alignment")
 from pyopencl import mem_flags as MF
 #from scipy.optimize import leastsq
 from . import MatchPlan, SiftPlan
