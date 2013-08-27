@@ -246,3 +246,4 @@ class MatchPlan(object):
         with self._sem:
             self.roi = None
             self.buffers["ROI"] = None
+

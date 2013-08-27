@@ -90,6 +90,31 @@ def _gcd(a, b):
 
 
     
+def matching_correction(matching):
+    '''
+    Given the matching between two list of keypoints, return the linear transformation to correct kp2 with respect to kp1
+    '''
+    N = matching.shape[0]
+    #solving normals equations for least square fit
+    X = numpy.zeros((2*N,6))
+    X[::2,2:] = 1,0,0,0
+    X[::2,0] = matching.x[:,0]
+    X[::2,1] = matching.y[:,0]
+    X[1::2,0:3] = 0,0,0
+    X[1::2,3] = matching.x[:,0]
+    X[1::2,4] = matching.y[:,0]
+    X[1::2,5] = 1
+    y = numpy.zeros((2*N,1))
+    y[::2,0] = matching.x[:,1]
+    y[1::2,0] = matching.y[:,1]
+    A = numpy.dot(X.transpose(),X)
+    sol = numpy.dot(numpy.linalg.inv(A),numpy.dot(X.transpose(),y))
+#    sol = numpy.dot(numpy.linalg.pinv(X),y) #pseudo-inverse is slower
+#    MSE = numpy.linalg.norm(y - numpy.dot(X,sol))**2/N #Mean Squared Error, if needed
+    return sol
+
+
+
     
     
     
@@ -102,8 +127,5 @@ def _gcd(a, b):
     
     
     
-    
-    
-    
-    
+
 

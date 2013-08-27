@@ -1,27 +1,23 @@
-
-
-
-
 /*
  *
  *	Computes the transformation to correct the image given a set of parameters
  *		[[a b c]         
  *		[d e f]]  
  *
- *		= [matrix offset]
+ *		= [matrix, offset]
  *
  * @param image: Pointer to global memory with the input image
  * @param output: Pointer to global memory with the outpu image
- * @param p1: 3-tuple, part of the transformation parameters ([a b c])
- * @param p2: 3-tuple, part of the transformation parameters ([d e f])
- * @param width: width of the input image
- * @param height: height of the input image
+ * @param matrix: "float4" struct for the transformation matrix
+ * @param offset: "float2" struct for the offset vector
+ * @param image_width Image width
+ * @param image_height Image height
+ * @param output_width Output width, can differ from image width
+ * @param output_height Ouput height, can differ from image height
  * @param fill: Default value to fill the image with
- *		
+ * @param mode: Interpolation mode. 0 = no interpolation, 1 = bilinear interpolation		
  *
  */
-
-//TODO: do not interpolate at the borders
 
 __kernel void transform(
 	__global float* image,
@@ -46,10 +42,11 @@ __kernel void transform(
 	int x = gid0,
 		y = gid1;
 	
-	float tx = dot(mat.s02,(float2) (x,y)),	//x' = a*x + b*y + c
-		ty = dot(mat.s13,(float2) (x,y));	//y' = d*x + e*y + f
-	tx += off.s0;
-	ty += off.s1;
+	float tx = dot(mat.s23,(float2) (y,x)), //be careful to the order that differs from Python...Here Fortran convention is used
+		ty = dot(mat.s01,(float2) (y,x));
+
+	tx += off.s1;
+	ty += off.s0;
 	
 	int tx_next = ((int) tx) +1,
 		tx_prev = (int) tx,
@@ -57,21 +54,54 @@ __kernel void transform(
 		ty_prev = (int) ty;
 	
 	float interp = fill;
+
+	if (0.0f <= tx && tx < image_width && 0.0f <= ty && ty < image_height) {
 	
-	//why "0 <= tx && 0 <= ty" rather than "0 <= tx_prev && 0 <= ty_prev" ?!	
-	if (0 <= tx && tx_next < image_width && 0 <= ty && ty_next < image_height) {
 	
-		//bilinear interpolation
-		float interp1 = ((float) (tx_next - tx))/((float) (tx_next - tx_prev)) * image[ty_prev*image_width+tx_prev]
-					  + ((float) (tx - tx_prev))/((float) (tx_next - tx_prev)) * image[ty_prev*image_width+tx_next],
-					
-			interp2 = ((float) (tx_next - tx))/((float) (tx_next - tx_prev)) * image[ty_next*image_width+tx_prev]
-					+ ((float) (tx - tx_prev))/((float) (tx_next - tx_prev)) * image[ty_next*image_width+tx_next];
+		if (mode == 1) { //bilinear interpolation
+
+			float image_p = image[ty_prev*image_width+tx_prev],
+				image_x = image[ty_prev*image_width+tx_next],
+				image_y = image[ty_next*image_width+tx_prev],
+				image_n = image[ty_next*image_width+tx_next];
+			
+			if (tx_next >= image_width) {
+				image_x = fill;
+				image_n = fill;
+			}
+			if (ty_next >= image_height) {
+				image_y = fill;
+				image_n = fill;
+			}
 	
-		interp = ((float) (ty_next - ty))/((float) (ty_next - ty_prev)) * interp1
-			   + ((float) (ty - ty_prev))/((float) (ty_next - ty_prev)) * interp2;
+			//bilinear interpolation
+			float interp1 = ((float) (tx_next - tx)) * image_p
+						  + ((float) (tx - tx_prev)) * image_x,
+				
+				interp2 = ((float) (tx_next - tx)) * image_y
+						+ ((float) (tx - tx_prev)) * image_n;
+
+			interp = ((float) (ty_next - ty)) * interp1
+				   + ((float) (ty - ty_prev)) * interp2;
+
+		}
 	
+		else { //no interpolation
+			interp = image[((int) ty)*image_width+((int) tx)];
+		}
 	}
+	
+	
+	//to be coherent with scipy.ndimage.interpolation.affine_transform
+	float u = -0.5; //-0.95
+	float v = -0.5;
+	if (tx >= image_width+u) {
+		interp = fill;
+	}
+	if (ty >= image_height+v) {
+		interp = fill;
+	}
+	
 
 	output[gid1*output_width+gid0] = interp;
 

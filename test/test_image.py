@@ -110,7 +110,6 @@ class test_image(unittest.TestCase):
         t2 = time.time()
         delta_norm = abs(ref_norm - res_norm).max()
         delta_ori = abs(ref_ori - res_ori).max()
-        PRINT_KEYPOINTS = True
         if (PRINT_KEYPOINTS):
             rmin, cmin = 0, 0
             rmax, cmax = rmin+6, cmin+6

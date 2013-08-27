@@ -68,7 +68,9 @@ class DemoSift(object):
         else:
             self.filename = UtilsTest.getimage("wikipedia/commons/9/94/Esrf_grenoble.jpg")
         self.image_rgb = scipy.misc.imread(self.filename)
-        self.image_bw = 0.299 * self.image_rgb[:, :, 0] + 0.587 * self.image_rgb[:, :, 1] + 0.114 * self.image_rgb[:, :, 2]
+        if self.image_rgb.ndim != 2:
+            self.image_bw = 0.299 * self.image_rgb[:, :, 0] + 0.587 * self.image_rgb[:, :, 1] + 0.114 * self.image_rgb[:, :, 2]
+        else: self.image_bw = self.image_rgb
         if feature:
             self._sift_cpp = feature.SiftAlignment()
         self._sift_ocl = sift.SiftPlan(template=self.image_rgb, device=device, devicetype=devicetype, profile=profile)
