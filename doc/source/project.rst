@@ -109,8 +109,7 @@ In the file ``test/test_image_setup.py``, SIFT parameters can be modified. The t
 
 .. csv-table:: SIFT parameters
    :header: "Parameter name", "Default value", "Description"
-   :widths: 50, 8, 8, 100
-   
+   :widths: 50, 8, 100
    
    "border_dist",      "5",              "Distance to the border. The pixels located at ``border_dist`` pixels from the border will be ignored"    
    "peakthresh",       "255.0*0.04/3.0", "Threshold for the gray scale. Pixels whose grayscale is below will be ignored."    
