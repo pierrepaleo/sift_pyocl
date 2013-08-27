@@ -78,7 +78,7 @@ SIFT keypoints computation
 
 The keypoints are detected in several steps according to Lowe's paper_ :
 
-.. _paper: www.cs.ubc.ca/~lowe/papers/ijcv04.pdf
+.. _paper: "http://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf"
 
 * Keypoints detection: local extrema are detected in the *scale-space* :math:`(x, y, s)`. Every pixel is compared to its neighborhood in the image itself, and in the previous/next scale factor images. 
 * Keypoints refinement: keypoints located on corners are discarded. Additionaly, a second-order interpolation is done to improve the keypoints accuracy, modifying the coordinates :math:`(x, y, s)`.
@@ -246,6 +246,7 @@ It both fastens the processing and avoids to do match keypoints that are not on 
 References
 ..........
 
-- David G. Lowe, Distinctive image features from scale-invariant keypoints, International Journal of Computer Vision, vol. 60, no 2, 2004, p. 91–110 - http://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf
+- David G. Lowe, Distinctive image features from scale-invariant keypoints, International Journal of Computer Vision, vol. 60, no 2, 2004, p. 91–110 - "http://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf"
+
 
 

@@ -108,36 +108,36 @@ Customizing tests parameters
 In the file ``test/test_image_setup.py``, SIFT parameters can be modified. The tests are run on a single scale of one octave, this can be modified as well.
 
 .. csv-table:: SIFT parameters
-   :header: "Parameter name", "Default value", "Description"
-   :widths: 50, 8, 100
-   
-   "border_dist",      "5",              "Distance to the border. The pixels located at ``border_dist`` pixels from the border will be ignored"    
-   "peakthresh",       "255.0*0.04/3.0", "Threshold for the gray scale. Pixels whose grayscale is below will be ignored."    
-   "EdgeThresh",       "0.06",           "Threshold for the ratio of principal curvatures when testing if point lies on an edge"
-   "EdgeThresh0",      "0.08",           "Threshold for the ratio of principal curvatures (first octave)"
-   "doubleimsize",     "0",              "The pre-blur factor is :math:`\sqrt{\sigma_0^2 - c^2`} with ``c = 0.5`` if ``doubleimsize = 0``, ``1.0`` otherwise"
-   "initsigma",        "1.6",            "Initial blur factor (standard deviation of gaussian kernel)"
-   "nb_keypoints",     "1000",           "Maximum number of keypoints, for buffers allocating. If you are testing large images, take nb_keypoints = 10000 !"
-   "octsize",          "1",              "Initially 1, then twiced at each octave. It is a power of two"
-   "scale",            "1",              "``scale`` can be 1, 2 or 3. Any other value is invalid !"
-   
-   
+    :header: "Parameter name" , "Default value" , "Description"
+    :widths: 18, 18, 40
+
+    "border_dist",   "5",              "Distance to the border. The pixels located at ``border_dist``" 
+    "peakthresh",         "255.0*0.04/3.0",     "Threshold for the gray scale. Pixels whose grayscale is below will be ignored."
+    "EdgeThresh",         "0.06",               "Threshold for the ratio of principal curvatures when testing if point lies on an edge"
+    "EdgeThresh0",        "0.08",               "Threshold for the ratio of principal curvatures(first octave)"
+    "doubleimsize",       "0",                  "The pre-blur factor is :math:`\sqrt{\sigma_0^2 - c^2}` with ``c = 0.5`` if ``doubleimsize = 0``, ``1.0`` otherwise "
+    "initsigma",         "1.6",                "Initial blur factor (standard deviation of gaussian kernel)"
+    "nb_keypoints",       "1000",               "Maximum number of keypoints, for buffers allocating"
+    "ocsize",             "1",                  "Initially 1, then twiced at each octave. It is a power of two"
+    "scale",              "1",                  "``scale`` can be 1, 2 or 3. Any other value is invalid !"
+
 
 Additionally, the test image can be modified. Default is ``l2 = scipy.misc.lena().astype(numpy.float32)``. You can also specify the device to run on, at the bottom of ``test/utilstest.py`` :  ``ctx = ocl.create_context("GPU")``. Simply remplace "GPU" by "CPU" will run all the tests on the CPU.
 
 The test suites files can have the following constant defined at the top of the file.
 
-.. csv-table:: Test suites constants
-   :header: "Constant name", "Description"
-   :widths: 50, 100
-   
-   "SHOW_FIGURES",     "If True, displays the figures with matplotlib"
-   "PRINT_KEYPOINTS",  "If True, displays parts of the keypoints vector for debugging"
-   "USE_CPU ",         "If True, runs the tests on CPU"
-   "USE_CPP_SIFT",     "If True, uses ``feature`` module for keypoints comparison instead of python"
-   
-   
+.. csv-table:: Default options, mangled in the  
+    :header: "Constant name","Description"
+    :widths: 18, 60
+
+    "SHOW_FIGURES",       "If True, displays the figures with matplotlib                                 "
+    "PRINT_KEYPOINTS",    "If True, displays parts of the keypoints vector for debugging                 "
+    "USE_CPU",            "If True, runs the tests on CPU                                                "
+    "USE_CPP_SIFT",       "If True, uses ``feature`` module for keypoints comparison instead of python   "
+
+
 To fasten the tests, you can choose ``octsize = 4`` and ``scale = 1`` for example, as there are certainly less keypoints found in the superior octaves.
+
 
 
 
