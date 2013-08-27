@@ -14,9 +14,18 @@ except:
     logger.error("Feature is not available to compare results with C++ implementation")
     feature = None
     res = numpy.empty(0)
-
-img1 = scipy.misc.imread("testimages/img1.jpg")
-img2 = scipy.misc.imread("testimages/img2.jpg")
+    
+img1 = scipy.misc.imread("../../test_match/wiw2.jpg")
+img2 = scipy.misc.imread("../../test_match/waldo.jpg")
+'''
+img1 = scipy.misc.imread("../test_images/fruit_bowl.png")
+tmp = scipy.misc.imread("../test_images/banana.png")
+img2 = numpy.zeros_like(img1)
+img2 = img2 + 255
+d0 = (img1.shape[0] - tmp.shape[0])/2
+d1 = (img1.shape[1] - tmp.shape[1])/2
+img2[d0:-d0,d1:-d1-1] = numpy.copy(tmp)
+'''       
 plan = sift.SiftPlan(template=img1, devicetype="gpu")
 kp1 = plan.keypoints(img1)
 kp2 = plan.keypoints(img2)
@@ -35,10 +44,13 @@ fig.show()
 for i in range(m.shape[0]):
     k1 = m[i, 0]
     k2 = m[i, 1]
-    con = ConnectionPatch(xyA=(k1.x, k1.y), xyB=(k2.x, k2.y), coordsA="data", coordsB="data", axesA=sp1, axesB=sp2, color="red")
+    con = ConnectionPatch(xyA=(k1.x, k1.y), xyB=(k2.x, k2.y), coordsA="data", coordsB="data", axesA=sp1, axesB=sp2, color="blue")
+    con2 = ConnectionPatch(xyA=(k2.x, k2.y), xyB=(k1.x, k1.y), coordsA="data", coordsB="data", axesA=sp2, axesB=sp1, color="blue")
     sp1.add_artist(con)
+    sp2.add_artist(con2)
 #    sp2.add_artist(con)
 
+'''
     x = k1.x
     y = k1.y
     scale = k1.scale
@@ -56,6 +68,7 @@ for i in range(m.shape[0]):
     y0 = y + scale * sin(angle)
     sp2.annotate("", xy=(x, y), xytext=(x0, y0), color="blue",
                      arrowprops=dict(facecolor='blue', edgecolor='blue', width=1),)
+'''
 
 pylab.show()
 

@@ -8,7 +8,9 @@ import sift
 import numpy
 import scipy.misc
 
-lena = scipy.misc.lena()
+#lena = scipy.misc.lena()
+lena = scipy.misc.imread("../../test_images/ESR032h.jpg")
+
 s = sift.SiftPlan(template=lena, profile=True, devicetype="GPU")
 kp = s.keypoints(lena)
 print kp.shape

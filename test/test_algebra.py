@@ -57,6 +57,7 @@ if logger.getEffectiveLevel() <= logging.INFO:
 else:
     PROFILE = False
     queue = pyopencl.CommandQueue(ctx)
+PRINT_KEYPOINTS = False
 
 print "working on %s" % ctx.devices[0].name
 
@@ -166,7 +167,8 @@ class test_algebra(unittest.TestCase):
         k1 = self.program.compact(queue, shape, wg,
             gpu_keypoints.data, output.data, counter.data, startkeypoints, nbkeypoints)
         res = output.get()
-        print res
+        if (PRINT_KEYPOINTS):
+            print res
         count = counter.get()[0]
         t1 = time.time()
         ref, count_ref = my_compact(keypoints, nbkeypoints)
@@ -178,7 +180,9 @@ class test_algebra(unittest.TestCase):
         res_sort = res[res_sort_arg]
         ref_sort_arg = ref[:, 2].argsort(axis=0)
         ref_sort = ref[ref_sort_arg]
-        print (abs(res_sort - ref_sort) > 1e-5).sum()
+        if (PRINT_KEYPOINTS):
+            print "Delta matrix :"
+            print (abs(res_sort - ref_sort) > 1e-5).sum()
         delta = abs((res_sort - ref_sort)).max()
         self.assert_(delta < 1e-5, "delta=%s" % (delta))
         self.assertEqual(count, count_ref, "counters are the same")

@@ -22,7 +22,7 @@ print lena.shape
 
 # lena[:] = 0
 # lena[100:110, 100:110] = 255
-s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128, device=(0, 1))
+s = sift.SiftPlan(template=lena, profile=True, max_workgroup_size=128, device=(1, 0))
 kpg = s.keypoints(lena)
 #except (Exception, pyopencl.RuntimeError) as error:
 #    print error
@@ -33,7 +33,7 @@ kp[:, 0] = kpg.x
 kp[:, 1] = kpg.y
 kp[:, 2] = kpg.scale
 kp[:, 3] = kpg.angle
-print "Non infinite", numpy.isfinite(kpg.angle).sum()
+#print "Non infinite", numpy.isfinite(kpg.angle).sum()
 s.log_profile()
 fig = pylab.figure()
 sp1 = fig.add_subplot(1, 2, 1)
@@ -90,11 +90,11 @@ for i in range(kp.shape[0]):
                      arrowprops=dict(facecolor='blue', edgecolor='blue', width=1),)
 #print numpy.degrees((ref[numpy.argsort(res.scale)][:392] - kp[numpy.argsort(kpg.scale)][:392])[:,3])
 
-print res[:5]
-print ""*80
-print kpg[:5]
+#print res[:5]
+#print ""*80
+#print kpg[:5]
 match = feature.sift_match(res, kpg)
-print match
+#print match
 print match.shape
 fig.show()
 

@@ -5,8 +5,9 @@
 
 #define ABS4(q1,q2) (int) (((int) (q1.s0 < q2.s0 ? q2.s0-q1.s0 : q1.s0-q2.s0)) + ((int) (q1.s1 < q2.s1 ? q2.s1-q1.s1 : q1.s1-q2.s1))+ ((int) (q1.s2 < q2.s2 ? q2.s2-q1.s2 : q1.s2-q2.s2)) + ((int) (q1.s3 < q2.s3 ? q2.s3-q1.s3 : q1.s3-q2.s3)))
 
-
-#define WORKGROUP_SIZE 64
+#ifndef WORKGROUP_SIZE
+	#define WORKGROUP_SIZE 64
+#endif
 
 /*
 	Keypoint (c, r, s, angle) without its descriptor
@@ -94,7 +95,7 @@ __kernel void matching(
 		}
 		
 	}//end "i loop"
-
+	
 	if (dist2 != 0 && dist1/dist2 < ratio_th) {
 		int2 pair = 0;
 		pair.s0 = gid0;
@@ -238,6 +239,7 @@ __kernel void matching_valid(
 
 
 */
+
 
 
 __kernel void matching_v2(
