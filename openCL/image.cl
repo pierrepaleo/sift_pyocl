@@ -769,5 +769,3 @@ __kernel void descriptor(
 }
 
 
-
-

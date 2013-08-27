@@ -8,11 +8,8 @@ import sift
 import numpy
 import scipy.misc
 
-#lena = scipy.misc.lena()
-#shape = 1001, 1599
-lena2 = scipy.misc.imread("/users/kieffer/Pictures/2010-01-21/17h51m32-Canon_PowerShot_G11.jpg")#, flatten=True)
-lena = lena2
-#lena = numpy.ascontiguousarray(lena2[:shape[0], 0:shape[1], :])
-
+lena = scipy.misc.lena()
 s = sift.SiftPlan(template=lena, profile=True, devicetype="GPU")
 kp = s.keypoints(lena)
+print kp.shape
+s.log_profile()

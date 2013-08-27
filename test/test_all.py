@@ -55,14 +55,14 @@ from test_matching import test_suite_matching
 
 def test_suite_all():
     testSuite = unittest.TestSuite()
+    testSuite.addTest(test_suite_algebra())
     testSuite.addTest(test_suite_gaussian())
     testSuite.addTest(test_suite_preproc())
     testSuite.addTest(test_suite_reductions())
     testSuite.addTest(test_suite_convol())
-    testSuite.addTest(test_suite_algebra())
     testSuite.addTest(test_suite_image())
     testSuite.addTest(test_suite_keypoints())
-    testSuite.addTest(test_suite_matching())
+#    testSuite.addTest(test_suite_matching())
     return testSuite
 
 if __name__ == '__main__':

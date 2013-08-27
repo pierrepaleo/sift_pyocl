@@ -44,7 +44,6 @@
 #define REDUCE(a, b) ((float2)(fmax(a.x,b.x),fmin(a.y,b.y)))
 #define READ_AND_MAP(i) ((float2)(data[i],data[i]))
 
-
 /**
  * \brief max_min_global_stage1: Look for the maximum an the minimum of an array. stage1
  *

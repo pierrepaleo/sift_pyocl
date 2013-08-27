@@ -42,6 +42,8 @@ import sift
 import numpy
 import scipy.misc
 import pylab
+SHOW_FIGURES = False
+
 try:
     import feature
 except:
@@ -62,28 +64,30 @@ def cmp_kp(a, b):
 
 
 class DemoSift(object):
-    def __init__(self, filename=None, devicetype=None, device=None, profile=False):
-        if filename and os.path.exists(filename):
-            self.filename = filename
-        else:
-            self.filename = UtilsTest.getimage("wikipedia/commons/9/94/Esrf_grenoble.jpg")
-        self.image_rgb = scipy.misc.imread(self.filename)
+    def __init__(self, fname, devicetype=None, device=None):
+        
+
+        self.image_rgb = scipy.misc.imread(fname)
         self.image_bw = 0.299 * self.image_rgb[:, :, 0] + 0.587 * self.image_rgb[:, :, 1] + 0.114 * self.image_rgb[:, :, 2]
         if feature:
             self._sift_cpp = feature.SiftAlignment()
-        self._sift_ocl = sift.SiftPlan(template=self.image_rgb, device=device, devicetype=devicetype, profile=profile)
+        self._sift_ocl = sift.SiftPlan(template=self.image_rgb, device=device, devicetype=devicetype)
         self.kp_cpp = numpy.empty(0)
         self.kp_ocl = numpy.empty(0)
-        self.fig = pylab.figure()
-        self.sp1 = self.fig.add_subplot(1, 2, 1)
-        self.im1 = self.sp1.imshow(self.image_rgb)
-        self.sp1.set_title("OpenCL: %s keypoint" % self.kp_ocl.size)
-        self.sp2 = self.fig.add_subplot(1, 2, 2)
-        self.im2 = self.sp2.imshow(self.image_bw, cmap="gray")
-        self.sp2.set_title("C++: %s keypoint" % self.kp_cpp.size)
-        self.fig.show()
+        
+        if SHOW_FIGURES == True:
+            self.fig = pylab.figure()
+            self.sp1 = self.fig.add_subplot(1, 2, 1)
+            self.im1 = self.sp1.imshow(self.image_rgb)
+            self.sp1.set_title("OpenCL: %s keypoint" % self.kp_ocl.size)
+            self.sp2 = self.fig.add_subplot(1, 2, 2)
+            self.im2 = self.sp2.imshow(self.image_bw, cmap="gray")
+            self.sp2.set_title("C++: %s keypoint" % self.kp_cpp.size)
+            self.fig.show()
+        
         self.timing_cpp = None
         self.timing_ocl = None
+        self.speedups = numpy.zeros((1,3),dtype=numpy.float32)
 
     def sift_cpp(self):
         print(os.linesep + "Running SIFT using C++ code")
@@ -91,11 +95,11 @@ class DemoSift(object):
         self.kp_cpp = self._sift_cpp.sift(self.image_bw)
         t1 = time.time()
         self.timing_cpp = t1 - t0
-        if "size" not in dir(self.kp_cpp):
-            return #we are using an old kind of Sift-C++
-        self.sp2.set_title("C++: %s keypoint" % self.kp_cpp.size)
-        self.fig.canvas.draw()
+        if SHOW_FIGURES == True:
+            self.sp2.set_title("C++: %s keypoint" % self.kp_cpp.size)
+            self.fig.canvas.draw()
         self.kp_cpp.sort(order=["scale", "angle", "x", "y"])
+        return self.kp_cpp.size
 
     def sift_ocl(self):
         print(os.linesep + "Running SIFT using OpenCL code")
@@ -103,13 +107,19 @@ class DemoSift(object):
         self.kp_ocl = self._sift_ocl.keypoints(self.image_rgb)
         t1 = time.time()
         self.timing_ocl = t1 - t0
-        self.sp1.set_title("OpenCL: %s keypoint" % self.kp_ocl.size)
-        self.fig.canvas.draw()
+        if SHOW_FIGURES == True:
+            self.sp1.set_title("OpenCL: %s keypoint" % self.kp_ocl.size)
+            self.fig.canvas.draw()
         self.kp_ocl.sort(order=["scale", "angle", "x", "y"])
+        return self.kp_ocl.size
 
-    def timings(self):
+    def timings(self,kp_ocl):
         if self.kp_ocl.size > 0 and self.kp_cpp > 0:
-            print("Computing time using C++: %.3fms\t using OpenCL: %.3fms:\t Speed up: %.3f" % (1e3 * self.timing_cpp, 1e3 * self.timing_ocl, self.timing_cpp / self.timing_ocl))
+            speedup = self.timing_cpp / self.timing_ocl
+            self.speedups[0] = speedup, self.image_rgb.size, kp_ocl
+            print("Computing time using C++: %.3fms\t using OpenCL: %.3fms:\t Speed up: %.3f" % (1e3 * self.timing_cpp, 1e3 * self.timing_ocl, speedup))
+        return self.speedups
+            
 
     def show(self, max=1000):
         if max == None:
@@ -165,44 +175,53 @@ if __name__ == "__main__":
     parser.add_option("-t", "--type", dest="type",
                        help="device type  on which to run like CPU (default) or GPU",
                        default="CPU")
-    parser.add_option("-p", "--profile", dest="profile",
-                       help="Print profiling information of OpenExecution",
-                       default=False, action="store_true")
-    parser.add_option("-f", "--force", dest="force",
-                       help="rebuild the package",
-                       default=False, action="store_true")
-    parser.add_option("-r", "--remove", dest="remove",
-                       help="remove build and rebuild the package",
-                       default=False, action="store_true")
+
     (options, args) = parser.parse_args()
     if options.device:
         device = tuple(int(i) for i in options.device.split(","))
     else:
         device = None
-    if args:
-        for i in args:
-            if os.path.exists(i):
-                print("Processing file %s" % i)
-                d = DemoSift(i, devicetype=options.type, device=device, profile=options.profile)
-                d.sift_ocl()
-                if feature:
-                    d.sift_cpp()
-                d.timings()
-                d.show(1000)
-                d.match()
-                if options.profile:
-                    d._sift_ocl.log_profile()
-                raw_input()
-    else:
-        print("Processing file demo image")
-        d = DemoSift(devicetype=options.type, device=device, profile=options.profile)
-        d.sift_ocl()
-        if feature:
-            d.sift_cpp()
-        d.timings()
-        d.show(1000)
-        d.match()
-        if options.profile:
-            d._sift_ocl.log_profile()
-        raw_input()
 
+    rep = "../test_images"
+    files = [ os.path.join(rep,f) for f in os.listdir(rep) if os.path.isfile(os.path.join(rep,f)) ]
+    speedups = numpy.zeros((numpy.array(files).shape[0],3),dtype=numpy.float32)
+    i=0
+    
+    for filename in files[:]:
+        
+        print("****** processing image %s ********" %(filename))
+        d = DemoSift(fname=filename, devicetype=options.type, device=device)
+        kp_ocl = d.sift_ocl()
+        if feature:
+            kp_cpp = d.sift_cpp()
+        speedups[i] = d.timings(kp_ocl)
+        i += 1
+        if SHOW_FIGURES == True: d.show(1000)
+#        d.match()
+#        print "Done. Press any key..."
+       
+#        raw_input()
+    print "Speedup \t Image size \t Number of keypoints"
+    print speedups
+#    print ""
+#    print files   
+    
+    sp_resolution = speedups[speedups[:,1].argsort()]
+    sp_keypoints = speedups[speedups[:,2].argsort()]
+   
+       
+    f1 = pylab.figure()
+    sp1 = f1.add_subplot(111)
+    sp1.plot(sp_resolution[:,1]*1e-6,sp_resolution[:,0],"bs-")
+    sp1.set_xlabel("Image resolution (Mega pixels)")
+    sp1.set_ylabel("Speedup over CPU")
+    #pylab.show()
+    
+    f2 = pylab.figure()
+    sp2 = f2.add_subplot(111)
+    sp2.plot(sp_keypoints[:,2],sp_keypoints[:,0],"rs-")
+    sp2.set_xlabel("Number of keypoints found")
+    sp2.set_ylabel("Speedup over CPU")
+    pylab.show()
+
+    raw_input()

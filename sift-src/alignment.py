@@ -6,7 +6,7 @@
 #
 
 """
-Contains a class for creating a plan, allocating arrays, compiling kernels and other things like that
+Contains classes for image alignment on a reference images. 
 """
 
 from __future__ import division
@@ -15,7 +15,7 @@ __authors__ = ["Jérôme Kieffer"]
 __contact__ = "jerome.kieffer@esrf.eu"
 __license__ = "BSD"
 __copyright__ = "European Synchrotron Radiation Facility, Grenoble, France"
-__date__ = "2013-06-13"
+__date__ = "2013-07-24"
 __status__ = "beta"
 __license__ = """
 Permission is hereby granted, free of charge, to any person
@@ -40,70 +40,38 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 
 """
-
-from math import ceil
 import numpy
+import pyopencl, pyopencl.array
+from .param import par
+from .opencl import ocl
+from .utils import calc_size, kernel_size, sizeof
+logger = logging.getLogger("sift.match")
+from pyopencl import mem_flags as MF
+from scipy.optimize import leastsq
+from . import MatchPlan, SiftPlan
 
-def calc_size(shape, blocksize):
+class LinearAlign(object):
     """
-    Calculate the optimal size for a kernel according to the workgroup size
+    Align images on a reference image
     """
-    if "__len__" in dir(blocksize):
-        return tuple((int(i) + int(j) - 1) & ~(int(j) - 1) for i, j in zip(shape, blocksize))
-    else:
-        return tuple((int(i) + int(blocksize) - 1) & ~(int(blocksize) - 1) for i in shape)
-
-
-def kernel_size(sigma, odd=False, cutoff=4):
-    """
-    Calculate the optimal kernel size for a convolution with sigma
-    
-    @param sigma: width of the gaussian 
-    @param odd: enforce the kernel to be odd (more precise ?)
-    """
-    size = int(ceil(2 * cutoff * sigma + 1))
-    if odd and size % 2 == 0:
-        size += 1
-    return size
-
-def sizeof(shape, dtype="uint8"):
-    """
-    Calculate the number of bytes needed to allocate for a given structure
-    
-    @param shape: size or tuple of sizes
-    @param dtype: data type
-    """
-    itemsize = numpy.dtype(dtype).itemsize
-    cnt = 1
-    if "__len__" in dir(shape):
-        for dim in shape:
-            cnt *= dim
-    else:
-        cnt = int(shape)
-    return cnt * itemsize
-    
-def _gcd(a, b):
-    """Calculate the greatest common divisor of a and b"""
-    while b:
-        a, b = b, a%b
-    return a
-
-
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-
+    def __init__(self, image, devicetype="CPU", profile=False, device=None, max_workgroup_size=128, roi=None, extra=None):
+        """
+        
+        @param extra: extra space around the image, can be an integer, or a 2 tuple in YX convension
+        """
+        self.ref = image
+        self.sift = SiftPlan(template = image, devicetype=devicetype, profile=profile, device=device, max_workgroup_size=max_workgroup_size)
+        self.kp = self.sift.keypoints(image)
+        self.match =  MatchPlan(devicetype=devicetype, profile=profile, device=device, max_workgroup_size=max_workgroup_size, roi=roi)
+        #TODO optimize match so that the keypoint2 can be optional 
+    def align(self, img, extra=None):
+        """
+        Align 
+        """
+        kp = self.sift.keypoints(img)
+        matching = self.match(kp, self.kp)
+        #TODO optimize match so that the keypoint2 can be optional
+        #then leastsq
+        #then correct image
+        newimg = numpy.empty_like(img)
+        return newimg
