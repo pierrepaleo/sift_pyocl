@@ -7,8 +7,8 @@ Programming language
 
 SIFT_PyOCL uses the following programming languages:
 
-* 6000 lines of Python (with the tests)
-* 4000 lines of OpenCL (C-based language)
+* 4500 lines of Python (with the tests)
+* 2800 lines of OpenCL (C-based language)
 
 Repository:
 -----------
@@ -22,7 +22,7 @@ Collaboration is done via Pull-Requests in github's web interface.
 Run dependencies
 ----------------
 
-* python2.7
+* python 2.6 or 2.7
 * numPy
 * sciPy
 * matplotlib
@@ -57,24 +57,33 @@ To run all the tests, use ``python test/test_all.py``.
 
 
 .. csv-table:: List of test suites
-   :header: "Name", "Stmts", "Miss", "Cover"
-   :widths: 50, 8, 8, 8
+    :header: "Name", "Stmts", "Miss", "Cover"
+    :widths: 50, 8, 8, 8
    
-   "test_all.py"
-   "test_image.py"
-   "test_leastsq.py"
-   "test_convol.py"
-   "test_transform.py"
-   "test_image_functions.py"
-   "test_matching.py"
-   "test_image_setup.py"
-   "utilstest.py"
-   "test_cuda_shm.py"
-   "test_preproc.py"
-   "test_algebra.py"
-   "test_gaussian.py"
-   "test_keypoints.py"
-   "test_reductions.py"
+    "sift/__init__ ","7   ","7","100%"
+    "sift/alignment   ","29   ","0  ","0%"
+    "sift/match  ","132  ","31 ","23%"
+    "sift/opencl ","136  ","93 ","68%"
+    "sift/param","6","5 ","83%"
+    "sift/plan   ","412  ","42 ","10%"
+    "sift/sift ","1","0  ","0%"
+    "sift/utils   ","47  ","17 ","36%"
+    "test_algebra  ","120 ","106 ","88%"
+    "test_all   ","35  ","34 ","97%"
+    "test_convol   ","156 ","107 ","68%"
+    "test_cuda_shm  ","43","0  ","0%"
+    "test_gaussian ","119  ","95 ","79%"
+    "test_image","151 ","121 ","80%"
+    "test_image_functions  ","289 ","223 ","77%"
+    "test_image_setup   ","74  ","67 ","90%"
+    "test_keypoints","179","0  ","0%"
+    "test_keypoints_old","147  ","71 ","48%"
+    "test_matching  ","89  ","78 ","87%"
+    "test_preproc  ","276 ","195 ","70%"
+    "test_reductions","88  ","79 ","89%"
+    "test_transform   141","0  ","0%"
+    "utilstest ","151  ","70 ","46%"
+    "TOTAL ","2677","1371 ","51%"
 
 
 Using the test suites
