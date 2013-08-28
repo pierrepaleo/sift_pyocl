@@ -93,6 +93,8 @@ class SiftPlan(object):
         """
         Contructor of the class
         """
+        self.buffers = {}
+        self.programs = {}
         if template is not None:
             self.shape = template.shape
             self.dtype = template.dtype
@@ -116,8 +118,6 @@ class SiftPlan(object):
         self.procsize = []  # same as  procsize but with dimension in (X,Y) not (slow, fast)
         self.wgsize = []
         self.kpsize = None
-        self.buffers = {}
-        self.programs = {}
         self.memory = None
         self.octave_max = None
         self.red_size = None
