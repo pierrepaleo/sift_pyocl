@@ -60,7 +60,8 @@ class MatchPlan(object):
     kp is a nx132 array. the second dimension is composed of x,y, scale and angle as well as 128 floats describing the keypoint
 
     """
-    kernels = {"matching":128,
+    kernels = {"matching_gpu":64,
+               "matching_cpu":16,
                "memset":128, }
 
     dtype_kp = numpy.dtype([('x', numpy.float32),
@@ -103,6 +104,7 @@ class MatchPlan(object):
             self.USE_CPU = True
         else:
             self.USE_CPU = False
+        self.matching_kernel = "matching_gpu" if not(self.USE_CPU) else "matching_cpu"
         self.roi = None
         if roi:
             self.set_roi(roi)
@@ -190,7 +192,7 @@ class MatchPlan(object):
             evt2 = pyopencl.enqueue_copy(self.queue, self.buffers["Kp_2"].data, nkp2)
             if self.profile:
                 self.events += [("copy H->D KP_1", evt1), ("copy H->D KP_2", evt2)]
-            evt = self.programs["matching"].matching(self.queue, calc_size((nkp1.size,), (self.kernels["matching"],)), (self.kernels["matching"],),
+            evt = self.programs[self.matching_kernel].matching(self.queue, calc_size((nkp1.size,), (self.kernels[self.matching_kernel],)), (self.kernels[self.matching_kernel],),
                                           self.buffers[ "Kp_1" ].data,
                                           self.buffers[ "Kp_2" ].data,
                                           self.buffers[ "match" ].data,
@@ -246,4 +248,5 @@ class MatchPlan(object):
         with self._sem:
             self.roi = None
             self.buffers["ROI"] = None
+
 
