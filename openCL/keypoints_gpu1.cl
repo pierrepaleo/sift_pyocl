@@ -57,7 +57,6 @@ This kernel has to be run with as (8,4,4) workgroup size
 */
 
 
-
 __kernel void descriptor(
 	__global keypoint* keypoints,
 	__global unsigned char *descriptors,
@@ -65,15 +64,16 @@ __kernel void descriptor(
 	__global float* orim,
 	int octsize,
 	int keypoints_start,
-	__global int* keypoints_end,
+//	int keypoints_end,	
+	__global int* keypoints_end, //passing counter value to avoid to read it each time
 	int grad_width,
 	int grad_height)
 {
 
 	int lid0 = get_local_id(0); //[0,8[
-	int lid1 = get_local_id(1); //[0,2[
-	int lid2 = get_local_id(2); //[0,2[
-	int lid = (lid0*2+lid1)*2+lid2; //[0,32[, to expand to [0,128[
+	int lid1 = get_local_id(1); //[0,4[
+	int lid2 = get_local_id(2); //[0,4[
+	int lid = (lid0*4+lid1)*4+lid2; //[0,128[
 	int groupid = get_group_id(0);
 	keypoint k = keypoints[groupid];
 	if (!(keypoints_start <= groupid && groupid < *keypoints_end && k.s1 >=0.0f))
@@ -91,14 +91,14 @@ __kernel void descriptor(
 	float spacing = k.s2/octsize * 3.0f;
 	int radius = (int) ((1.414f * spacing * 2.5f) + 0.5f);
 	
-	int imin = (lid1 == 0 ? -64 : 0),
-		jmin = (lid2 == 0 ? -64 : 0);
-	int imax = imin+64,
-		jmax = jmin+64;
+	int imin = -64 +32*lid1,
+		jmin = -64 +32*lid2;
+	int imax = imin+32,
+		jmax = jmin+32;
 		
 	//memset
-	for (i=0; i < 4; i++) histogram[4*lid+i] = 0.0f;
-	for (j=0; j < 4; j++) for (i=0; i < 8; i++) hist2[(lid*4+j)*8+i] = 0.0f;
+	histogram[lid] = 0.0f;
+	for (i=0; i < 8; i++) hist2[lid*8+i] = 0.0f;
 	
 	for (i=imin; i < imax; i++) {
 		for (j2=jmin/8; j2 < jmax/8; j2++) {	
@@ -169,9 +169,8 @@ __kernel void descriptor(
 	
 
 	barrier(CLK_LOCAL_MEM_FENCE);
-	for (i=0; i < 4; i++)
-		histogram[4*lid+i] 
-		+= hist2[(lid*4+i)*8]+hist2[(lid*4+i)*8+1]+hist2[(lid*4+i)*8+2]+hist2[(lid*4+i)*8+3]+hist2[(lid*4+i)*8+4]+hist2[(lid*4+i)*8+5]+hist2[(lid*4+i)*8+6]+hist2[(lid*4+i)*8+7];
+	histogram[lid] 
+		+= hist2[lid*8]+hist2[lid*8+1]+hist2[lid*8+2]+hist2[lid*8+3]+hist2[lid*8+4]+hist2[lid*8+5]+hist2[lid*8+6]+hist2[lid*8+7];
 
 	barrier(CLK_LOCAL_MEM_FENCE);
 	//memset of 128 values of hist2 before re-use
@@ -181,10 +180,10 @@ __kernel void descriptor(
 	 	Normalization and thre work shared by the 16 threads (8 values per thread)
 	*/
 	
-	
-	for (i=0; i < 4; i++)
-		if (lid*4+i < 64) hist2[lid*4+i] += hist2[lid*4+i+64];
-	
+	//parallel reduction to normalize vector
+	if (lid < 64) {
+		hist2[lid] += hist2[lid+64];
+	}
 	barrier(CLK_LOCAL_MEM_FENCE);
 	if (lid < 32) {
 		hist2[lid] += hist2[lid+32];
@@ -215,46 +214,51 @@ __kernel void descriptor(
 	//Threshold to 0.2 of the norm, for invariance to illumination
 	__local int changed[1];
 	if (lid == 0) changed[0] = 0;
-	for (i=0; i < 4; i++) {
-		if (histogram[lid*4+i] > 0.2f) {
-			histogram[lid*4+i] = 0.2f;
-			atomic_inc(changed);
-		}
+	if (histogram[lid] > 0.2f) {
+		histogram[lid] = 0.2f;
+		atomic_inc(changed);
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
 	//if values have changed, we have to re-normalize
 	if (changed[0]) { 
 		hist2[lid] = histogram[lid]*histogram[lid];
-		
-		for (i=0; i < 4; i++)
-			if (lid*4+i < 64) hist2[lid*4+i] += hist2[lid*4+i+64];
+		if (lid < 64) {
+			hist2[lid] += hist2[lid+64];
+		}
 		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid < 32)
+		if (lid < 32) {
 			hist2[lid] += hist2[lid+32];
+		}
 		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid < 16)
+		if (lid < 16) {
 			hist2[lid] += hist2[lid+16];
+		}
 		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid < 8)
+		if (lid < 8) {
 			hist2[lid] += hist2[lid+8];
+		}
 		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid < 4)
+		if (lid < 4) {
 			hist2[lid] += hist2[lid+4];
+		}
 		barrier(CLK_LOCAL_MEM_FENCE);
-		if (lid < 2)
+		if (lid < 2) {
 			hist2[lid] += hist2[lid+2];
+		}
 		barrier(CLK_LOCAL_MEM_FENCE);
 		if (lid == 0) hist2[0] = rsqrt(hist2[0]+hist2[1]);
 		barrier(CLK_LOCAL_MEM_FENCE);
 		histogram[lid] *= hist2[0];
 	}
-
+	
+	
+	barrier(CLK_LOCAL_MEM_FENCE);
 	//finally, cast to integer
-	for (i=0; i < 4; i++)
-		descriptors[128*groupid+(lid*4+i)]
+		descriptors[128*groupid+lid]
 		= (unsigned char) MIN(255,(unsigned char)(512.0f*histogram[lid]));
 	
 }
+
 
 
 

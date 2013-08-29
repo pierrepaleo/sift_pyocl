@@ -247,5 +247,9 @@ References
 ..........
 
 - David G. Lowe, Distinctive image features from scale-invariant keypoints, International Journal of Computer Vision, vol. 60, no 2, 2004, p. 91–110 - "http://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf"
+<<<<<<< HEAD
+=======
+
+>>>>>>> pierre/master
 
 

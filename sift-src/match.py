@@ -181,6 +181,7 @@ class MatchPlan(object):
         assert type(nkp2) in [numpy.core.records.recarray, pyopencl.array.Array]
         result = None
         with self._sem:
+<<<<<<< HEAD
             if type(nkp1) == numpy.core.records.recarray:
                 if nkp1.size > self.buffers[ "Kp_1" ].size:
                     logger.warning("increasing size of keypoint vector 1 to %i" % nkp1.size)
@@ -210,6 +211,26 @@ class MatchPlan(object):
             evt = self.programs[self.matching_kernel].matching(self.queue, calc_size((nkp1.size,), (self.kernels[self.matching_kernel],)), (self.kernels[self.matching_kernel],),
                                           kpt1_gpu.data,
                                           kpt2_gpu.data,
+=======
+            if nkp1.size > self.buffers[ "Kp_1" ].size:
+                logger.warning("increasing size of keypoint vector 1 to %i" % nkp1.size)
+                self.buffers[ "Kp_1" ] = pyopencl.array.empty(self.queue, (nkp1.size,), dtype=self.dtype_kp)
+
+            if nkp2.size > self.buffers[ "Kp_2" ].size:
+                logger.warning("increasing size of keypoint vector 2 to %i" % nkp2.size)
+                self.buffers[ "Kp_2" ] = pyopencl.array.empty(self.queue, (nkp2.size,), dtype=self.dtype_kp)
+            if min(nkp2.size, nkp1.size) > self.buffers[ "match" ].size:
+                self.buffers[ "match" ] = pyopencl.array.empty(self.queue, (min(nkp2.size, nkp1.size),), dtype=numpy.int32)
+
+            self._reset_buffer()
+            evt1 = pyopencl.enqueue_copy(self.queue, self.buffers["Kp_1"].data, nkp1)
+            evt2 = pyopencl.enqueue_copy(self.queue, self.buffers["Kp_2"].data, nkp2)
+            if self.profile:
+                self.events += [("copy H->D KP_1", evt1), ("copy H->D KP_2", evt2)]
+            evt = self.programs[self.matching_kernel].matching(self.queue, calc_size((nkp1.size,), (self.kernels[self.matching_kernel],)), (self.kernels[self.matching_kernel],),
+                                          self.buffers[ "Kp_1" ].data,
+                                          self.buffers[ "Kp_2" ].data,
+>>>>>>> pierre/master
                                           self.buffers[ "match" ].data,
                                           self.buffers[ "cnt" ].data,
                                           numpy.int32(self.kpsize),
@@ -277,4 +298,5 @@ class MatchPlan(object):
         with self._sem:
             self.roi = None
             self.buffers["ROI"] = None
+
 

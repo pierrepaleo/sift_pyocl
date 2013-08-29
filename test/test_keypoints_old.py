@@ -78,10 +78,10 @@ For Python implementation of tested functions, see "test_image_functions.py"
 class test_keypoints(unittest.TestCase):
     def setUp(self):
 
-        kernel_file = "keypoints_cpu.cl" if USE_CPU else "keypoints_gpu2.cl"
+        kernel_file = "keypoints_cpu.cl" if USE_CPU else "keypoints_gpu1.cl"
         kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), kernel_file)
         kernel_src = open(kernel_path).read()
-        self.program = pyopencl.Program(ctx, kernel_src).build()
+        self.program = pyopencl.Program(ctx, kernel_src).build(options="-cl-nv-arch sm_20")
         self.wg = (1, 128)
 
 
@@ -194,10 +194,10 @@ class test_keypoints(unittest.TestCase):
             wg = 1,
             shape = keypoints.shape[0]*wg[0],
         else:
-            wg = (8, 8, 8)
-            shape = int(keypoints.shape[0]*wg[0]), 8, 8
-#            wg = (4, 4, 8)
-#            shape = int(keypoints.shape[0]*wg[0]), 4, 8
+#            wg = (8, 8, 8)
+#            shape = int(keypoints.shape[0]*wg[0]), 8, 8
+            wg = (8, 4, 4)
+            shape = int(keypoints.shape[0]*wg[0]), 4, 4
                         
         gpu_keypoints = pyopencl.array.to_device(queue, keypoints)
         #NOTE: for the following line, use pyopencl.array.empty instead of pyopencl.array.zeros if the keypoints are compacted
