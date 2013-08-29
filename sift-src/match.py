@@ -165,33 +165,47 @@ class MatchPlan(object):
         """
         self.programs = {}
 
-    def match(self, nkp1, nkp2):
+    def match(self, nkp1, nkp2, raw_results=False):
         """
         calculate the matching of 2 keypoint list
 
+        @param nkp1, nkp2: numpy 1D recarray of keypoints or equivalent GPU buffer
+        @param raw_results: if true return the 2D array of indexes of matching keypoints (not the actual keypoints)
+
         TODO: implement the ROI ...
+
         """
-        assert nkp1.ndim == 1
-        assert nkp2.ndim == 1
-        assert type(nkp1) == numpy.core.records.recarray
-        assert type(nkp2) == numpy.core.records.recarray
+        assert len(nkp1.shape) == 1 #Nota: nkp1.ndim is not valid for gpu_arrays
+        assert len(nkp2.shape) == 1
+        assert type(nkp1) in [numpy.core.records.recarray, pyopencl.array.Array]
+        assert type(nkp2) in [numpy.core.records.recarray, pyopencl.array.Array]
         result = None
         with self._sem:
-            if nkp1.size > self.buffers[ "Kp_1" ].size:
-                logger.warning("increasing size of keypoint vector 1 to %i" % nkp1.size)
-                self.buffers[ "Kp_1" ] = pyopencl.array.empty(self.queue, (nkp1.size,), dtype=self.dtype_kp)
-
-            if nkp2.size > self.buffers[ "Kp_2" ].size:
-                logger.warning("increasing size of keypoint vector 2 to %i" % nkp2.size)
-                self.buffers[ "Kp_2" ] = pyopencl.array.empty(self.queue, (nkp2.size,), dtype=self.dtype_kp)
-            if min(nkp2.size, nkp1.size) > self.buffers[ "match" ].size:
+            if type(nkp1) == numpy.core.records.recarray:
+                if nkp1.size > self.buffers[ "Kp_1" ].size:
+                    logger.warning("increasing size of keypoint vector 1 to %i" % nkp1.size)
+                    self.buffers[ "Kp_1" ] = pyopencl.array.empty(self.queue, (nkp1.size,), dtype=self.dtype_kp)
+                kpt1_gpu = self.buffers[ "Kp_1" ]
+                self._reset_buffer1()
+                evt1 = pyopencl.enqueue_copy(self.queue, kpt1_gpu.data, nkp1)
+                if self.profile:
+                    self.events.append(("copy H->D KP_1", evt1))
+            else:
+                kpt1_gpu = nkp1
+            if type(nkp2) == numpy.core.records.recarray:
+                if nkp2.size > self.buffers[ "Kp_2" ].size:
+                    logger.warning("increasing size of keypoint vector 2 to %i" % nkp2.size)
+                    self.buffers[ "Kp_2" ] = pyopencl.array.empty(self.queue, (nkp2.size,), dtype=self.dtype_kp)
+                kpt2_gpu = self.buffers[ "Kp_2" ]
+                self._reset_buffer2()
+                evt2 = pyopencl.enqueue_copy(self.queue, kpt2_gpu.data, nkp2)
+                if self.profile:
+                    self.events.append(("copy H->D KP_1", evt1))
+            else:
+                kpt2_gpu = nkp2
+            if min(kpt1_gpu.size, kpt2_gpu.size) > self.buffers[ "match" ].size:
                 self.buffers[ "match" ] = pyopencl.array.empty(self.queue, (min(nkp2.size, nkp1.size),), dtype=numpy.int32)
-
-            self._reset_buffer()
-            evt1 = pyopencl.enqueue_copy(self.queue, self.buffers["Kp_1"].data, nkp1)
-            evt2 = pyopencl.enqueue_copy(self.queue, self.buffers["Kp_2"].data, nkp2)
-            if self.profile:
-                self.events += [("copy H->D KP_1", evt1), ("copy H->D KP_2", evt2)]
+            self._reset_output()
             evt = self.programs[self.matching_kernel].matching(self.queue, calc_size((nkp1.size,), (self.kernels[self.matching_kernel],)), (self.kernels[self.matching_kernel],),
                                           self.buffers[ "Kp_1" ].data,
                                           self.buffers[ "Kp_2" ].data,
@@ -204,26 +218,40 @@ class MatchPlan(object):
             if self.profile:
                 self.events += [("matching", evt)]
             size = self.buffers["cnt"].get()[0]
-            result = numpy.recarray(shape=(size, 2), dtype=self.dtype_kp)
-            matching = self.buffers[ "match" ].get()
-            result[:, 0] = nkp1[matching[:size, 0]]
-            result[:, 1] = nkp2[matching[:size, 1]]
+            if raw_results:
+                result = self.buffers[ "match" ].get()
+            else:
+                result = numpy.recarray(shape=(size, 2), dtype=self.dtype_kp)
+                matching = self.buffers[ "match" ].get()
+                result[:, 0] = nkp1[matching[:size, 0]]
+                result[:, 1] = nkp2[matching[:size, 1]]
         return result
-    def _reset_buffer(self):
 
+
+    def _reset_buffer(self):
+        """Reseet all buffers"""
+        self._reset_buffer1()
+        self._reset_buffer2()
+        self._reset_output()
+
+    def _reset_buffer1(self):
         ev1 = self.programs["memset"].memset_kp(self.queue, calc_size((self.buffers[ "Kp_1" ].size,), (self.kernels["memset"],)), (self.kernels["memset"],),
                                           self.buffers[ "Kp_1" ].data, numpy.float32(-1.0), numpy.uint8(0), numpy.int32(self.buffers[ "Kp_1" ].size))
+        if self.profile:
+            self.events.append(("memset Kp1", ev1))
+    def _reset_buffer2(self):
         ev2 = self.programs["memset"].memset_kp(self.queue, calc_size((self.buffers[ "Kp_2" ].size,), (self.kernels["memset"],)), (self.kernels["memset"],),
                                           self.buffers[ "Kp_2" ].data, numpy.float32(-1.0), numpy.uint8(0), numpy.int32(self.buffers[ "Kp_2" ].size))
+        if self.profile:
+            self.events.append(("memset Kp2", ev2))
+    def _reset_output(self):
         ev3 = self.programs["memset"].memset_int(self.queue, calc_size((self.buffers[ "match" ].size,), (self.kernels["memset"],)), (self.kernels["memset"],),
                                                  self.buffers[ "match" ].data, numpy.int32(-1), numpy.int32(self.buffers[ "match" ].size))
         ev4 = self.programs["memset"].memset_int(self.queue, (1,), (1,),
                                                  self.buffers[ "cnt" ].data, numpy.int32(0), numpy.int32(1))
         if self.profile:
-            self.events += [("memset Kp1", ev1),
-                          ("memset Kp2", ev2),
-                          ("memset match", ev3),
-                          ("memset cnt", ev4), ]
+            self.events += [("memset match", ev3),
+                            ("memset cnt", ev4), ]
     def reset_timer(self):
         """
         Resets the profiling timers

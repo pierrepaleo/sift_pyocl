@@ -62,17 +62,20 @@ class LinearAlign(object):
         """
         self.ref = image
         self.sift = SiftPlan(template = image, devicetype=devicetype, profile=profile, device=device, max_workgroup_size=max_workgroup_size)
-        self.kp = self.sift.keypoints(image)
+        self.ref_kp = self.sift.keypoints(image)
         self.match =  MatchPlan(devicetype=devicetype, profile=profile, device=device, max_workgroup_size=max_workgroup_size, roi=roi)
-        #TODO optimize match so that the keypoint2 can be optional 
+#        Allocate reference keypoints on the GPU:
+        self.ref_kp_gpu = pyopencl.array.to_device(self.match.queue, self.ref_kp)
+        #TODO optimize match so that the keypoint2 can be optional
+        self.fill_value = 0
+
     def align(self, img, extra=None):
         """
-        Align 
+        Align image on reference image 
         """
         kp = self.sift.keypoints(img)
-        matching = self.match(kp, self.kp)
+        matching = self.match(self.ref_kp_gpu, kp)
         #TODO optimize match so that the keypoint2 can be optional
-        
         transform_matrix = matching_correction(matching)
         #TODO : call transform kernel to correct image
         
