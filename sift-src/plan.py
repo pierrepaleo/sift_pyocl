@@ -129,7 +129,7 @@ class SiftPlan(object):
         else:
             self.device = device
         self.ctx = pyopencl.Context(devices=[pyopencl.get_platforms()[self.device[0]].get_devices()[self.device[1]]])
-        print self.ctx.devices[0]
+#        print self.ctx.devices[0]
         if profile:
             self.queue = pyopencl.CommandQueue(self.ctx, properties=pyopencl.command_queue_properties.PROFILING_ENABLE)
         else:
@@ -374,7 +374,10 @@ class SiftPlan(object):
             t0 = time.time()
 
             if self.dtype == numpy.float32:
-                evt = pyopencl.enqueue_copy(self.queue, self.buffers[0].data, image)
+                if type(image) == pyopencl.array.Array:
+                    evt = pyopencl.enqueue_copy(self.queue, self.buffers[0].data, image.data)
+                else:
+                    evt = pyopencl.enqueue_copy(self.queue, self.buffers[0].data, image)
                 if self.profile:self.events.append(("copy H->D", evt))
             elif (image.ndim == 3) and (self.dtype == numpy.uint8) and (self.RGB):
                 evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)

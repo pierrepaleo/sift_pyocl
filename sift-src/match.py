@@ -203,15 +203,16 @@ class MatchPlan(object):
                     self.events.append(("copy H->D KP_1", evt1))
             else:
                 kpt2_gpu = nkp2
-            if min(kpt1_gpu.size, kpt2_gpu.size) > self.buffers[ "match" ].size:
-                self.buffers[ "match" ] = pyopencl.array.empty(self.queue, (min(nkp2.size, nkp1.size),), dtype=numpy.int32)
+            if min(kpt1_gpu.size, kpt2_gpu.size) > self.buffers[ "match" ].shape[0]:
+                self.kpsize = min(kpt1_gpu.size, kpt2_gpu.size)
+                self.buffers[ "match" ] = pyopencl.array.empty(self.queue, (self.kpsize, 2), dtype=numpy.int32)
             self._reset_output()
             evt = self.programs[self.matching_kernel].matching(self.queue, calc_size((nkp1.size,), (self.kernels[self.matching_kernel],)), (self.kernels[self.matching_kernel],),
-                                          self.buffers[ "Kp_1" ].data,
-                                          self.buffers[ "Kp_2" ].data,
+                                          kpt1_gpu.data,
+                                          kpt2_gpu.data,
                                           self.buffers[ "match" ].data,
                                           self.buffers[ "cnt" ].data,
-                                          numpy.int32(self.buffers[ "match" ].shape[0]),
+                                          numpy.int32(self.kpsize),
                                           numpy.float32(par.MatchRatio * par.MatchRatio),
                                           numpy.int32(nkp1.size),
                                           numpy.int32(nkp2.size))
@@ -219,7 +220,7 @@ class MatchPlan(object):
                 self.events += [("matching", evt)]
             size = self.buffers["cnt"].get()[0]
             if raw_results:
-                result = self.buffers[ "match" ].get()
+                result = self.buffers[ "match" ].get()[:size, :]
             else:
                 result = numpy.recarray(shape=(size, 2), dtype=self.dtype_kp)
                 matching = self.buffers[ "match" ].get()
