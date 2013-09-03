@@ -89,9 +89,19 @@ class SiftPlan(object):
                                 ('desc', (numpy.uint8, 128))
                                 ])
 
-    def __init__(self, shape=None, dtype=None, devicetype="CPU", template=None, profile=False, device=None, PIX_PER_KP=None, max_workgroup_size=128):
+    def __init__(self, shape=None, dtype=None, devicetype="CPU", template=None, profile=False, device=None, PIX_PER_KP=None, max_workgroup_size=128, context=None):
         """
         Contructor of the class
+        
+        @param shape: shape of the input image
+        @param dtype: data type of the input image
+        @param devicetype: can be 'CPU' or 'GPU'
+        @param template: extract shape and dtype from an image
+        @param profile: collect timing info
+        @param device: 2-tuple of integers
+        @param PIX_PER_KP: number of keypoint pre-allocated: 1 for 10 pixel
+        @param  max_workgroup_size: set to 1 under macosX
+        @param context: provide an external context
         """
         self.buffers = {}
         self.programs = {}
@@ -124,12 +134,20 @@ class SiftPlan(object):
         self._calc_scales()
         self._calc_memory()
         self.LOW_END = 0
-        if device is None:
-            self.device = ocl.select_device(type=devicetype, memory=self.memory, best=True)
+        if context:
+            self.ctx = context
+            device_name = self.ctx.devices[0].name
+            platform_name = self.ctx.devices[0].platform.name
+            platform = ocl.get_platform(platform_name)
+            device = platform.get_device(device_name)
+            self.device = platform.id, device.id
         else:
-            self.device = device
-        self.ctx = pyopencl.Context(devices=[pyopencl.get_platforms()[self.device[0]].get_devices()[self.device[1]]])
-#        print self.ctx.devices[0]
+            if device is None:
+                self.device = ocl.select_device(type=devicetype, memory=self.memory, best=True)
+            else:
+                self.device = device
+            self.ctx = pyopencl.Context(devices=[pyopencl.get_platforms()[self.device[0]].get_devices()[self.device[1]]])
+
         if profile:
             self.queue = pyopencl.CommandQueue(self.ctx, properties=pyopencl.command_queue_properties.PROFILING_ENABLE)
         else:

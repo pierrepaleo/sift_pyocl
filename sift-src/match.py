@@ -71,9 +71,17 @@ class MatchPlan(object):
                                 ('desc', (numpy.uint8, 128))
                                 ])
 
-    def __init__(self, size=16384, devicetype="CPU", profile=False, device=None, max_workgroup_size=128, roi=None):
+    def __init__(self, size=16384, devicetype="CPU", profile=False, device=None, max_workgroup_size=128, roi=None, context=None):
         """
-        Contructor of the class
+        Constructor of the class:
+        
+        @param size: size of the input keypoint-list alocated on the GPU.
+        @param devicetype: can be CPU or GPU
+        @param profile: set to true to activate profiling information collection
+        @param device: 2-tuple of integer, see clinfo
+        @param max_workgroup_size: useful on macOS
+        @param roi: Region Of Interest: TODO 
+        @param context: Use an external context (discard devicetype and device options)
         """
         self.profile = bool(profile)
         self.max_workgroup_size = max_workgroup_size
@@ -84,11 +92,19 @@ class MatchPlan(object):
         self.memory = None
         self.octave_max = None
         self.red_size = None
-        if device is None:
-            self.device = ocl.select_device(type=devicetype, memory=self.memory, best=True)
+        if context:
+            self.ctx = context
+            device_name = self.ctx.devices[0].name
+            platform_name = self.ctx.devices[0].platform.name
+            platform = ocl.get_platform(platform_name)
+            device = platform.get_device(device_name)
+            self.device = platform.id, device.id
         else:
-            self.device = device
-        self.ctx = pyopencl.Context(devices=[pyopencl.get_platforms()[self.device[0]].get_devices()[self.device[1]]])
+            if device is None:
+                self.device = ocl.select_device(type=devicetype, memory=self.memory, best=True)
+            else:
+                self.device = device
+            self.ctx = pyopencl.Context(devices=[pyopencl.get_platforms()[self.device[0]].get_devices()[self.device[1]]])
         if profile:
             self.queue = pyopencl.CommandQueue(self.ctx, properties=pyopencl.command_queue_properties.PROFILING_ENABLE)
         else:

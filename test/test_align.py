@@ -46,7 +46,7 @@ import pyopencl, pyopencl.array
 import scipy, scipy.misc, scipy.ndimage
 import sys
 import unittest
-from utilstest import UtilsTest, getLogger
+from utilstest import UtilsTest, getLogger, ctx
 import sift
 from sift.alignment import LinearAlign
 logger = getLogger(__file__)
@@ -66,7 +66,7 @@ class test_linalign(unittest.TestCase):
         self.shape = self.lena.shape
         self.extra = (10, 11)
         self.img = scipy.ndimage.rotate(self.lena, 20, reshape=False, order=3)
-        self.align = LinearAlign(self.lena)
+        self.align = LinearAlign(self.lena, context=ctx)
 
 
     def test_align(self):
