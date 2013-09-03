@@ -51,6 +51,15 @@ import shutil
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("utilstest")
 
+from optparse import OptionParser
+parser = OptionParser(usage="run tests for SIFT_PyOCL")
+parser.add_option("-D","--device", dest="device", help="destination device, can be a string like CPU, GPU or a 2-tuple of integer", default="GPU")
+parser.add_option("-d", "--debug", dest="debug", help="run in debugging mode, requires matplotlib to show graphs", default=False, action="store_true")
+parser.add_option("-i", "--info", dest="info", help="run in more verbose mode but without graphs", default=False, action="store_true")
+parser.add_option("-f", "--force", dest="force", help="force the build of the library", default=False, action="store_true")
+parser.add_option("-r", "--really-force", dest="remove", help="remove existing build and force the build of the library", default=False, action="store_true")
+options, args = parser.parse_args()
+
 def copy(infile, outfile):
     "link or copy file according to the OS"
     if "symlink" in dir(os):
@@ -239,19 +248,15 @@ def getLogger(filename=__file__):
     force_build = False
     force_remove = False
     level = logging.WARN
-    for opts in sys.argv[1:]:
-        if opts in ["-d", "--debug"]:
-            level = logging.DEBUG
-#            sys.argv.pop(sys.argv.index(opts))
-        elif opts in ["-i", "--info"]:
-            level = logging.INFO
-#            sys.argv.pop(sys.argv.index(opts))
-        elif opts in ["-f", "--force"]:
-            force_build = True
-        elif opts in ["-r", "--really-force"]:
-            force_remove = True
-            force_build = True
-
+    if options.debug:
+        level = logging.DEBUG
+    elif options.info:
+        level = logging.INFO
+    if options.force:
+        force_build = True
+    if options.remove:
+        force_remove = True
+        force_build = True
     mylogger = logging.getLogger(basename)
     mylogger.setLevel(level)
     mylogger.debug("tests loaded from file: %s" % basename)
@@ -266,7 +271,14 @@ def getLogger(filename=__file__):
 
 import sift
 from sift.opencl import ocl
-ctx = ocl.create_context("GPU")
+#This is the shared context for all tests:
+if "," in options.device: #Form 0,1
+    platform, device = options.device.split(",", 1)
+    platform = int(platform[-1])
+    device = int(device[0])
+    ctx = ocl.create_context(platformid=platform, deviceid=device)
+else:
+    ctx = ocl.create_context(devicetype=options.device)
 logger.info("working on %s" % ctx.devices[0].name)
 
 
