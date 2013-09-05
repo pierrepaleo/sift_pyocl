@@ -91,7 +91,7 @@ class LinearAlign(object):
             self.device = platform.id, device.id
         else:
             if device is None:
-                self.device = ocl.select_device(type=devicetype, memory=self.memory, best=True)
+                self.device = ocl.select_device(type=devicetype, best=True)
             else:
                 self.device = device
             self.ctx = pyopencl.Context(devices=[pyopencl.get_platforms()[self.device[0]].get_devices()[self.device[1]]])
@@ -164,19 +164,19 @@ class LinearAlign(object):
     def align(self, img):
         """
         Align image on reference image
-                """
-        print "ref_keypoints:", self.ref_kp.size
+        """
+        logger.debug("ref_keypoints: %s" % self.ref_kp.size)
         with self.sem:
             cpy = pyopencl.enqueue_copy(self.queue, self.buffers["input"].data, numpy.ascontiguousarray(img, numpy.float32))
             if self.profile:self.events.append(("Copy H->D", cpy))
             cpy.wait()
             kp = self.sift.keypoints(self.buffers["input"])
-            print "mod image keypoints:", kp.size
+            logger.debug("mod image keypoints: %s" % kp.size)
             raw_matching = self.match.match(self.buffers["ref_kp_gpu"], kp, raw_results=True)
             matching = numpy.recarray(shape=raw_matching.shape, dtype=MatchPlan.dtype_kp)
-            print "Common keypoints:", raw_matching.shape[0]
+            logger.debug("Common keypoints: %s" % raw_matching.shape[0])
             if matching.size == 0:
-                print("No matching keypoints")
+                logger.warning("No matching keypoints")
                 return
             matching[:, 1] = self.ref_kp[raw_matching[:, 0]]
             matching[:, 0] = kp[raw_matching[:, 1]]
@@ -199,7 +199,7 @@ class LinearAlign(object):
                                    numpy.int32(self.shape[0]),
                                    numpy.int32(self.outshape[1]),
                                    numpy.int32(self.outshape[0]),
-                                   numpy.float32(0.0),
+                                   self.sift.buffers["min"].get()[0],
                                    numpy.int32(1))
             result = self.buffers["output"].get()
         return result
