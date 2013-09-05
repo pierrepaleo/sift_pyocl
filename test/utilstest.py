@@ -279,6 +279,6 @@ if "," in options.device: #Form 0,1
     ctx = ocl.create_context(platformid=platform, deviceid=device)
 else:
     ctx = ocl.create_context(devicetype=options.device)
-logger.info("working on %s" % ctx.devices[0].name)
+print("working on %s" % ctx.devices[0].name)
 
 
