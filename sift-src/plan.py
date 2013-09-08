@@ -92,7 +92,7 @@ class SiftPlan(object):
     def __init__(self, shape=None, dtype=None, devicetype="CPU", template=None, profile=False, device=None, PIX_PER_KP=None, max_workgroup_size=128, context=None):
         """
         Contructor of the class
-        
+
         @param shape: shape of the input image
         @param dtype: data type of the input image
         @param devicetype: can be 'CPU' or 'GPU'
@@ -144,6 +144,9 @@ class SiftPlan(object):
         else:
             if device is None:
                 self.device = ocl.select_device(type=devicetype, memory=self.memory, best=True)
+                if device is None:
+                    self.device = ocl.select_device(memory=self.memory, best=True)
+                    logger.warning('Unable to find suitable device, selecting device: %s,%s' % self.device)
             else:
                 self.device = device
             self.ctx = pyopencl.Context(devices=[pyopencl.get_platforms()[self.device[0]].get_devices()[self.device[1]]])
