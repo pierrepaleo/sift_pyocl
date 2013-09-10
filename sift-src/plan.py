@@ -9,7 +9,7 @@
 Contains a class for creating a plan, allocating arrays, compiling kernels and other things like that
 """
 
-from __future__ import division
+from __future__ import division, print_function
 
 __authors__ = ["Jérôme Kieffer"]
 __contact__ = "jerome.kieffer@esrf.eu"
@@ -136,8 +136,8 @@ class SiftPlan(object):
         self.LOW_END = 0
         if context:
             self.ctx = context
-            device_name = self.ctx.devices[0].name
-            platform_name = self.ctx.devices[0].platform.name
+            device_name = self.ctx.devices[0].name.strip()
+            platform_name = self.ctx.devices[0].platform.name.strip()
             platform = ocl.get_platform(platform_name)
             device = platform.get_device(device_name)
             self.device = platform.id, device.id
@@ -400,10 +400,13 @@ class SiftPlan(object):
                 else:
                     evt = pyopencl.enqueue_copy(self.queue, self.buffers[0].data, image)
                 if self.profile:self.events.append(("copy H->D", evt))
-            elif (image.ndim == 3) and (self.dtype == numpy.uint8) and (self.RGB):
-                evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
+            elif (len(image.shape) == 3) and (self.dtype == numpy.uint8) and (self.RGB):
+                if type(image) == pyopencl.array.Array:
+                    evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image.data)
+                else:
+                    evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
                 if self.profile:self.events.append(("copy H->D", evt))
-                print self.procsize[0], self.wgsize[0]
+#                print self.procsize[0], self.wgsize[0]
                 evt = self.programs["preprocess"].rgb_to_float(self.queue, self.procsize[0], self.wgsize[0],
                                                              self.buffers["raw"].data, self.buffers[0].data, *self.scales[0])
                 if self.profile:self.events.append(("RGB -> float", evt))

@@ -6,10 +6,10 @@
 #
 
 """
-Contains classes for image alignment on a reference images. 
+Contains classes for image alignment on a reference images.
 """
 
-from __future__ import division
+from __future__ import division, print_function, with_statement
 
 __authors__ = ["Jérôme Kieffer"]
 __contact__ = "jerome.kieffer@esrf.eu"
@@ -54,14 +54,14 @@ from . import MatchPlan, SiftPlan
 
 class LinearAlign(object):
     """
-    Align images on a reference image based on an Afine transformation (bi-linear + offset) 
+    Align images on a reference image based on an Afine transformation (bi-linear + offset)
     """
     kernel_file = "transform"
 
     def __init__(self, image, devicetype="CPU", profile=False, device=None, max_workgroup_size=128, roi=None, extra=0, context=None):
         """
         Constructor of the class
-        
+
         @param image: reference image on which other image should be aligned
         @param devicetype: Kind of prefered devce
         @param profile:collect profiling information ?
@@ -75,17 +75,27 @@ class LinearAlign(object):
         self.program = None
         self.ref = numpy.ascontiguousarray(image, numpy.float32)
         self.buffers = {}
-        self.shape = image.shape[:2]
+        self.shape = image.shape
+        if len(self.shape) == 3:
+            self.RGB = True
+            self.shape = self.shape[:2]
+        elif len(self.shape) == 2:
+            self.RGB = False
+        else:
+            raise RuntimeError("Unable to process image of shape %s" % (tuple(self.shape,)))
         if "__len__" not in dir(extra):
             self.extra = (int(extra), int(extra))
         else:
             self.extra = extra[:2]
         self.outshape = tuple(i + 2 * j for i, j in zip(self.shape, self.extra))
-        self.wg = (8, 4)
+        if self.RGB:
+            self.wg = (4, 8, 4)
+        else:
+            self.wg = (8, 4)
         if context:
             self.ctx = context
-            device_name = self.ctx.devices[0].name
-            platform_name = self.ctx.devices[0].platform.name
+            device_name = self.ctx.devices[0].name.strip()
+            platform_name = self.ctx.devices[0].platform.name.strip()
             platform = ocl.get_platform(platform_name)
             device = platform.get_device(device_name)
             self.device = platform.id, device.id
@@ -126,9 +136,12 @@ class LinearAlign(object):
         """
         All buffers are allocated here
         """
-
-        self.buffers["input"] = pyopencl.array.empty(self.queue, shape=self.shape, dtype=numpy.float32)
-        self.buffers["output"] = pyopencl.array.empty(self.queue, shape=self.outshape, dtype=numpy.float32)
+        if self.RGB:
+            self.buffers["input"] = pyopencl.array.empty(self.queue, shape=self.shape + (3,), dtype=numpy.uint8)
+            self.buffers["output"] = pyopencl.array.empty(self.queue, shape=self.outshape + (3,), dtype=numpy.uint8)
+        else:
+            self.buffers["input"] = pyopencl.array.empty(self.queue, shape=self.shape, dtype=numpy.float32)
+            self.buffers["output"] = pyopencl.array.empty(self.queue, shape=self.outshape, dtype=numpy.float32)
         self.buffers["matrix"] = pyopencl.array.empty(self.queue, shape=(2, 2), dtype=numpy.float32)
         self.buffers["offset"] = pyopencl.array.empty(self.queue, shape=(1, 2), dtype=numpy.float32)
     def _free_buffers(self):
@@ -166,8 +179,12 @@ class LinearAlign(object):
         Align image on reference image
         """
         logger.debug("ref_keypoints: %s" % self.ref_kp.size)
+        if self.RGB:
+            data = numpy.ascontiguousarray(img, numpy.uint8)
+        else:
+            data = numpy.ascontiguousarray(img, numpy.float32)
         with self.sem:
-            cpy = pyopencl.enqueue_copy(self.queue, self.buffers["input"].data, numpy.ascontiguousarray(img, numpy.float32))
+            cpy = pyopencl.enqueue_copy(self.queue, self.buffers["input"].data, data)
             if self.profile:self.events.append(("Copy H->D", cpy))
             cpy.wait()
             kp = self.sift.keypoints(self.buffers["input"])
@@ -190,7 +207,13 @@ class LinearAlign(object):
             if self.profile:
                 self.events += [("Copy matrix", cpy1), ("Copy offset", cpy2)]
 
-            self.program.transform(self.queue, calc_size(self.shape, self.wg), self.wg,
+            if self.RGB:
+                shape = (4, self.shape[1], self.shape[0])
+                transform = self.program.transform_RGB
+            else:
+                shape = self.shape[1], self.shape[0]
+                transform = self.program.transform
+            ev = transform(self.queue, calc_size(shape, self.wg), self.wg,
                                    self.buffers["input"].data,
                                    self.buffers["output"].data,
                                    self.buffers["matrix"].data,
@@ -201,6 +224,8 @@ class LinearAlign(object):
                                    numpy.int32(self.outshape[0]),
                                    self.sift.buffers["min"].get()[0],
                                    numpy.int32(1))
+            if self.profile:
+                self.events += [("transform", ev)]
             result = self.buffers["output"].get()
         return result
 

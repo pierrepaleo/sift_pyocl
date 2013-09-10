@@ -74,13 +74,13 @@ class MatchPlan(object):
     def __init__(self, size=16384, devicetype="CPU", profile=False, device=None, max_workgroup_size=128, roi=None, context=None):
         """
         Constructor of the class:
-        
+
         @param size: size of the input keypoint-list alocated on the GPU.
         @param devicetype: can be CPU or GPU
         @param profile: set to true to activate profiling information collection
         @param device: 2-tuple of integer, see clinfo
         @param max_workgroup_size: useful on macOS
-        @param roi: Region Of Interest: TODO 
+        @param roi: Region Of Interest: TODO
         @param context: Use an external context (discard devicetype and device options)
         """
         self.profile = bool(profile)
@@ -94,8 +94,8 @@ class MatchPlan(object):
         self.red_size = None
         if context:
             self.ctx = context
-            device_name = self.ctx.devices[0].name
-            platform_name = self.ctx.devices[0].platform.name
+            device_name = self.ctx.devices[0].name.strip()
+            platform_name = self.ctx.devices[0].platform.name.strip()
             platform = ocl.get_platform(platform_name)
             device = platform.get_device(device_name)
             self.device = platform.id, device.id
