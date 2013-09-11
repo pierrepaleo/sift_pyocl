@@ -174,9 +174,13 @@ class LinearAlign(object):
         """
         self.program = None
 
-    def align(self, img):
+    def align(self, img, shift_only=False, all=False):
         """
         Align image on reference image
+        
+        @param img: numpy array containing the image to align to reference
+        @param all: return in addition ot the image, keypoints, matching keypoints, and transformations as a dict
+        @return: aligned image
         """
         logger.debug("ref_keypoints: %s" % self.ref_kp.size)
         if self.RGB:
@@ -192,16 +196,18 @@ class LinearAlign(object):
             raw_matching = self.match.match(self.buffers["ref_kp_gpu"], kp, raw_results=True)
             matching = numpy.recarray(shape=raw_matching.shape, dtype=MatchPlan.dtype_kp)
             len_match = raw_matching.shape[0]
-            if len_match < 3 * 6: # 3 points per DOF
-                logger.waqrning("Too Few Common keypoints: %s" % len_match)
+            if len_match == 0:
+                logger.warning("No matching keypoints")
+                return
+
+            if (len_match < 3 * 6) or (shift_only): # 3 points per DOF
+                logger.warning("Shift Only mode: Common keypoints: %s" % len_match)
                 dx = matching[:, 0].x - matching[:, 1].x
                 dy = matching[:, 0].y - matching[:, 1].y
-                matrix = numpy.identity(2, dtype == numpy.float32)
+                matrix = numpy.identity(2, dtype=numpy.float32)
+                offset = numpy.array([numpy.median(dy), numpy.median(dx)], numpy.float32)
             else:
                 logger.debug("Common keypoints: %s" % len_match)
-                if matching.size == 0:
-                    logger.warning("No matching keypoints")
-                    return
                 matching[:, 1] = self.ref_kp[raw_matching[:, 0]]
                 matching[:, 0] = kp[raw_matching[:, 1]]
 
@@ -234,6 +240,8 @@ class LinearAlign(object):
             if self.profile:
                 self.events += [("transform", ev)]
             result = self.buffers["output"].get()
+        if all:
+            return {"result":result, "keypoint":kp, "matching":matching, "offset":offset, "matrix": matrix}
         return result
 
     def log_profile(self):
