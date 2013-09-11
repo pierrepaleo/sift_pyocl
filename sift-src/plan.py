@@ -9,7 +9,7 @@
 Contains a class for creating a plan, allocating arrays, compiling kernels and other things like that
 """
 
-from __future__ import division
+from __future__ import division, print_function
 
 __authors__ = ["Jérôme Kieffer"]
 __contact__ = "jerome.kieffer@esrf.eu"
@@ -89,10 +89,22 @@ class SiftPlan(object):
                                 ('desc', (numpy.uint8, 128))
                                 ])
 
-    def __init__(self, shape=None, dtype=None, devicetype="CPU", template=None, profile=False, device=None, PIX_PER_KP=None, max_workgroup_size=128):
+    def __init__(self, shape=None, dtype=None, devicetype="CPU", template=None, profile=False, device=None, PIX_PER_KP=None, max_workgroup_size=128, context=None):
         """
         Contructor of the class
+
+        @param shape: shape of the input image
+        @param dtype: data type of the input image
+        @param devicetype: can be 'CPU' or 'GPU'
+        @param template: extract shape and dtype from an image
+        @param profile: collect timing info
+        @param device: 2-tuple of integers
+        @param PIX_PER_KP: number of keypoint pre-allocated: 1 for 10 pixel
+        @param  max_workgroup_size: set to 1 under macosX
+        @param context: provide an external context
         """
+        self.buffers = {}
+        self.programs = {}
         if template is not None:
             self.shape = template.shape
             self.dtype = template.dtype
@@ -116,20 +128,29 @@ class SiftPlan(object):
         self.procsize = []  # same as  procsize but with dimension in (X,Y) not (slow, fast)
         self.wgsize = []
         self.kpsize = None
-        self.buffers = {}
-        self.programs = {}
         self.memory = None
         self.octave_max = None
         self.red_size = None
         self._calc_scales()
         self._calc_memory()
         self.LOW_END = 0
-        if device is None:
-            self.device = ocl.select_device(type=devicetype, memory=self.memory, best=True)
+        if context:
+            self.ctx = context
+            device_name = self.ctx.devices[0].name.strip()
+            platform_name = self.ctx.devices[0].platform.name.strip()
+            platform = ocl.get_platform(platform_name)
+            device = platform.get_device(device_name)
+            self.device = platform.id, device.id
         else:
-            self.device = device
-        self.ctx = pyopencl.Context(devices=[pyopencl.get_platforms()[self.device[0]].get_devices()[self.device[1]]])
-        print self.ctx.devices[0]
+            if device is None:
+                self.device = ocl.select_device(type=devicetype, memory=self.memory, best=True)
+                if device is None:
+                    self.device = ocl.select_device(memory=self.memory, best=True)
+                    logger.warning('Unable to find suitable device, selecting device: %s,%s' % self.device)
+            else:
+                self.device = device
+            self.ctx = pyopencl.Context(devices=[pyopencl.get_platforms()[self.device[0]].get_devices()[self.device[1]]])
+
         if profile:
             self.queue = pyopencl.CommandQueue(self.ctx, properties=pyopencl.command_queue_properties.PROFILING_ENABLE)
         else:
@@ -374,12 +395,18 @@ class SiftPlan(object):
             t0 = time.time()
 
             if self.dtype == numpy.float32:
-                evt = pyopencl.enqueue_copy(self.queue, self.buffers[0].data, image)
+                if type(image) == pyopencl.array.Array:
+                    evt = pyopencl.enqueue_copy(self.queue, self.buffers[0].data, image.data)
+                else:
+                    evt = pyopencl.enqueue_copy(self.queue, self.buffers[0].data, image)
                 if self.profile:self.events.append(("copy H->D", evt))
-            elif (image.ndim == 3) and (self.dtype == numpy.uint8) and (self.RGB):
-                evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
+            elif (len(image.shape) == 3) and (self.dtype == numpy.uint8) and (self.RGB):
+                if type(image) == pyopencl.array.Array:
+                    evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image.data)
+                else:
+                    evt = pyopencl.enqueue_copy(self.queue, self.buffers["raw"].data, image)
                 if self.profile:self.events.append(("copy H->D", evt))
-                print self.procsize[0], self.wgsize[0]
+#                print self.procsize[0], self.wgsize[0]
                 evt = self.programs["preprocess"].rgb_to_float(self.queue, self.procsize[0], self.wgsize[0],
                                                              self.buffers["raw"].data, self.buffers[0].data, *self.scales[0])
                 if self.profile:self.events.append(("RGB -> float", evt))
@@ -781,6 +808,7 @@ if __name__ == "__main__":
     lena = scipy.misc.lena()
     s = SiftPlan(template=lena)
     s.keypoints(lena)
+
 
 
 

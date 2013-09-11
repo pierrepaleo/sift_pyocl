@@ -8,4 +8,5 @@ import sys, logging
 logging.basicConfig()
 from .plan import SiftPlan
 from .match import MatchPlan
+from .alignment import LinearAlign
 

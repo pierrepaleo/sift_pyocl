@@ -60,7 +60,8 @@ class MatchPlan(object):
     kp is a nx132 array. the second dimension is composed of x,y, scale and angle as well as 128 floats describing the keypoint
 
     """
-    kernels = {"matching":128,
+    kernels = {"matching_gpu":64,
+               "matching_cpu":16,
                "memset":128, }
 
     dtype_kp = numpy.dtype([('x', numpy.float32),
@@ -70,9 +71,17 @@ class MatchPlan(object):
                                 ('desc', (numpy.uint8, 128))
                                 ])
 
-    def __init__(self, size=16384, devicetype="CPU", profile=False, device=None, max_workgroup_size=128, roi=None):
+    def __init__(self, size=16384, devicetype="CPU", profile=False, device=None, max_workgroup_size=128, roi=None, context=None):
         """
-        Contructor of the class
+        Constructor of the class:
+
+        @param size: size of the input keypoint-list alocated on the GPU.
+        @param devicetype: can be CPU or GPU
+        @param profile: set to true to activate profiling information collection
+        @param device: 2-tuple of integer, see clinfo
+        @param max_workgroup_size: useful on macOS
+        @param roi: Region Of Interest: TODO
+        @param context: Use an external context (discard devicetype and device options)
         """
         self.profile = bool(profile)
         self.max_workgroup_size = max_workgroup_size
@@ -83,11 +92,19 @@ class MatchPlan(object):
         self.memory = None
         self.octave_max = None
         self.red_size = None
-        if device is None:
-            self.device = ocl.select_device(type=devicetype, memory=self.memory, best=True)
+        if context:
+            self.ctx = context
+            device_name = self.ctx.devices[0].name.strip()
+            platform_name = self.ctx.devices[0].platform.name.strip()
+            platform = ocl.get_platform(platform_name)
+            device = platform.get_device(device_name)
+            self.device = platform.id, device.id
         else:
-            self.device = device
-        self.ctx = pyopencl.Context(devices=[pyopencl.get_platforms()[self.device[0]].get_devices()[self.device[1]]])
+            if device is None:
+                self.device = ocl.select_device(type=devicetype, memory=self.memory, best=True)
+            else:
+                self.device = device
+            self.ctx = pyopencl.Context(devices=[pyopencl.get_platforms()[self.device[0]].get_devices()[self.device[1]]])
         if profile:
             self.queue = pyopencl.CommandQueue(self.ctx, properties=pyopencl.command_queue_properties.PROFILING_ENABLE)
         else:
@@ -103,6 +120,7 @@ class MatchPlan(object):
             self.USE_CPU = True
         else:
             self.USE_CPU = False
+        self.matching_kernel = "matching_gpu" if not(self.USE_CPU) else "matching_cpu"
         self.roi = None
         if roi:
             self.set_roi(roi)
@@ -163,65 +181,94 @@ class MatchPlan(object):
         """
         self.programs = {}
 
-    def match(self, nkp1, nkp2):
+    def match(self, nkp1, nkp2, raw_results=False):
         """
         calculate the matching of 2 keypoint list
 
+        @param nkp1, nkp2: numpy 1D recarray of keypoints or equivalent GPU buffer
+        @param raw_results: if true return the 2D array of indexes of matching keypoints (not the actual keypoints)
+
         TODO: implement the ROI ...
+
         """
-        assert nkp1.ndim == 1
-        assert nkp2.ndim == 1
-        assert type(nkp1) == numpy.core.records.recarray
-        assert type(nkp2) == numpy.core.records.recarray
+        assert len(nkp1.shape) == 1  # Nota: nkp1.ndim is not valid for gpu_arrays
+        assert len(nkp2.shape) == 1
+        assert type(nkp1) in [numpy.core.records.recarray, pyopencl.array.Array]
+        assert type(nkp2) in [numpy.core.records.recarray, pyopencl.array.Array]
         result = None
         with self._sem:
-            if nkp1.size > self.buffers[ "Kp_1" ].size:
-                logger.warning("increasing size of keypoint vector 1 to %i" % nkp1.size)
-                self.buffers[ "Kp_1" ] = pyopencl.array.empty(self.queue, (nkp1.size,), dtype=self.dtype_kp)
-
-            if nkp2.size > self.buffers[ "Kp_2" ].size:
-                logger.warning("increasing size of keypoint vector 2 to %i" % nkp2.size)
-                self.buffers[ "Kp_2" ] = pyopencl.array.empty(self.queue, (nkp2.size,), dtype=self.dtype_kp)
-            if min(nkp2.size, nkp1.size) > self.buffers[ "match" ].size:
-                self.buffers[ "match" ] = pyopencl.array.empty(self.queue, (min(nkp2.size, nkp1.size),), dtype=numpy.int32)
-
-            self._reset_buffer()
-            evt1 = pyopencl.enqueue_copy(self.queue, self.buffers["Kp_1"].data, nkp1)
-            evt2 = pyopencl.enqueue_copy(self.queue, self.buffers["Kp_2"].data, nkp2)
-            if self.profile:
-                self.events += [("copy H->D KP_1", evt1), ("copy H->D KP_2", evt2)]
-            evt = self.programs["matching"].matching(self.queue, calc_size((nkp1.size,), (self.kernels["matching"],)), (self.kernels["matching"],),
-                                          self.buffers[ "Kp_1" ].data,
-                                          self.buffers[ "Kp_2" ].data,
+            if type(nkp1) == numpy.core.records.recarray:
+                if nkp1.size > self.buffers[ "Kp_1" ].size:
+                    logger.warning("increasing size of keypoint vector 1 to %i" % nkp1.size)
+                    self.buffers[ "Kp_1" ] = pyopencl.array.empty(self.queue, (nkp1.size,), dtype=self.dtype_kp)
+                kpt1_gpu = self.buffers[ "Kp_1" ]
+                self._reset_buffer1()
+                evt1 = pyopencl.enqueue_copy(self.queue, kpt1_gpu.data, nkp1)
+                if self.profile:
+                    self.events.append(("copy H->D KP_1", evt1))
+            else:
+                kpt1_gpu = nkp1
+            if type(nkp2) == numpy.core.records.recarray:
+                if nkp2.size > self.buffers[ "Kp_2" ].size:
+                    logger.warning("increasing size of keypoint vector 2 to %i" % nkp2.size)
+                    self.buffers[ "Kp_2" ] = pyopencl.array.empty(self.queue, (nkp2.size,), dtype=self.dtype_kp)
+                kpt2_gpu = self.buffers[ "Kp_2" ]
+                self._reset_buffer2()
+                evt2 = pyopencl.enqueue_copy(self.queue, kpt2_gpu.data, nkp2)
+                if self.profile:
+                    self.events.append(("copy H->D KP_1", evt1))
+            else:
+                kpt2_gpu = nkp2
+            if min(kpt1_gpu.size, kpt2_gpu.size) > self.buffers[ "match" ].shape[0]:
+                self.kpsize = min(kpt1_gpu.size, kpt2_gpu.size)
+                self.buffers[ "match" ] = pyopencl.array.empty(self.queue, (self.kpsize, 2), dtype=numpy.int32)
+            self._reset_output()
+            evt = self.programs[self.matching_kernel].matching(self.queue, calc_size((nkp1.size,), (self.kernels[self.matching_kernel],)), (self.kernels[self.matching_kernel],),
+                                          kpt1_gpu.data,
+                                          kpt2_gpu.data,
                                           self.buffers[ "match" ].data,
                                           self.buffers[ "cnt" ].data,
-                                          numpy.int32(self.buffers[ "match" ].shape[0]),
+                                          numpy.int32(self.kpsize),
                                           numpy.float32(par.MatchRatio * par.MatchRatio),
                                           numpy.int32(nkp1.size),
                                           numpy.int32(nkp2.size))
             if self.profile:
                 self.events += [("matching", evt)]
             size = self.buffers["cnt"].get()[0]
-            result = numpy.recarray(shape=(size, 2), dtype=self.dtype_kp)
-            matching = self.buffers[ "match" ].get()
-            result[:, 0] = nkp1[matching[:size, 0]]
-            result[:, 1] = nkp2[matching[:size, 1]]
+            if raw_results:
+                result = self.buffers[ "match" ].get()[:size, :]
+            else:
+                result = numpy.recarray(shape=(size, 2), dtype=self.dtype_kp)
+                matching = self.buffers[ "match" ].get()
+                result[:, 0] = nkp1[matching[:size, 0]]
+                result[:, 1] = nkp2[matching[:size, 1]]
         return result
-    def _reset_buffer(self):
 
+
+    def _reset_buffer(self):
+        """Reseet all buffers"""
+        self._reset_buffer1()
+        self._reset_buffer2()
+        self._reset_output()
+
+    def _reset_buffer1(self):
         ev1 = self.programs["memset"].memset_kp(self.queue, calc_size((self.buffers[ "Kp_1" ].size,), (self.kernels["memset"],)), (self.kernels["memset"],),
                                           self.buffers[ "Kp_1" ].data, numpy.float32(-1.0), numpy.uint8(0), numpy.int32(self.buffers[ "Kp_1" ].size))
+        if self.profile:
+            self.events.append(("memset Kp1", ev1))
+    def _reset_buffer2(self):
         ev2 = self.programs["memset"].memset_kp(self.queue, calc_size((self.buffers[ "Kp_2" ].size,), (self.kernels["memset"],)), (self.kernels["memset"],),
                                           self.buffers[ "Kp_2" ].data, numpy.float32(-1.0), numpy.uint8(0), numpy.int32(self.buffers[ "Kp_2" ].size))
+        if self.profile:
+            self.events.append(("memset Kp2", ev2))
+    def _reset_output(self):
         ev3 = self.programs["memset"].memset_int(self.queue, calc_size((self.buffers[ "match" ].size,), (self.kernels["memset"],)), (self.kernels["memset"],),
                                                  self.buffers[ "match" ].data, numpy.int32(-1), numpy.int32(self.buffers[ "match" ].size))
         ev4 = self.programs["memset"].memset_int(self.queue, (1,), (1,),
                                                  self.buffers[ "cnt" ].data, numpy.int32(0), numpy.int32(1))
         if self.profile:
-            self.events += [("memset Kp1", ev1),
-                          ("memset Kp2", ev2),
-                          ("memset match", ev3),
-                          ("memset cnt", ev4), ]
+            self.events += [("memset match", ev3),
+                            ("memset cnt", ev4), ]
     def reset_timer(self):
         """
         Resets the profiling timers
@@ -246,4 +293,5 @@ class MatchPlan(object):
         with self._sem:
             self.roi = None
             self.buffers["ROI"] = None
+
 

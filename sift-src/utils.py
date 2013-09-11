@@ -57,8 +57,8 @@ def calc_size(shape, blocksize):
 def kernel_size(sigma, odd=False, cutoff=4):
     """
     Calculate the optimal kernel size for a convolution with sigma
-    
-    @param sigma: width of the gaussian 
+
+    @param sigma: width of the gaussian
     @param odd: enforce the kernel to be odd (more precise ?)
     """
     size = int(ceil(2 * cutoff * sigma + 1))
@@ -69,7 +69,7 @@ def kernel_size(sigma, odd=False, cutoff=4):
 def sizeof(shape, dtype="uint8"):
     """
     Calculate the number of bytes needed to allocate for a given structure
-    
+
     @param shape: size or tuple of sizes
     @param dtype: data type
     """
@@ -81,7 +81,7 @@ def sizeof(shape, dtype="uint8"):
     else:
         cnt = int(shape)
     return cnt * itemsize
-    
+
 def _gcd(a, b):
     """Calculate the greatest common divisor of a and b"""
     while b:
@@ -89,7 +89,7 @@ def _gcd(a, b):
     return a
 
 
-    
+
 def matching_correction(matching):
     '''
     Given the matching between two list of keypoints, return the linear transformation to correct kp2 with respect to kp1
@@ -115,17 +115,42 @@ def matching_correction(matching):
 
 
 
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+
+def bin2RGB(img):
+    """
+    Perform a 2x2 binning of the image
+    """
+    dtype = img.dtype
+    if dtype == numpy.uint8:
+        out_dtype = numpy.int32
+    else:
+        out_dtype = dtype
+    shape = img.shape
+    if len(shape) == 3:
+        new_shape = shape[0] // 2, shape[1] // 2, shape[2]
+        new_img = img
+    else:
+        new_shape = shape[0] // 2, shape[1] // 2, 1
+        new_img = img.reshape((shape[0], shape[1], 1))
+    out = numpy.zeros(new_shape, dtype=out_dtype)
+    out += new_img[::2,::2,:]
+    out += new_img[1::2,::2,:]
+    out += new_img[1::2,1::2,:]
+    out += new_img[::2,1::2,:]
+    out /= 4
+    if len(shape) != 3:
+        out.shape = new_shape[0],new_shape[1]
+    if dtype == numpy.uint8:
+        return out.astype(dtype)
+    else:
+        return out
+
+
+
+
+
+
+
+
 
 

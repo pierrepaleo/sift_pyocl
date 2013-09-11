@@ -67,7 +67,7 @@ USE_CPP_SIFT = False #use reference cplusplus implementation for descriptors com
 
 
 
-print "working on %s" % ctx.devices[0].name
+#print "working on %s" % ctx.devices[0].name
 
 '''
 For Python implementation of tested functions, see "test_image_functions.py"
@@ -326,7 +326,7 @@ def test_suite_keypoints():
     testSuite = unittest.TestSuite()
     TESTCASES = [{"orientation_gpu":(128,), "keypoints_gpu2":(8, 8, 8)},
                  {"orientation_cpu":(1,), "keypoints_cpu":(1,)},
-                  {"orientation_gpu":(128,), "keypoints_gpu1":(8, 4, 4)},
+                  {"orientation_gpu":(128,), "keypoints_gpu1":(4, 4, 8)},
 
                   ]
     for param in TESTCASES:
