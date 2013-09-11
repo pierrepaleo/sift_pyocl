@@ -174,17 +174,24 @@ class LinearAlign(object):
             logger.debug("mod image keypoints: %s" % kp.size)
             raw_matching = self.match.match(self.buffers["ref_kp_gpu"], kp, raw_results=True)
             matching = numpy.recarray(shape=raw_matching.shape, dtype=MatchPlan.dtype_kp)
-            logger.debug("Common keypoints: %s" % raw_matching.shape[0])
-            if matching.size == 0:
-                logger.warning("No matching keypoints")
-                return
-            matching[:, 1] = self.ref_kp[raw_matching[:, 0]]
-            matching[:, 0] = kp[raw_matching[:, 1]]
+            len_match = raw_matching.shape[0]
+            if len_match < 3 * 6: # 3 points per DOF
+                logger.waqrning("Too Few Common keypoints: %s" % len_match)
+                dx = matching[:, 0].x - matching[:, 1].x
+                dy = matching[:, 0].y - matching[:, 1].y
+                matrix = numpy.identity(2, dtype == numpy.float32)
+            else:
+                logger.debug("Common keypoints: %s" % len_match)
+                if matching.size == 0:
+                    logger.warning("No matching keypoints")
+                    return
+                matching[:, 1] = self.ref_kp[raw_matching[:, 0]]
+                matching[:, 0] = kp[raw_matching[:, 1]]
 
-            transform_matrix = matching_correction(matching)
-            transform_matrix.shape = 2, 3
-            matrix = numpy.ascontiguousarray(transform_matrix[:, :2], dtype=numpy.float32)
-            offset = numpy.ascontiguousarray(transform_matrix[:, -1], dtype=numpy.float32)
+                transform_matrix = matching_correction(matching)
+                transform_matrix.shape = 2, 3
+                matrix = numpy.ascontiguousarray(transform_matrix[:, :2], dtype=numpy.float32)
+                offset = numpy.ascontiguousarray(transform_matrix[:, -1], dtype=numpy.float32)
             cpy1 = pyopencl.enqueue_copy(self.queue, self.buffers["matrix"].data, matrix)
             cpy2 = pyopencl.enqueue_copy(self.queue, self.buffers["offset"].data, offset)
             if self.profile:
