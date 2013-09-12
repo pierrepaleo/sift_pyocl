@@ -58,7 +58,7 @@ class LinearAlign(object):
     """
     kernel_file = "transform"
 
-    def __init__(self, image, devicetype="CPU", profile=False, device=None, max_workgroup_size=128, roi=None, extra=0, context=None):
+    def __init__(self, image, devicetype="CPU", profile=False, device=None, max_workgroup_size=128, ROI=None, extra=0, context=None):
         """
         Constructor of the class
 
@@ -67,7 +67,7 @@ class LinearAlign(object):
         @param profile:collect profiling information ?
         @param device: 2-tuple of integer. see clinfo
         @param max_workgroup_size: seet to 1 for macOSX
-        @param roi: Region of interest: to be implemented
+        @param ROI: Region of interest: to be implemented
         @param extra: extra space around the image, can be an integer, or a 2 tuple in YX convention: TODO!
         """
         self.profile = bool(profile)
@@ -88,6 +88,7 @@ class LinearAlign(object):
         else:
             self.extra = extra[:2]
         self.outshape = tuple(i + 2 * j for i, j in zip(self.shape, self.extra))
+        self.ROI = ROI
         if self.RGB:
             self.wg = (4, 8, 4)
         else:
@@ -108,7 +109,13 @@ class LinearAlign(object):
 
         self.sift = SiftPlan(template=image, context=self.ctx, profile=self.profile, max_workgroup_size=max_workgroup_size)
         self.ref_kp = self.sift.keypoints(image)
-        self.match = MatchPlan(context=self.ctx, profile=self.profile, max_workgroup_size=max_workgroup_size, roi=roi)
+        if self.ROI is not None:
+            kpx = numpy.round(self.ref_kp.x).astype(numpy.int32)
+            kpy = numpy.round(self.ref_kp.y).astype(numpy.int32)
+            masked = self.ROI[(kpy, kpx)].astype(bool)
+            logger.warning("Reducing keypoint list from %i to %i because of the ROI" % (self.ref_kp.size, masked.sum()))
+            self.ref_kp = self.ref_kp[masked]
+        self.match = MatchPlan(context=self.ctx, profile=self.profile, max_workgroup_size=max_workgroup_size)
 #        Allocate reference keypoints on the GPU within match context:
         self.buffers["ref_kp_gpu"] = pyopencl.array.to_device(self.match.queue, self.ref_kp)
         #TODO optimize match so that the keypoint2 can be optional
@@ -177,7 +184,7 @@ class LinearAlign(object):
     def align(self, img, shift_only=False, all=False):
         """
         Align image on reference image
-        
+
         @param img: numpy array containing the image to align to reference
         @param all: return in addition ot the image, keypoints, matching keypoints, and transformations as a dict
         @return: aligned image
@@ -192,7 +199,7 @@ class LinearAlign(object):
             if self.profile:self.events.append(("Copy H->D", cpy))
             cpy.wait()
             kp = self.sift.keypoints(self.buffers["input"])
-            print("ref %s img %s" % (self.buffers["ref_kp_gpu"].shape, kp.shape))
+#            print("ref %s img %s" % (self.buffers["ref_kp_gpu"].shape, kp.shape))
             logger.debug("mod image keypoints: %s" % kp.size)
             raw_matching = self.match.match(kp, self.buffers["ref_kp_gpu"], raw_results=True)
             print(raw_matching.max(axis=0))
@@ -217,11 +224,8 @@ class LinearAlign(object):
                 transform_matrix = matching_correction(matching)
                 offset = numpy.array([transform_matrix[5], transform_matrix[2]], dtype=numpy.float32)
                 matrix = numpy.empty((2, 2), dtype=numpy.float32)
-                matrix[0, 0], matrix[0, 1] = transform_matrix[0], +transform_matrix[3]
-                matrix[1, 0], matrix[1, 1] = +transform_matrix[1], transform_matrix[4]
-                #transform_matrix.shape = 2, 3
-#                matrix = numpy.ascontiguousarray(transform_matrix[:, :2], dtype=numpy.float32)
-#                offset = numpy.ascontiguousarray(transform_matrix[:, -1], dtype=numpy.float32)
+                matrix[0, 0], matrix[0, 1] = transform_matrix[4], transform_matrix[3]
+                matrix[1, 0], matrix[1, 1] = transform_matrix[1], transform_matrix[0]
             cpy1 = pyopencl.enqueue_copy(self.queue, self.buffers["matrix"].data, matrix)
             cpy2 = pyopencl.enqueue_copy(self.queue, self.buffers["offset"].data, offset)
             if self.profile:

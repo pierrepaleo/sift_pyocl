@@ -66,8 +66,9 @@ class test_linalign(unittest.TestCase):
         self.shape = self.lena.shape
         self.extra = (10, 11)
 #        self.img = scipy.ndimage.shift(self.lena, (7, 5))
-        self.img = scipy.ndimage.rotate(self.lena, -20, reshape=False, order=3)
-        self.img = scipy.ndimage.shift(scipy.ndimage.rotate(self.lena, 20, reshape=False, order=3), (7, 5))
+#        self.img = scipy.ndimage.rotate(self.lena, -20, reshape=False, order=3)
+#        self.img = scipy.ndimage.shift(scipy.ndimage.rotate(self.lena, 20, reshape=False, order=3), (7, 5))
+        self.img = scipy.ndimage.affine_transform(self.lena, [[1.1, -0.1], [0.05, 0.9]], [7, 5])
         self.align = LinearAlign(self.lena, context=ctx)
 
 
