@@ -199,17 +199,17 @@ class LinearAlign(object):
             if len_match == 0:
                 logger.warning("No matching keypoints")
                 return
+            matching[:, 1] = self.ref_kp[raw_matching[:, 0]]
+            matching[:, 0] = kp[raw_matching[:, 1]]
 
             if (len_match < 3 * 6) or (shift_only): # 3 points per DOF
                 logger.warning("Shift Only mode: Common keypoints: %s" % len_match)
-                dx = matching[:, 0].x - matching[:, 1].x
-                dy = matching[:, 0].y - matching[:, 1].y
+                dx = matching[:, 1].x - matching[:, 0].x
+                dy = matching[:, 1].y - matching[:, 0].y
                 matrix = numpy.identity(2, dtype=numpy.float32)
                 offset = numpy.array([numpy.median(dy), numpy.median(dx)], numpy.float32)
             else:
                 logger.debug("Common keypoints: %s" % len_match)
-                matching[:, 1] = self.ref_kp[raw_matching[:, 0]]
-                matching[:, 0] = kp[raw_matching[:, 1]]
 
                 transform_matrix = matching_correction(matching)
                 transform_matrix.shape = 2, 3

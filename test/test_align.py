@@ -65,7 +65,7 @@ class test_linalign(unittest.TestCase):
         self.lena = scipy.misc.lena().astype(numpy.float32)
         self.shape = self.lena.shape
         self.extra = (10, 11)
-        self.img = scipy.ndimage.rotate(self.lena, 20, reshape=False, order=3)
+        self.img = scipy.ndimage.shift(scipy.ndimage.rotate(self.lena, 20, reshape=False, order=3), (7, 5))
         self.align = LinearAlign(self.lena, context=ctx)
 
 
@@ -73,8 +73,12 @@ class test_linalign(unittest.TestCase):
         """
         tests the combine (linear combination) kernel
         """
-        out = self.align.align(self.img)
+        out = self.align.align(self.img, 0, 1)
+        for i in out:
+            print i
+            print ("%s:\r%s" % (i, out[i][:5]))
         self.align.log_profile()
+        out = out["result"]
 
         if PROFILE and out is not None:
             fig = pylab.figure()

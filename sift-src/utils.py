@@ -92,7 +92,8 @@ def _gcd(a, b):
 
 def matching_correction(matching):
     '''
-    Given the matching between two list of keypoints, return the linear transformation to correct kp2 with respect to kp1
+    Given the matching between two list of keypoints, 
+    return the linear transformation to correct kp2 with respect to kp1
     '''
     N = matching.shape[0]
     #solving normals equations for least square fit
