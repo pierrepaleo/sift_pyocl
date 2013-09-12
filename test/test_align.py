@@ -65,6 +65,8 @@ class test_linalign(unittest.TestCase):
         self.lena = scipy.misc.lena().astype(numpy.float32)
         self.shape = self.lena.shape
         self.extra = (10, 11)
+#        self.img = scipy.ndimage.shift(self.lena, (7, 5))
+        self.img = scipy.ndimage.rotate(self.lena, -20, reshape=False, order=3)
         self.img = scipy.ndimage.shift(scipy.ndimage.rotate(self.lena, 20, reshape=False, order=3), (7, 5))
         self.align = LinearAlign(self.lena, context=ctx)
 
@@ -75,8 +77,9 @@ class test_linalign(unittest.TestCase):
         """
         out = self.align.align(self.img, 0, 1)
         for i in out:
-            print i
-            print ("%s:\r%s" % (i, out[i][:5]))
+            if i in ["offset","matrix"]:
+                print i
+                print out[i]
         self.align.log_profile()
         out = out["result"]
 
@@ -91,7 +94,7 @@ class test_linalign(unittest.TestCase):
             sp3 = fig.add_subplot(224)
             delta = (out - self.lena)[100:400, 100:400]
             im3 = sp3.imshow(delta)
-            print(delta.max(), delta.min())
+            print({"min":delta.min(), "max:":delta.max(), "mean":delta.mean(), "std:":delta.std()})
             pylab.show()
             raw_input("enter")
 

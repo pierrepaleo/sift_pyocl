@@ -233,15 +233,19 @@ class MatchPlan(object):
                                           numpy.int32(nkp1.size),
                                           numpy.int32(nkp2.size))
             if self.profile:
-                self.events += [("matching", evt)]
+                self.events.append(("matching", evt))
             size = self.buffers["cnt"].get()[0]
+            match = numpy.empty(shape=(size, 2), dtype=numpy.int32)
+            cpyD2H = pyopencl.enqueue_copy(self.queue, match, self.buffers[ "match" ].data)
+            if self.profile:
+                self.events.append(("copy D->H match", cpyD2H))
             if raw_results:
-                result = self.buffers[ "match" ].get()[:size, :]
+                result = match
             else:
                 result = numpy.recarray(shape=(size, 2), dtype=self.dtype_kp)
-                matching = self.buffers[ "match" ].get()
-                result[:, 0] = nkp1[matching[:size, 0]]
-                result[:, 1] = nkp2[matching[:size, 1]]
+
+                result[:, 0] = nkp1[match[:size, 0]]
+                result[:, 1] = nkp2[match[:size, 1]]
         return result
 
 
