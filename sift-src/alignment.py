@@ -52,6 +52,19 @@ logger = logging.getLogger("sift.alignment")
 from pyopencl import mem_flags as MF
 from . import MatchPlan, SiftPlan
 
+def arrow_start(kplist):
+    x_ref = kplist.x
+    y_ref = kplist.y
+    angle_ref = kplist.angle
+    scale_ref = kplist.scale
+    x_ref2 = kplist.x + scale_ref * numpy.cos(angle_ref)
+    y_ref2 = kplist.y + scale_ref * numpy.sin(angle_ref)
+    return x_ref2, y_ref2
+def transform_pts(matrix, offset, x, y):
+    nx = -offset[1] + y * matrix[1, 0] + x * matrix[1, 1]
+    ny = -offset[0] + x * matrix[0, 1] + y * matrix[0, 0]
+    return nx, ny
+
 class LinearAlign(object):
     """
     Align images on a reference image based on an Afine transformation (bi-linear + offset)
@@ -181,7 +194,7 @@ class LinearAlign(object):
         """
         self.program = None
 
-    def align(self, img, shift_only=False, all=False):
+    def align(self, img, shift_only=False, all=False, double_check=False):
         """
         Align image on reference image
 
@@ -201,16 +214,16 @@ class LinearAlign(object):
             kp = self.sift.keypoints(self.buffers["input"])
 #            print("ref %s img %s" % (self.buffers["ref_kp_gpu"].shape, kp.shape))
             logger.debug("mod image keypoints: %s" % kp.size)
-            raw_matching = self.match.match(kp, self.buffers["ref_kp_gpu"], raw_results=True)
-            print(raw_matching.max(axis=0))
+            raw_matching = self.match.match(self.buffers["ref_kp_gpu"], kp, raw_results=True)
+#            print(raw_matching.max(axis=0))
 
             matching = numpy.recarray(shape=raw_matching.shape, dtype=MatchPlan.dtype_kp)
             len_match = raw_matching.shape[0]
             if len_match == 0:
                 logger.warning("No matching keypoints")
                 return
-            matching[:, 0] = self.ref_kp[raw_matching[:, 1]]
-            matching[:, 1] = kp[raw_matching[:, 0]]
+            matching[:, 0] = self.ref_kp[raw_matching[:, 0]]
+            matching[:, 1] = kp[raw_matching[:, 1]]
 
             if (len_match < 3 * 6) or (shift_only): # 3 points per DOF
                 logger.warning("Shift Only mode: Common keypoints: %s" % len_match)
@@ -226,6 +239,42 @@ class LinearAlign(object):
                 matrix = numpy.empty((2, 2), dtype=numpy.float32)
                 matrix[0, 0], matrix[0, 1] = transform_matrix[4], transform_matrix[3]
                 matrix[1, 0], matrix[1, 1] = transform_matrix[1], transform_matrix[0]
+            if double_check and abs(matrix-numpy.identity(2)).max()>0.1:
+                logger.warning("Validating keypoints, %s,%s"%(matrix,offset))
+                dx = matching[:, 1].x - matching[:, 0].x
+                dy = matching[:, 1].y - matching[:, 0].y
+                offset2 = numpy.array([+numpy.median(dy), +numpy.median(dx)], numpy.float32)
+                matrix2 = numpy.identity(2, dtype=numpy.float32)
+
+                xref, yref = matching[:, 0].x, matching[:, 0].y
+                print("raw distance:")
+                distance = numpy.sqrt((matching[:, 1].x - xref) ** 2 + (matching[:, 1].y - yref) ** 2)
+                print(distance.min(), distance.mean(), distance.max(), distance.std())
+
+                xref2, yref2 = arrow_start(matching[:, 0])
+                x2, y2 = arrow_start(matching[:, 1])
+                print(matrix)
+                print(offset)
+
+                xtrans, ytrans = transform_pts(matrix2, offset2, matching[:, 1].x, matching[:, 1].y)
+                xtrans2, ytrans2 = transform_pts(matrix2, offset2, x2, y2)
+                distance = numpy.sqrt((xtrans - xref) ** 2 + (ytrans - yref) ** 2)
+                distance2 = numpy.sqrt((xtrans2 - xref2) ** 2 + (ytrans2 - yref2) ** 2)
+                print(distance.min(), distance.mean(), distance.max(), distance.std())
+                print(distance2.min(), distance2.mean(), distance2.max(), distance2.std())
+                dist_max = distance.mean() + distance.std()
+                print((distance > dist_max))
+                print((distance2 > dist_max))
+
+                matching2 = matching[numpy.logical_and(distance < dist_max, distance2 < dist_max)]
+                transform_matrix = matching_correction(matching2)
+                offset = numpy.array([transform_matrix[5], transform_matrix[2]], dtype=numpy.float32)
+                matrix = numpy.empty((2, 2), dtype=numpy.float32)
+                matrix[0, 0], matrix[0, 1] = transform_matrix[4], transform_matrix[3]
+                matrix[1, 0], matrix[1, 1] = transform_matrix[1], transform_matrix[0]
+
+
+
             cpy1 = pyopencl.enqueue_copy(self.queue, self.buffers["matrix"].data, matrix)
             cpy2 = pyopencl.enqueue_copy(self.queue, self.buffers["offset"].data, offset)
             if self.profile:
