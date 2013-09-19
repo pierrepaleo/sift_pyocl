@@ -52,13 +52,26 @@ logger = logging.getLogger("sift.alignment")
 from pyopencl import mem_flags as MF
 from . import MatchPlan, SiftPlan
 
+def arrow_start(kplist):
+    x_ref = kplist.x
+    y_ref = kplist.y
+    angle_ref = kplist.angle
+    scale_ref = kplist.scale
+    x_ref2 = kplist.x + scale_ref * numpy.cos(angle_ref)
+    y_ref2 = kplist.y + scale_ref * numpy.sin(angle_ref)
+    return x_ref2, y_ref2
+def transform_pts(matrix, offset, x, y):
+    nx = -offset[1] + y * matrix[1, 0] + x * matrix[1, 1]
+    ny = -offset[0] + x * matrix[0, 1] + y * matrix[0, 0]
+    return nx, ny
+
 class LinearAlign(object):
     """
     Align images on a reference image based on an Afine transformation (bi-linear + offset)
     """
     kernel_file = "transform"
 
-    def __init__(self, image, devicetype="CPU", profile=False, device=None, max_workgroup_size=128, roi=None, extra=0, context=None):
+    def __init__(self, image, devicetype="CPU", profile=False, device=None, max_workgroup_size=128, ROI=None, extra=0, context=None):
         """
         Constructor of the class
 
@@ -67,7 +80,7 @@ class LinearAlign(object):
         @param profile:collect profiling information ?
         @param device: 2-tuple of integer. see clinfo
         @param max_workgroup_size: seet to 1 for macOSX
-        @param roi: Region of interest: to be implemented
+        @param ROI: Region of interest: to be implemented
         @param extra: extra space around the image, can be an integer, or a 2 tuple in YX convention: TODO!
         """
         self.profile = bool(profile)
@@ -88,6 +101,7 @@ class LinearAlign(object):
         else:
             self.extra = extra[:2]
         self.outshape = tuple(i + 2 * j for i, j in zip(self.shape, self.extra))
+        self.ROI = ROI
         if self.RGB:
             self.wg = (4, 8, 4)
         else:
@@ -108,7 +122,13 @@ class LinearAlign(object):
 
         self.sift = SiftPlan(template=image, context=self.ctx, profile=self.profile, max_workgroup_size=max_workgroup_size)
         self.ref_kp = self.sift.keypoints(image)
-        self.match = MatchPlan(context=self.ctx, profile=self.profile, max_workgroup_size=max_workgroup_size, roi=roi)
+        if self.ROI is not None:
+            kpx = numpy.round(self.ref_kp.x).astype(numpy.int32)
+            kpy = numpy.round(self.ref_kp.y).astype(numpy.int32)
+            masked = self.ROI[(kpy, kpx)].astype(bool)
+            logger.warning("Reducing keypoint list from %i to %i because of the ROI" % (self.ref_kp.size, masked.sum()))
+            self.ref_kp = self.ref_kp[masked]
+        self.match = MatchPlan(context=self.ctx, profile=self.profile, max_workgroup_size=max_workgroup_size)
 #        Allocate reference keypoints on the GPU within match context:
         self.buffers["ref_kp_gpu"] = pyopencl.array.to_device(self.match.queue, self.ref_kp)
         #TODO optimize match so that the keypoint2 can be optional
@@ -174,10 +194,10 @@ class LinearAlign(object):
         """
         self.program = None
 
-    def align(self, img, shift_only=False, all=False):
+    def align(self, img, shift_only=False, all=False, double_check=False):
         """
         Align image on reference image
-        
+
         @param img: numpy array containing the image to align to reference
         @param all: return in addition ot the image, keypoints, matching keypoints, and transformations as a dict
         @return: aligned image
@@ -192,29 +212,69 @@ class LinearAlign(object):
             if self.profile:self.events.append(("Copy H->D", cpy))
             cpy.wait()
             kp = self.sift.keypoints(self.buffers["input"])
+#            print("ref %s img %s" % (self.buffers["ref_kp_gpu"].shape, kp.shape))
             logger.debug("mod image keypoints: %s" % kp.size)
             raw_matching = self.match.match(self.buffers["ref_kp_gpu"], kp, raw_results=True)
+#            print(raw_matching.max(axis=0))
+
             matching = numpy.recarray(shape=raw_matching.shape, dtype=MatchPlan.dtype_kp)
             len_match = raw_matching.shape[0]
             if len_match == 0:
                 logger.warning("No matching keypoints")
                 return
-            matching[:, 1] = self.ref_kp[raw_matching[:, 0]]
-            matching[:, 0] = kp[raw_matching[:, 1]]
+            matching[:, 0] = self.ref_kp[raw_matching[:, 0]]
+            matching[:, 1] = kp[raw_matching[:, 1]]
 
             if (len_match < 3 * 6) or (shift_only): # 3 points per DOF
                 logger.warning("Shift Only mode: Common keypoints: %s" % len_match)
                 dx = matching[:, 1].x - matching[:, 0].x
                 dy = matching[:, 1].y - matching[:, 0].y
                 matrix = numpy.identity(2, dtype=numpy.float32)
-                offset = numpy.array([numpy.median(dy), numpy.median(dx)], numpy.float32)
+                offset = numpy.array([+numpy.median(dy), +numpy.median(dx)], numpy.float32)
             else:
                 logger.debug("Common keypoints: %s" % len_match)
 
                 transform_matrix = matching_correction(matching)
-                transform_matrix.shape = 2, 3
-                matrix = numpy.ascontiguousarray(transform_matrix[:, :2], dtype=numpy.float32)
-                offset = numpy.ascontiguousarray(transform_matrix[:, -1], dtype=numpy.float32)
+                offset = numpy.array([transform_matrix[5], transform_matrix[2]], dtype=numpy.float32)
+                matrix = numpy.empty((2, 2), dtype=numpy.float32)
+                matrix[0, 0], matrix[0, 1] = transform_matrix[4], transform_matrix[3]
+                matrix[1, 0], matrix[1, 1] = transform_matrix[1], transform_matrix[0]
+            if double_check and abs(matrix-numpy.identity(2)).max()>0.1:
+                logger.warning("Validating keypoints, %s,%s"%(matrix,offset))
+                dx = matching[:, 1].x - matching[:, 0].x
+                dy = matching[:, 1].y - matching[:, 0].y
+                offset2 = numpy.array([+numpy.median(dy), +numpy.median(dx)], numpy.float32)
+                matrix2 = numpy.identity(2, dtype=numpy.float32)
+
+                xref, yref = matching[:, 0].x, matching[:, 0].y
+                print("raw distance:")
+                distance = numpy.sqrt((matching[:, 1].x - xref) ** 2 + (matching[:, 1].y - yref) ** 2)
+                print(distance.min(), distance.mean(), distance.max(), distance.std())
+
+                xref2, yref2 = arrow_start(matching[:, 0])
+                x2, y2 = arrow_start(matching[:, 1])
+                print(matrix)
+                print(offset)
+
+                xtrans, ytrans = transform_pts(matrix2, offset2, matching[:, 1].x, matching[:, 1].y)
+                xtrans2, ytrans2 = transform_pts(matrix2, offset2, x2, y2)
+                distance = numpy.sqrt((xtrans - xref) ** 2 + (ytrans - yref) ** 2)
+                distance2 = numpy.sqrt((xtrans2 - xref2) ** 2 + (ytrans2 - yref2) ** 2)
+                print(distance.min(), distance.mean(), distance.max(), distance.std())
+                print(distance2.min(), distance2.mean(), distance2.max(), distance2.std())
+                dist_max = distance.mean() + distance.std()
+                print((distance > dist_max))
+                print((distance2 > dist_max))
+
+                matching2 = matching[numpy.logical_and(distance < dist_max, distance2 < dist_max)]
+                transform_matrix = matching_correction(matching2)
+                offset = numpy.array([transform_matrix[5], transform_matrix[2]], dtype=numpy.float32)
+                matrix = numpy.empty((2, 2), dtype=numpy.float32)
+                matrix[0, 0], matrix[0, 1] = transform_matrix[4], transform_matrix[3]
+                matrix[1, 0], matrix[1, 1] = transform_matrix[1], transform_matrix[0]
+
+
+
             cpy1 = pyopencl.enqueue_copy(self.queue, self.buffers["matrix"].data, matrix)
             cpy2 = pyopencl.enqueue_copy(self.queue, self.buffers["offset"].data, offset)
             if self.profile:
