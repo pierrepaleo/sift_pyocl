@@ -131,7 +131,7 @@ class LinearAlign(object):
         self.match = MatchPlan(context=self.ctx, profile=self.profile, max_workgroup_size=max_workgroup_size)
 #        Allocate reference keypoints on the GPU within match context:
         self.buffers["ref_kp_gpu"] = pyopencl.array.to_device(self.match.queue, self.ref_kp)
-        #TODO optimize match so that the keypoint2 can be optional
+        # TODO optimize match so that the keypoint2 can be optional
         self.fill_value = 0
 #        print self.ctx.devices[0]
         if self.profile:
@@ -225,7 +225,7 @@ class LinearAlign(object):
             matching[:, 0] = self.ref_kp[raw_matching[:, 0]]
             matching[:, 1] = kp[raw_matching[:, 1]]
 
-            if (len_match < 3 * 6) or (shift_only): # 3 points per DOF
+            if (len_match < 3 * 6) or (shift_only):  # 3 points per DOF
                 logger.warning("Shift Only mode: Common keypoints: %s" % len_match)
                 dx = matching[:, 1].x - matching[:, 0].x
                 dy = matching[:, 1].y - matching[:, 0].y
@@ -239,41 +239,25 @@ class LinearAlign(object):
                 matrix = numpy.empty((2, 2), dtype=numpy.float32)
                 matrix[0, 0], matrix[0, 1] = transform_matrix[4], transform_matrix[3]
                 matrix[1, 0], matrix[1, 1] = transform_matrix[1], transform_matrix[0]
-            if double_check and abs(matrix-numpy.identity(2)).max()>0.1:
-                logger.warning("Validating keypoints, %s,%s"%(matrix,offset))
+            if double_check and (len_match >= 3 * 6):  # and abs(matrix - numpy.identity(2)).max() > 0.1:
+                logger.warning("Validating keypoints, %s,%s" % (matrix, offset))
                 dx = matching[:, 1].x - matching[:, 0].x
                 dy = matching[:, 1].y - matching[:, 0].y
-                offset2 = numpy.array([+numpy.median(dy), +numpy.median(dx)], numpy.float32)
-                matrix2 = numpy.identity(2, dtype=numpy.float32)
-
-                xref, yref = matching[:, 0].x, matching[:, 0].y
-                print("raw distance:")
-                distance = numpy.sqrt((matching[:, 1].x - xref) ** 2 + (matching[:, 1].y - yref) ** 2)
-                print(distance.min(), distance.mean(), distance.max(), distance.std())
-
-                xref2, yref2 = arrow_start(matching[:, 0])
-                x2, y2 = arrow_start(matching[:, 1])
-                print(matrix)
-                print(offset)
-
-                xtrans, ytrans = transform_pts(matrix2, offset2, matching[:, 1].x, matching[:, 1].y)
-                xtrans2, ytrans2 = transform_pts(matrix2, offset2, x2, y2)
-                distance = numpy.sqrt((xtrans - xref) ** 2 + (ytrans - yref) ** 2)
-                distance2 = numpy.sqrt((xtrans2 - xref2) ** 2 + (ytrans2 - yref2) ** 2)
-                print(distance.min(), distance.mean(), distance.max(), distance.std())
-                print(distance2.min(), distance2.mean(), distance2.max(), distance2.std())
-                dist_max = distance.mean() + distance.std()
-                print((distance > dist_max))
-                print((distance2 > dist_max))
-
-                matching2 = matching[numpy.logical_and(distance < dist_max, distance2 < dist_max)]
-                transform_matrix = matching_correction(matching2)
-                offset = numpy.array([transform_matrix[5], transform_matrix[2]], dtype=numpy.float32)
-                matrix = numpy.empty((2, 2), dtype=numpy.float32)
-                matrix[0, 0], matrix[0, 1] = transform_matrix[4], transform_matrix[3]
-                matrix[1, 0], matrix[1, 1] = transform_matrix[1], transform_matrix[0]
-
-
+                dangle = matching[:, 1].angle - matching[:, 0].angle
+                dscale = numpy.log(matching[:, 1].scale / matching[:, 0].scale)
+                distance = numpy.sqrt(dx * dx + dy * dy)
+                outlayer = numpy.zeros(distance.shape, numpy.int8)
+                outlayer += abs((distance - distance.mean()) / distance.std()) > 4
+                outlayer += abs((dangle - dangle.mean()) / dangle.std()) > 4
+                outlayer += abs((dscale - dscale.mean()) / dscale.std()) > 4
+                print(outlayer)
+                if outlayer.sum() > 0:
+                    matching2 = matching[outlayer == 0]
+                    transform_matrix = matching_correction(matching2)
+                    offset = numpy.array([transform_matrix[5], transform_matrix[2]], dtype=numpy.float32)
+                    matrix = numpy.empty((2, 2), dtype=numpy.float32)
+                    matrix[0, 0], matrix[0, 1] = transform_matrix[4], transform_matrix[3]
+                    matrix[1, 0], matrix[1, 1] = transform_matrix[1], transform_matrix[0]
 
             cpy1 = pyopencl.enqueue_copy(self.queue, self.buffers["matrix"].data, matrix)
             cpy2 = pyopencl.enqueue_copy(self.queue, self.buffers["offset"].data, offset)
