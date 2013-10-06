@@ -251,7 +251,8 @@ class LinearAlign(object):
                 outlayer += abs((dangle - dangle.mean()) / dangle.std()) > 4
                 outlayer += abs((dscale - dscale.mean()) / dscale.std()) > 4
                 print(outlayer)
-                if outlayer.sum() > 0:
+                outlayersum = outlayer.sum()
+                if outlayersum > 0 and not numpy.isinf(outlayersum):
                     matching2 = matching[outlayer == 0]
                     transform_matrix = matching_correction(matching2)
                     offset = numpy.array([transform_matrix[5], transform_matrix[2]], dtype=numpy.float32)
