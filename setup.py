@@ -129,7 +129,7 @@ data_files =  glob.glob("openCL/*.cl")
 
 if sys.platform == "win32":
     # This is for mingw32/gomp?
-    data_files[0][1].append(os.path.join("dll", "pthreadGC2.dll"))
+#    data_files[0][1].append(os.path.join("dll", "pthreadGC2.dll"))
     root = os.path.dirname(os.path.abspath(__file__))
     tocopy_files = []
     script_files = []
