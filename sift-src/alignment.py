@@ -141,6 +141,7 @@ class LinearAlign(object):
         self._compile_kernels()
         self._allocate_buffers()
         self.sem = Semaphore()
+        self.relative_transfo = None
 
     def __del__(self):
         """
@@ -194,13 +195,14 @@ class LinearAlign(object):
         """
         self.program = None
 
-    def align(self, img, shift_only=False, all=False, double_check=False):
+    def align(self, img, shift_only=False, return_all=False, double_check=False, relative=False):
         """
         Align image on reference image
 
         @param img: numpy array containing the image to align to reference
-        @param all: return in addition ot the image, keypoints, matching keypoints, and transformations as a dict
-        @return: aligned image
+        @param return_all: return in addition ot the image, keypoints, matching keypoints, and transformations as a dict
+        @param reltive: update reference keypoints with those from current image to perform relative alignment
+        @return: aligned image or all informations
         """
         logger.debug("ref_keypoints: %s" % self.ref_kp.size)
         if self.RGB:
@@ -259,7 +261,27 @@ class LinearAlign(object):
                     matrix = numpy.empty((2, 2), dtype=numpy.float32)
                     matrix[0, 0], matrix[0, 1] = transform_matrix[4], transform_matrix[3]
                     matrix[1, 0], matrix[1, 1] = transform_matrix[1], transform_matrix[0]
-
+            if relative: #update stable part to perform a relative alignment
+                self.ref_kp = kp
+                if self.ROI is not None:
+                    kpx = numpy.round(self.ref_kp.x).astype(numpy.int32)
+                    kpy = numpy.round(self.ref_kp.y).astype(numpy.int32)
+                    masked = self.ROI[(kpy, kpx)].astype(bool)
+                    logger.warning("Reducing keypoint list from %i to %i because of the ROI" % (self.ref_kp.size, masked.sum()))
+                    self.ref_kp = self.ref_kp[masked]
+                self.buffers["ref_kp_gpu"] = pyopencl.array.to_device(self.match.queue, self.ref_kp)
+                transfo = numpy.zeros((3, 3), dtype=numpy.float64)
+                transfo[:2, :2] = matrix
+                transfo[0, 2] = offset[0]
+                transfo[1, 2] = offset[1]
+                transfo[2, 2] = 1
+                if self.relative_transfo is None:
+                    self.relative_transfo = transfo
+                else:
+                    self.relative_transfo = numpy.dot(transfo, self.relative_transfo)
+                matrix = numpy.ascontiguousarray(self.relative_transfo[:2, :2], dtype=numpy.float32)
+                offset = numpy.ascontiguousarray(self.relative_transfo[:2, 2], dtype=numpy.float32)
+#                print(self.relative_transfo)
             cpy1 = pyopencl.enqueue_copy(self.queue, self.buffers["matrix"].data, matrix)
             cpy2 = pyopencl.enqueue_copy(self.queue, self.buffers["offset"].data, offset)
             if self.profile:
@@ -285,7 +307,9 @@ class LinearAlign(object):
             if self.profile:
                 self.events += [("transform", ev)]
             result = self.buffers["output"].get()
-        if all:
+
+#        print (self.buffers["offset"])
+        if return_all:
             return {"result":result, "keypoint":kp, "matching":matching, "offset":offset, "matrix": matrix}
         return result
 
