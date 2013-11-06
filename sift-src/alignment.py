@@ -310,6 +310,16 @@ class LinearAlign(object):
 
 #        print (self.buffers["offset"])
         if return_all:
+
+#            distances =
+            # x_ref = matching[0]
+            x0 = matching[:, 0].x
+            x1 = matching[:, 1].x
+            y1 = matching[:, 1].y
+            y0 = matching[:, 0].y
+            corr = numpy.dot(matrix, np.vstack((y1, x1))).T + offset - np.vstack((y0, x0)).T
+
+            # Todo: calculate the RMS of deplacement and return it:
             return {"result":result, "keypoint":kp, "matching":matching, "offset":offset, "matrix": matrix}
         return result
 
