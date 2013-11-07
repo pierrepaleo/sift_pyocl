@@ -80,12 +80,12 @@ The keypoints are detected in several steps according to Lowe's paper_ :
 
 .. _paper: "http://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf"
 
-* Keypoints detection: local extrema are detected in the *scale-space* :math:`(x, y, s)`. Every pixel is compared to its neighborhood in the image itself, and in the previous/next scale factor images. 
+* Keypoints detection: local extrema are detected in the *scale-space* :math:`(x, y, s)`. Every pixel is compared to its neighborhood in the image itself, and in the previous/next scale factor images.
 * Keypoints refinement: keypoints located on corners are discarded. Additionaly, a second-order interpolation is done to improve the keypoints accuracy, modifying the coordinates :math:`(x, y, s)`.
 * Orientation assignment: a characteristic orientation is assigned to the keypoints :math:`(x,y,s, \theta)`
 * Descriptor computation: a histogram of orientations is built around every keypoint, then concatenated in a 128-values vector. This vector is called *SIFT descriptor*, it is robust to rotation, illumination, translation and scaling.
 
-The scale variation is simulated by blurring the image. A very blurred image represents a scene seen from a distance, for small details are not visible. 
+The scale variation is simulated by blurring the image. A very blurred image represents a scene seen from a distance, for small details are not visible.
 
 
 Unlike existing parallel versions of SIFT, the entire process is done on the device to avoid time-consuming transfers between CPU and GPU. This leads to several tricky parts like the use of atomic instructions, or writing different versions of the same kernel to adapt to every platform.
@@ -116,7 +116,7 @@ Keypoints refinement
 At this stage, many keypoints are not reliable. Low-contrast keypoints are discarded, and keypoints located on an edge are rejected as well. For keypoints located on an edge, principal curvature across the edge is much larger than the principal curvature along it. Finding these principal curvatures amounts to solving for the eigenvalues of the second-order Hessian matrix of the current DoG. The ratio of the eigenvalues :math:`r` is compared to a threshold :math:`\dfrac{(r+1)^2}{r} < R` with R defined by taking r=10.
 
 To improve keypoints accuracy, the coordinates are interpolated with a second-order Taylor development
-  
+
    .. math ::
 
       D \left( \vec{x} + \vec{\delta_x} \right) \simeq D + \dfrac{\partial D}{\partial \vec{x}} \cdot \vec{\delta_x} + \dfrac{1}{2} \left( \vec{\delta_x} \right)^T \cdot \left( H \right) \cdot \vec{\delta_x} \qquad \text{with } H = \dfrac{\partial^2 D}{\partial \vec{x}^2}
@@ -163,12 +163,12 @@ Matching can also be run from ipython : suppose we got two list of keypoints ``k
 .. figure:: img/match1.png
    :align: center
    :alt: Example of image matching for pattern recognition
-   
+
 
 .. figure:: img/match2.jpg
    :align: center
    :alt: Another example of image matching for pattern recognition
-   
+
 
 Performances
 ------------
@@ -185,9 +185,9 @@ SIFT_PyOCL can also be run on CPU, even running up to 10 times faster than the C
 .. figure:: img/bench_cpu0.png
    :align: center
    :alt: Benchmark on CPU : OpenCL implementation vs C++ implementation
-   
-   
-   
+
+
+
 
 
 SIFT parameters
@@ -232,7 +232,7 @@ The file ``param.py`` contains SIFT default parameters, recommended by David Low
 Region of Interest for image alignment
 ......................................
 
-When processing the image matching, a region of interest (ROI) can be specified on the image. It is a binary image which can have any shape. For instance, if a sample is centered on the image, the user can select the center of the image before processing. 
+When processing the image matching, a region of interest (ROI) can be specified on the image. It is a binary image which can have any shape. For instance, if a sample is centered on the image, the user can select the center of the image before processing.
 
 
 .. figure:: img/frame_ROI.jpg
@@ -247,9 +247,5 @@ References
 ..........
 
 - David G. Lowe, Distinctive image features from scale-invariant keypoints, International Journal of Computer Vision, vol. 60, no 2, 2004, p. 91–110 - "http://www.cs.ubc.ca/~lowe/papers/ijcv04.pdf"
-<<<<<<< HEAD
-=======
-
->>>>>>> pierre/master
 
 
