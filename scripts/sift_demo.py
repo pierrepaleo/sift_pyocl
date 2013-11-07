@@ -34,10 +34,10 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 """
 
-import sys, os, pyopencl, time
+import sys, os, pyopencl, time, urllib2
 from math import sin, cos
-from utilstest import UtilsTest, getLogger
-logger = getLogger(__file__)
+import logging
+logger = logging.getLogger("sift")
 import sift
 import numpy
 import scipy.misc
@@ -66,7 +66,9 @@ class DemoSift(object):
         if filename and os.path.exists(filename):
             self.filename = filename
         else:
-            self.filename = UtilsTest.getimage("wikipedia/commons/9/94/Esrf_grenoble.jpg")
+            self.filename = "Esrf_grenoble.jpg"
+            data = urllib2.urlopen("http://upload.wikimedia.org/wikipedia/commons/9/94/Esrf_grenoble.jpg").read()
+            open(self.filename, "wb").write(data)
         self.image_rgb = scipy.misc.imread(self.filename)
         if self.image_rgb.ndim != 2:
             self.image_bw = 0.299 * self.image_rgb[:, :, 0] + 0.587 * self.image_rgb[:, :, 1] + 0.114 * self.image_rgb[:, :, 2]
@@ -77,10 +79,10 @@ class DemoSift(object):
         self.kp_cpp = numpy.empty(0)
         self.kp_ocl = numpy.empty(0)
         self.fig = pylab.figure()
-        self.sp1 = self.fig.add_subplot(2, 2, 1)
-        self.sp2 = self.fig.add_subplot(2, 2, 2)
-        self.sp3 = self.fig.add_subplot(2, 2, 3)
-        self.sp4 = self.fig.add_subplot(2, 2, 4)
+        self.sp1 = self.fig.add_subplot(1, 2, 1)
+        self.sp2 = self.fig.add_subplot(1, 2, 2)
+        #elf.sp3 = self.fig.add_subplot(1, 2, 3)
+        #elf.sp4 = self.fig.add_subplot(1, 2, 4)
 
         self.im1 = self.sp1.imshow(self.image_rgb)
         self.sp1.set_title("OpenCL: %s keypoint" % self.kp_ocl.size)
