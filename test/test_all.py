@@ -11,7 +11,7 @@ Test suite for all sift_pyocl
 
 __authors__ = ["Jérôme Kieffer"]
 __contact__ = "jerome.kieffer@esrf.eu"
-__license__ = "BSD"
+__license__ = "MIT"
 __copyright__ = "European Synchrotron Radiation Facility, Grenoble, France"
 __date__ = "2013-05-28"
 __license__ = """

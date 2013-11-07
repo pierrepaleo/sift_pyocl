@@ -13,7 +13,7 @@ from __future__ import division
 
 __authors__ = ["Jérôme Kieffer"]
 __contact__ = "jerome.kieffer@esrf.eu"
-__license__ = "BSD"
+__license__ = "MIT"
 __copyright__ = "European Synchrotron Radiation Facility, Grenoble, France"
 __date__ = "2013-06-13"
 __status__ = "beta"

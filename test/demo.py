@@ -67,7 +67,11 @@ class DemoSift(object):
             self.filename = filename
         else:
             self.filename = UtilsTest.getimage("wikipedia/commons/9/94/Esrf_grenoble.jpg")
-        self.image_rgb = scipy.misc.imread(self.filename)
+        try:
+            self.image_rgb = scipy.misc.imread(self.filename)
+        except:
+            import fabio
+            self.image_rgb = fabio.open(self.filename).data
         if self.image_rgb.ndim != 2:
             self.image_bw = 0.299 * self.image_rgb[:, :, 0] + 0.587 * self.image_rgb[:, :, 1] + 0.114 * self.image_rgb[:, :, 2]
         else: self.image_bw = self.image_rgb
