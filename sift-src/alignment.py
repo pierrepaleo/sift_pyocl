@@ -228,7 +228,10 @@ class LinearAlign(object):
             matching[:, 1] = kp[raw_matching[:, 1]]
 
             if (len_match < 3 * 6) or (shift_only):  # 3 points per DOF
-                logger.warning("Shift Only mode: Common keypoints: %s" % len_match)
+                if shift_only:
+                    logger.debug("Shift Only mode: Common keypoints: %s" % len_match)
+                else:
+                    logger.warning("Shift Only mode: Common keypoints: %s" % len_match)
                 dx = matching[:, 1].x - matching[:, 0].x
                 dy = matching[:, 1].y - matching[:, 0].y
                 matrix = numpy.identity(2, dtype=numpy.float32)
