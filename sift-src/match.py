@@ -43,9 +43,8 @@ OTHER DEALINGS IN THE SOFTWARE.
 import time, math, os, logging, sys, threading
 import gc
 import numpy
-import pyopencl, pyopencl.array
 from .param import par
-from .opencl import ocl
+from .opencl import ocl, pyopencl
 from .utils import calc_size, kernel_size, sizeof
 logger = logging.getLogger("sift.match")
 from pyopencl import mem_flags as MF

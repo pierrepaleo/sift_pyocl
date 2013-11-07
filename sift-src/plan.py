@@ -44,12 +44,11 @@ import time, math, os, logging, threading
 # import sys
 import gc
 import numpy
-import pyopencl, pyopencl.array
 from .param import par
-from .opencl import ocl
+from .opencl import ocl, pyopencl
+
 from .utils import calc_size, kernel_size  # , sizeof
 logger = logging.getLogger("sift.plan")
-# from pyopencl import mem_flags as MF
 
 class SiftPlan(object):
     """

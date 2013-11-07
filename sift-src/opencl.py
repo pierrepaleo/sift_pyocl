@@ -45,7 +45,7 @@ import os, logging
 logger = logging.getLogger("sift.opencl")
 
 try:
-    import pyopencl
+    import pyopencl, pyopencl.array
 #    from pyFAI.opencl import ocl
 except ImportError:
     logger.error("Unable to import pyOpenCl. Please install it from: http://pypi.python.org/pypi/pyopencl")

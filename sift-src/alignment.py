@@ -43,9 +43,8 @@ OTHER DEALINGS IN THE SOFTWARE.
 import os, gc
 from threading import Semaphore
 import numpy
-import pyopencl, pyopencl.array
 from .param import par
-from .opencl import ocl
+from .opencl import ocl, pyopencl
 from .utils import calc_size, kernel_size, sizeof, matching_correction
 import logging
 logger = logging.getLogger("sift.alignment")
