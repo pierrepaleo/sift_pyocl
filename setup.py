@@ -271,7 +271,7 @@ setup(name='sift',
 try:
     import pyopencl
 except ImportError:
-    print("""sift can use pyopencl to run on parallel accelerators like GPU; this is an optional dependency.
+    print("""sift can use pyopencl to run on parallel accelerators like GPU; this is not optional !!!.
 This python module can be found on:
 http://pypi.python.org/pypi/pyopencl
 """)
