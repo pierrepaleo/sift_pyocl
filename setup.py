@@ -9,13 +9,14 @@
 Installer script for SIFT algorithm in PyOpenCL 
 """
 
-from __future__ import division
+from __future__ import division, with_statement, print_function
+
 
 __authors__ = ["Jérôme Kieffer"]
 __contact__ = "jerome.kieffer@esrf.eu"
 __license__ = "MIT"
 __copyright__ = "European Synchrotron Radiation Facility, Grenoble, France"
-__date__ = "2013-05-28"
+__date__ = "2013-11-07"
 __status__ = "beta"
 __license__ = """
 Permission is hereby granted, free of charge, to any person
@@ -46,6 +47,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 import os, sys, glob, shutil, ConfigParser, platform
 from distutils.core import setup, Extension, Command
 from numpy.distutils.misc_util import get_numpy_include_dirs
+from distutils.command.install_data import install_data
 from distutils.sysconfig import get_python_lib
 
 # ###############################################################################
@@ -70,6 +72,7 @@ if CYTHON:
 else:
     cython_c_ext = ".c"
     from distutils.command.build_ext import build_ext
+cmdclass = {}
 
 
 def rewriteManifest(with_testimages=False):
@@ -111,20 +114,17 @@ if ("sdist" in sys.argv):
         rewriteManifest(with_testimages=False)
 
 
-installDir = os.path.join(get_python_lib(), "sift")
+installDir = "sift" #relative to site-packages ...
 data_files = [(installDir, glob.glob("openCL/*.cl"))]
 
 
-from distutils.command.install_data import install_data
 class smart_install_data(install_data):
     def run(self):
         install_cmd = self.get_finalized_command('install')
-        self.install_dir = os.path.join(getattr(install_cmd, 'install_lib'),"sift")
-        print "DATA to be installed in %s" %  self.install_dir
+        self.install_dir = getattr(install_cmd, 'install_lib')
+        print("DATA to be installed in %s" % self.install_dir)
         return install_data.run(self)
-
-
-data_files =  glob.glob("openCL/*.cl")
+cmdclass['install_data'] = smart_install_data
 
 
 if sys.platform == "win32":
@@ -177,7 +177,6 @@ translator = {
             }
         }
 
-cmdclass = {}
 
 class build_ext_sift(build_ext):
     def build_extensions(self):
@@ -199,8 +198,8 @@ class build_ext_sift(build_ext):
             # print e.extra_compile_args
             # print e.extra_link_args
         build_ext.build_extensions(self)
-
 cmdclass['build_ext'] = build_ext_sift
+
 class PyTest(Command):
     user_options = []
     def initialize_options(self):
@@ -216,6 +215,7 @@ class PyTest(Command):
         else:
             os.chdir("..")
 cmdclass['test'] = PyTest
+
 #######################
 # build_doc commandes #
 #######################
@@ -249,7 +249,6 @@ if sphinx:
                 BuildDoc.run(self)
             sys.path.pop(0)
     cmdclass['build_doc'] = build_doc
-    cmdclass['install_data'] = smart_install_data
 
 setup(name='sift',
       version=version,
@@ -258,8 +257,8 @@ setup(name='sift',
       description='Python/OpenCL implementation of Sift algorithm image alignment',
       url="https://github.com/kif/sift_pyocl",
       download_url="https://github.com/kif/sift_pyocl/archive/master.zip",
-      ext_package="sift",
       scripts=script_files,
+#      ext_package="sift",
 #      ext_modules=[Extension(**dico) for dico in ext_modules],
       packages=["sift"],
       package_dir={"sift": "sift-src" },
@@ -268,7 +267,7 @@ setup(name='sift',
       data_files=data_files
       )
 
-print data_files
+#print(data_files)
 try:
     import pyopencl
 except ImportError:
