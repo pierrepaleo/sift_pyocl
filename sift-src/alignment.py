@@ -323,12 +323,13 @@ class LinearAlign(object):
 
 #        print (self.buffers["offset"])
         if return_all:
-            corr = numpy.dot(matrix, numpy.vstack((matching[:, 1].y, matching[:, 1].x))).T - \
-                   offset.T - numpy.vstack((matching[:, 0].y, matching[:, 0].x)).T
+#            corr = numpy.dot(matrix, numpy.vstack((matching[:, 1].y, matching[:, 1].x))).T - \
+#                   offset.T - numpy.vstack((matching[:, 0].y, matching[:, 0].x)).T
+            corr = numpy.dot(matrix, numpy.vstack((matching[:, 0].y, matching[:, 0].x))).T + offset.T - numpy.vstack((matching[:, 1].y, matching[:, 1].x)).T
             rms = numpy.sqrt((corr * corr).sum(axis= -1).mean())
 
             # Todo: calculate the RMS of deplacement and return it:
-            return {"result":result, "keypoint":kp, "matching":matching, "offset":offset, "matrix": matrix, "RMS":rms}
+            return {"result":result, "keypoint":kp, "matching":matching, "offset":offset, "matrix": matrix, "rms":rms}
         return result
 
     def log_profile(self):
