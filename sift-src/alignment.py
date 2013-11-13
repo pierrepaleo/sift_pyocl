@@ -51,6 +51,11 @@ logger = logging.getLogger("sift.alignment")
 from pyopencl import mem_flags as MF
 from . import MatchPlan, SiftPlan
 
+try:
+    import feature
+except ImportError:
+    feature = None
+
 def arrow_start(kplist):
     x_ref = kplist.x
     y_ref = kplist.y
@@ -194,7 +199,7 @@ class LinearAlign(object):
         """
         self.program = None
 
-    def align(self, img, shift_only=False, return_all=False, double_check=False, relative=False):
+    def align(self, img, shift_only=False, return_all=False, double_check=False, relative=False, orsa=False):
         """
         Align image on reference image
 
@@ -225,6 +230,12 @@ class LinearAlign(object):
                 return
             matching[:, 0] = self.ref_kp[raw_matching[:, 0]]
             matching[:, 1] = kp[raw_matching[:, 1]]
+
+            if orsa:
+                if feature:
+                    matching = feature.sift_orsa(matching, self.shape, 1)
+                else:
+                    logger.warning("feature is not available. No ORSA filtering")
 
             if (len_match < 3 * 6) or (shift_only):  # 3 points per DOF
                 if shift_only:
@@ -312,17 +323,12 @@ class LinearAlign(object):
 
 #        print (self.buffers["offset"])
         if return_all:
-
-#            distances =
-            # x_ref = matching[0]
-            x0 = matching[:, 0].x
-            x1 = matching[:, 1].x
-            y1 = matching[:, 1].y
-            y0 = matching[:, 0].y
-            corr = numpy.dot(matrix, np.vstack((y1, x1))).T + offset - np.vstack((y0, x0)).T
+            corr = numpy.dot(matrix, numpy.vstack((matching[:, 1].y, matching[:, 1].x))).T - \
+                   offset.T - numpy.vstack((matching[:, 0].y, matching[:, 0].x)).T
+            rms = numpy.sqrt((corr * corr).sum(axis= -1).mean())
 
             # Todo: calculate the RMS of deplacement and return it:
-            return {"result":result, "keypoint":kp, "matching":matching, "offset":offset, "matrix": matrix}
+            return {"result":result, "keypoint":kp, "matching":matching, "offset":offset, "matrix": matrix, "RMS":rms}
         return result
 
     def log_profile(self):
