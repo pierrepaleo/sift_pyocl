@@ -297,7 +297,7 @@ class SiftPlan(object):
             x = numpy.arange(size) - (size - 1.0) / 2.0
             gaus = numpy.exp(-(x / sigma) ** 2 / 2.0).astype(numpy.float32)
             gaus /= gaus.sum(dtype=numpy.float32)
-            gaussian_gpu = pyopencl.array.to_device(self.queue, g)
+            gaussian_gpu = pyopencl.array.to_device(self.queue, gaus)
         else:
             gaussian_gpu = pyopencl.array.empty(self.queue, size, dtype=numpy.float32)
             evt = self.programs["gaussian"].gaussian(self.queue, (wg_size,), (wg_size,),

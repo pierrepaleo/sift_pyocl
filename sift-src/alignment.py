@@ -83,7 +83,7 @@ class LinearAlign(object):
         @param devicetype: Kind of prefered devce
         @param profile:collect profiling information ?
         @param device: 2-tuple of integer. see clinfo
-        @param max_workgroup_size: seet to 1 for macOSX
+        @param max_workgroup_size: set to 1 for macOSX on CPU
         @param ROI: Region of interest: to be implemented
         @param extra: extra space around the image, can be an integer, or a 2 tuple in YX convention: TODO!
         """
@@ -93,6 +93,7 @@ class LinearAlign(object):
         self.ref = numpy.ascontiguousarray(image, numpy.float32)
         self.buffers = {}
         self.shape = image.shape
+        self.max_workgroup_size = max_workgroup_size
         if len(self.shape) == 3:
             self.RGB = True
             self.shape = self.shape[:2]
@@ -107,9 +108,15 @@ class LinearAlign(object):
         self.outshape = tuple(i + 2 * j for i, j in zip(self.shape, self.extra))
         self.ROI = ROI
         if self.RGB:
-            self.wg = (4, 8, 4)
+            if self.max_workgroup_size == 1:
+                self.wg = (1, 1, 1)
+            else:
+                self.wg = (4, 8, 4)
         else:
-            self.wg = (8, 4)
+            if self.max_workgroup_size == 1:
+                self.wg = (1, 1)
+            else:
+                self.wg = (8, 4)
         if context:
             self.ctx = context
             device_name = self.ctx.devices[0].name.strip()

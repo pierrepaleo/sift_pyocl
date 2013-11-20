@@ -78,12 +78,17 @@ class MatchPlan(object):
         @param devicetype: can be CPU or GPU
         @param profile: set to true to activate profiling information collection
         @param device: 2-tuple of integer, see clinfo
-        @param max_workgroup_size: useful on macOS
+        @param max_workgroup_size: CPU on MacOS, limit to 1 
         @param roi: Region Of Interest: TODO
         @param context: Use an external context (discard devicetype and device options)
         """
         self.profile = bool(profile)
         self.max_workgroup_size = max_workgroup_size
+        if max_workgroup_size != 128: #default value
+            self.kernels = {}
+            for k, v in self.__class__.kernels.items():
+                self.kernels[k] = min(v, max_workgroup_size)
+
         self.events = []
         self.kpsize = size
         self.buffers = {}
@@ -160,7 +165,7 @@ class MatchPlan(object):
         for kernel in self.kernels:
             kernel_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), kernel + ".cl")
             kernel_src = open(kernel_file).read()
-            wg_size = min(self.max_workgroup_size, self.kernels[kernel])
+            wg_size = self.kernels[kernel]
             try:
                 program = pyopencl.Program(self.ctx, kernel_src).build('-D WORKGROUP_SIZE=%s' % wg_size)
             except pyopencl.MemoryError as error:
