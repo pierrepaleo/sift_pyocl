@@ -109,7 +109,7 @@ class SiftPlan(object):
         @param profile: collect timing info
         @param device: 2-tuple of integers
         @param PIX_PER_KP: number of keypoint pre-allocated: 1 for 10 pixel
-        @param  max_workgroup_size: set to 1 under macosX on CPU
+        @param max_workgroup_size: set to 1 under macosX on CPU
         @param context: provide an external context
         """
         self.buffers = {}
@@ -172,11 +172,17 @@ class SiftPlan(object):
         self.devicetype = ocl.platforms[self.device[0]].devices[self.device[1]].type
         if (self.devicetype == "CPU"):
             self.USE_CPU = True
+            if sys.platform == "darwin":
+                logger.warning("MacOSX computer working on CPU: limiting workgroup size to 1 !")
+                self.max_workgroup_size = 1
+                self.kernels = {}
+                for k, v in self.__class__.kernels.items():
+                    if isinstance(v, int):
+                        self.kernels[k] = 1
+                    else:
+                        self.kernels[k] = tuple([1 for i in v])
         else:
             self.USE_CPU = False
-
-
-
 
     def __del__(self):
         """

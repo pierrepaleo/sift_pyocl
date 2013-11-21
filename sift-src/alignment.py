@@ -73,7 +73,7 @@ class LinearAlign(object):
     """
     Align images on a reference image based on an Afine transformation (bi-linear + offset)
     """
-    kernel_file = "transform"
+    kernel_file = {"transform":128}
 
     def __init__(self, image, devicetype="CPU", profile=False, device=None, max_workgroup_size=128, ROI=None, extra=0, context=None):
         """
@@ -281,7 +281,7 @@ class LinearAlign(object):
                     matrix = numpy.empty((2, 2), dtype=numpy.float32)
                     matrix[0, 0], matrix[0, 1] = transform_matrix[4], transform_matrix[3]
                     matrix[1, 0], matrix[1, 1] = transform_matrix[1], transform_matrix[0]
-            if relative: #update stable part to perform a relative alignment
+            if relative:  # update stable part to perform a relative alignment
                 self.ref_kp = kp
                 if self.ROI is not None:
                     kpx = numpy.round(self.ref_kp.x).astype(numpy.int32)
@@ -333,7 +333,7 @@ class LinearAlign(object):
 #            corr = numpy.dot(matrix, numpy.vstack((matching[:, 1].y, matching[:, 1].x))).T - \
 #                   offset.T - numpy.vstack((matching[:, 0].y, matching[:, 0].x)).T
             corr = numpy.dot(matrix, numpy.vstack((matching[:, 0].y, matching[:, 0].x))).T + offset.T - numpy.vstack((matching[:, 1].y, matching[:, 1].x)).T
-            rms = numpy.sqrt((corr * corr).sum(axis= -1).mean())
+            rms = numpy.sqrt((corr * corr).sum(axis=-1).mean())
 
             # Todo: calculate the RMS of deplacement and return it:
             return {"result":result, "keypoint":kp, "matching":matching, "offset":offset, "matrix": matrix, "rms":rms}
