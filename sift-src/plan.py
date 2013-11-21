@@ -762,7 +762,7 @@ class SiftPlan(object):
         """
         Todo: implement directly in OpenCL instead of relying on pyOpenCL
         """
-        wg_size = min(self.max_workgroup_size, self.kernels["memset"]),
+        wg_size = self.kernels["memset"],
         evt1 = self.programs["memset"].memset_float(self.queue, calc_size((4 * self.kpsize,), wg_size), wg_size, self.buffers["Kp_1"].data, numpy.float32(-1), numpy.int32(4 * self.kpsize))
 #        evt2 = self.programs["memset"].memset_float(self.queue, calc_size((4 * self.kpsize,), wg_size), wg_size, self.buffers["Kp_2"].data, numpy.float32(-1), numpy.int32(4 * self.kpsize))
         evt3 = self.programs["memset"].memset_int(self.queue, (1,), (1,), self.buffers["cnt"].data, numpy.int32(0), numpy.int32(1))
