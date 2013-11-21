@@ -4,9 +4,14 @@
 #    Project: Sift implementation in Python + OpenCL
 #             https://github.com/kif/sift_pyocl
 #
-
 """
-Contains a class for creating a plan, allocating arrays, compiling kernels and other things like that
+
+Contains a class for creating a plan, allocating arrays, compiling kernels and other things like that...
+to calculate SIFT keypoints and descriptors.
+
+This algorithm is patented: U.S. Patent 6,711,293: 
+"Method and apparatus for identifying scale invariant features in an image and use of same for locating an object in an image", 
+David Lowe's patent for the SIFT algorithm, March 23, 2004
 """
 
 from __future__ import division, print_function
@@ -52,6 +57,9 @@ logger = logging.getLogger("sift.plan")
 
 class SiftPlan(object):
     """
+    This class implements a way to calculate SIFT keypoints.
+    
+    
     How to calculate a set of SIFT keypoint on an image:
 
     siftp = sift.SiftPlan(img.shape,img.dtype,devicetype="GPU")
@@ -59,6 +67,8 @@ class SiftPlan(object):
 
     kp is a nx132 array. the second dimension is composed of x,y, scale and angle as well as 128 floats describing the keypoint
 
+    This SIFT algorithm is patented: U.S. Patent 6,711,293: 
+    "Method and apparatus for identifying scale invariant features in an image and use of same for locating an object in an image", 
     """
     kernels = {"convolution":1024,  # key: name value max local workgroup size
                "preprocess": 1024,
@@ -99,7 +109,7 @@ class SiftPlan(object):
         @param profile: collect timing info
         @param device: 2-tuple of integers
         @param PIX_PER_KP: number of keypoint pre-allocated: 1 for 10 pixel
-        @param  max_workgroup_size: set to 1 under macosX
+        @param  max_workgroup_size: set to 1 under macosX on CPU
         @param context: provide an external context
         """
         self.buffers = {}
