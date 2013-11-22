@@ -5,9 +5,6 @@
 #             https://github.com/kif/sift_pyocl
 #
 
-"""
-Contains a class for creating a plan, allocating arrays, compiling kernels and other things like that
-"""
 
 from __future__ import division
 
@@ -85,7 +82,7 @@ def sizeof(shape, dtype="uint8"):
 def _gcd(a, b):
     """Calculate the greatest common divisor of a and b"""
     while b:
-        a, b = b, a%b
+        a, b = b, a % b
     return a
 
 
@@ -97,19 +94,19 @@ def matching_correction(matching):
     '''
     N = matching.shape[0]
     #solving normals equations for least square fit
-    X = numpy.zeros((2*N,6))
-    X[::2,2:] = 1,0,0,0
-    X[::2,0] = matching.x[:,0]
-    X[::2,1] = matching.y[:,0]
-    X[1::2,0:3] = 0,0,0
-    X[1::2,3] = matching.x[:,0]
-    X[1::2,4] = matching.y[:,0]
-    X[1::2,5] = 1
-    y = numpy.zeros((2*N,1))
-    y[::2,0] = matching.x[:,1]
-    y[1::2,0] = matching.y[:,1]
-    A = numpy.dot(X.transpose(),X)
-    sol = numpy.dot(numpy.linalg.inv(A),numpy.dot(X.transpose(),y))
+    X = numpy.zeros((2 * N, 6))
+    X[::2, 2:] = 1, 0, 0, 0
+    X[::2, 0] = matching.x[:, 0]
+    X[::2, 1] = matching.y[:, 0]
+    X[1::2, 0:3] = 0, 0, 0
+    X[1::2, 3] = matching.x[:, 0]
+    X[1::2, 4] = matching.y[:, 0]
+    X[1::2, 5] = 1
+    y = numpy.zeros((2 * N, 1))
+    y[::2, 0] = matching.x[:, 1]
+    y[1::2, 0] = matching.y[:, 1]
+    A = numpy.dot(X.transpose(), X)
+    sol = numpy.dot(numpy.linalg.inv(A), numpy.dot(X.transpose(), y))
 #    sol = numpy.dot(numpy.linalg.pinv(X),y) #pseudo-inverse is slower
 #    MSE = numpy.linalg.norm(y - numpy.dot(X,sol))**2/N #Mean Squared Error, if needed
     return sol
@@ -134,13 +131,13 @@ def bin2RGB(img):
         new_shape = shape[0] // 2, shape[1] // 2, 1
         new_img = img.reshape((shape[0], shape[1], 1))
     out = numpy.zeros(new_shape, dtype=out_dtype)
-    out += new_img[::2,::2,:]
-    out += new_img[1::2,::2,:]
-    out += new_img[1::2,1::2,:]
-    out += new_img[::2,1::2,:]
+    out += new_img[::2, ::2, :]
+    out += new_img[1::2, ::2, :]
+    out += new_img[1::2, 1::2, :]
+    out += new_img[::2, 1::2, :]
     out /= 4
     if len(shape) != 3:
-        out.shape = new_shape[0],new_shape[1]
+        out.shape = new_shape[0], new_shape[1]
     if dtype == numpy.uint8:
         return out.astype(dtype)
     else:

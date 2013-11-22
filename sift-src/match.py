@@ -70,7 +70,7 @@ class MatchPlan(object):
                                 ('desc', (numpy.uint8, 128))
                                 ])
 
-    def __init__(self, size=16384, devicetype="CPU", profile=False, device=None, max_workgroup_size=128, roi=None, context=None):
+    def __init__(self, size=16384, devicetype="CPU", profile=False, device=None, max_workgroup_size=None, roi=None, context=None):
         """
         Constructor of the class:
 
@@ -78,16 +78,17 @@ class MatchPlan(object):
         @param devicetype: can be CPU or GPU
         @param profile: set to true to activate profiling information collection
         @param device: 2-tuple of integer, see clinfo
-        @param max_workgroup_size: CPU on MacOS, limit to 1 
+        @param max_workgroup_size: CPU on MacOS, limit to 1. None by default to use default ones (max=128). 
         @param roi: Region Of Interest: TODO
         @param context: Use an external context (discard devicetype and device options)
         """
         self.profile = bool(profile)
-        self.max_workgroup_size = max_workgroup_size
-        if max_workgroup_size != 128: #default value
+        if self.max_workgroup_size:
+            self.max_workgroup_size = int(max_workgroup_size)
             self.kernels = {}
             for k, v in self.__class__.kernels.items():
-                self.kernels[k] = min(v, max_workgroup_size)
+                self.kernels[k] = min(v, self.max_workgroup_size)
+        self.max_workgroup_size = 128
 
         self.events = []
         self.kpsize = size
@@ -122,9 +123,19 @@ class MatchPlan(object):
         self.devicetype = ocl.platforms[self.device[0]].devices[self.device[1]].type
         if (self.devicetype == "CPU"):
             self.USE_CPU = True
+            self.matching_kernel = "matching_cpu"
+            if sys.platform == "darwin":
+                logger.warning("MacOSX computer working on CPU: limiting workgroup size to 1 !")
+                self.max_workgroup_size = 1
+                self.kernels = {}
+                for k, v in self.__class__.kernels.items():
+                    if isinstance(v, int):
+                        self.kernels[k] = 1
+                    else:
+                        self.kernels[k] = tuple([1 for i in v])
         else:
             self.USE_CPU = False
-        self.matching_kernel = "matching_gpu" if not(self.USE_CPU) else "matching_cpu"
+            self.matching_kernel = "matching_gpu"
         self.roi = None
         if roi:
             self.set_roi(roi)

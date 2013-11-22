@@ -73,9 +73,9 @@ class LinearAlign(object):
     """
     Align images on a reference image based on an Afine transformation (bi-linear + offset)
     """
-    kernel_file = "transform"
+    kernels = {"transform":128}
 
-    def __init__(self, image, devicetype="CPU", profile=False, device=None, max_workgroup_size=128, ROI=None, extra=0, context=None):
+    def __init__(self, image, devicetype="CPU", profile=False, device=None, max_workgroup_size=None, ROI=None, extra=0, context=None):
         """
         Constructor of the class
 
@@ -93,7 +93,13 @@ class LinearAlign(object):
         self.ref = numpy.ascontiguousarray(image, numpy.float32)
         self.buffers = {}
         self.shape = image.shape
-        self.max_workgroup_size = max_workgroup_size
+        if max_workgroup_size:
+            self.max_workgroup_size = int(max_workgroup_size)
+            self.kernels = {}
+            for k, v in self.__class__.kernels.items():
+                self.kernels[k] = min(v, self.max_workgroup_size)
+        else:
+            self.max_workgroup_size = None
         if len(self.shape) == 3:
             self.RGB = True
             self.shape = self.shape[:2]
@@ -107,16 +113,6 @@ class LinearAlign(object):
             self.extra = extra[:2]
         self.outshape = tuple(i + 2 * j for i, j in zip(self.shape, self.extra))
         self.ROI = ROI
-        if self.RGB:
-            if self.max_workgroup_size == 1:
-                self.wg = (1, 1, 1)
-            else:
-                self.wg = (4, 8, 4)
-        else:
-            if self.max_workgroup_size == 1:
-                self.wg = (1, 1)
-            else:
-                self.wg = (8, 4)
         if context:
             self.ctx = context
             device_name = self.ctx.devices[0].name.strip()
@@ -130,8 +126,31 @@ class LinearAlign(object):
             else:
                 self.device = device
             self.ctx = pyopencl.Context(devices=[pyopencl.get_platforms()[self.device[0]].get_devices()[self.device[1]]])
+        self.devicetype = ocl.platforms[self.device[0]].devices[self.device[1]].type
+        if (self.devicetype == "CPU"):
+            self.USE_CPU = True
+            if sys.platform == "darwin":
+                logger.warning("MacOSX computer working on CPU: limiting workgroup size to 1 !")
+                self.max_workgroup_size = 1
+                self.kernels = {}
+                for k, v in self.__class__.kernels.items():
+                    if isinstance(v, int):
+                        self.kernels[k] = 1
+                    else:
+                        self.kernels[k] = tuple([1 for i in v])
+        if self.RGB:
+            if self.max_workgroup_size == 1:
+                self.wg = (1, 1, 1)
+            else:
+                self.wg = (4, 8, 4)
+        else:
+            if self.max_workgroup_size == 1:
+                self.wg = (1, 1)
+            else:
+                self.wg = (8, 4)
 
-        self.sift = SiftPlan(template=image, context=self.ctx, profile=self.profile, max_workgroup_size=max_workgroup_size)
+
+        self.sift = SiftPlan(template=image, context=self.ctx, profile=self.profile, max_workgroup_size=self.max_workgroup_size)
         self.ref_kp = self.sift.keypoints(image)
         if self.ROI is not None:
             kpx = numpy.round(self.ref_kp.x).astype(numpy.int32)
@@ -139,7 +158,7 @@ class LinearAlign(object):
             masked = self.ROI[(kpy, kpx)].astype(bool)
             logger.warning("Reducing keypoint list from %i to %i because of the ROI" % (self.ref_kp.size, masked.sum()))
             self.ref_kp = self.ref_kp[masked]
-        self.match = MatchPlan(context=self.ctx, profile=self.profile, max_workgroup_size=max_workgroup_size)
+        self.match = MatchPlan(context=self.ctx, profile=self.profile, max_workgroup_size=self.max_workgroup_size)
 #        Allocate reference keypoints on the GPU within match context:
         self.buffers["ref_kp_gpu"] = pyopencl.array.to_device(self.match.queue, self.ref_kp)
         # TODO optimize match so that the keypoint2 can be optional
@@ -286,7 +305,7 @@ class LinearAlign(object):
                     matrix = numpy.empty((2, 2), dtype=numpy.float32)
                     matrix[0, 0], matrix[0, 1] = transform_matrix[4], transform_matrix[3]
                     matrix[1, 0], matrix[1, 1] = transform_matrix[1], transform_matrix[0]
-            if relative: #update stable part to perform a relative alignment
+            if relative:  # update stable part to perform a relative alignment
                 self.ref_kp = kp
                 if self.ROI is not None:
                     kpx = numpy.round(self.ref_kp.x).astype(numpy.int32)
@@ -338,7 +357,7 @@ class LinearAlign(object):
 #            corr = numpy.dot(matrix, numpy.vstack((matching[:, 1].y, matching[:, 1].x))).T - \
 #                   offset.T - numpy.vstack((matching[:, 0].y, matching[:, 0].x)).T
             corr = numpy.dot(matrix, numpy.vstack((matching[:, 0].y, matching[:, 0].x))).T + offset.T - numpy.vstack((matching[:, 1].y, matching[:, 1].x)).T
-            rms = numpy.sqrt((corr * corr).sum(axis= -1).mean())
+            rms = numpy.sqrt((corr * corr).sum(axis=-1).mean())
 
             # Todo: calculate the RMS of deplacement and return it:
             return {"result":result, "keypoint":kp, "matching":matching, "offset":offset, "matrix": matrix, "rms":rms}
