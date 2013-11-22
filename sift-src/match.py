@@ -162,8 +162,14 @@ class MatchPlan(object):
         """
         Call the OpenCL compiler
         """
+        kernel_directory = os.path.dirname(os.path.abspath(__file__))
+        if not os.path.exists(os.path.join(kernel_directory, "matching_gpu" + ".cl")):
+            while (".zip" in kernel_directory)  and (len(kernel_directory) > 4):
+                kernel_directory = os.path.dirname(kernel_directory)
+            kernel_directory = os.path.join(kernel_directory, "sift_kernels")
+
         for kernel in self.kernels:
-            kernel_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), kernel + ".cl")
+            kernel_file = os.path.join(kernel_directory, kernel + ".cl")
             kernel_src = open(kernel_file).read()
             wg_size = self.kernels[kernel]
             try:
