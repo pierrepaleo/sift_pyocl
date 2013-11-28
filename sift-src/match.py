@@ -83,12 +83,13 @@ class MatchPlan(object):
         @param context: Use an external context (discard devicetype and device options)
         """
         self.profile = bool(profile)
-        if self.max_workgroup_size:
+        if max_workgroup_size:
             self.max_workgroup_size = int(max_workgroup_size)
             self.kernels = {}
             for k, v in self.__class__.kernels.items():
                 self.kernels[k] = min(v, self.max_workgroup_size)
-        self.max_workgroup_size = 128
+        else:
+            self.max_workgroup_size = None
 
         self.events = []
         self.kpsize = size

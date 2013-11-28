@@ -80,7 +80,7 @@ class LinearAlign(object):
         Constructor of the class
 
         @param image: reference image on which other image should be aligned
-        @param devicetype: Kind of prefered devce
+        @param devicetype: Kind of preferred devce
         @param profile:collect profiling information ?
         @param device: 2-tuple of integer. see clinfo
         @param max_workgroup_size: set to 1 for macOSX on CPU

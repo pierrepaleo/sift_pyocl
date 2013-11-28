@@ -105,7 +105,7 @@ class SiftPlan(object):
                                 ('desc', (numpy.uint8, 128))
                                 ])
 
-    def __init__(self, shape=None, dtype=None, devicetype="CPU", template=None, profile=False, device=None, PIX_PER_KP=None, max_workgroup_size=128, context=None):
+    def __init__(self, shape=None, dtype=None, devicetype="CPU", template=None, profile=False, device=None, PIX_PER_KP=None, max_workgroup_size=None, context=None):
         """
         Contructor of the class
 
@@ -137,7 +137,16 @@ class SiftPlan(object):
         if PIX_PER_KP :
             self.PIX_PER_KP = int(PIX_PER_KP)
         self.profile = bool(profile)
-        self.max_workgroup_size = max_workgroup_size
+        if max_workgroup_size:
+            self.max_workgroup_size = int(max_workgroup_size)
+            self.kernels = {}
+            for k, v in self.__class__.kernels.items():
+                if isinstance(v, int):
+                    self.kernels[k] = min(v, self.max_workgroup_size)
+#                else:
+#                    self.kernels[k] = tuple([1 for i in v])
+        else:
+            self.max_workgroup_size = None
         self.events = []
         self._sem = threading.Semaphore()
         self.scales = []  # in XY order
@@ -235,7 +244,10 @@ class SiftPlan(object):
         self.memory += self.kpsize * size_of_float * 4 * 2  # those are array of float4 to register keypoints, we need two of them
         self.memory += self.kpsize * 128  # stores the descriptors: 128 unsigned chars
         self.memory += 4  # keypoint index Counter
-        wg_float = min(self.max_workgroup_size, numpy.sqrt(self.shape[0] * self.shape[1]))
+        if self.max_workgroup_size:
+            wg_float = min(self.max_workgroup_size, numpy.sqrt(self.shape[0] * self.shape[1]))
+        else:
+            wg_float = min(128, numpy.sqrt(self.shape[0] * self.shape[1]))
         self.red_size = 2 ** (int(math.ceil(math.log(wg_float, 2))))
         self.memory += 4 * 2 * self.red_size  # temporary storage for reduction
 
@@ -316,7 +328,7 @@ class SiftPlan(object):
         wg_size = 2 ** int(math.ceil(math.log(size) / math.log(2)))
 
         logger.debug("Allocating %s float for blur sigma: %s" % (size, sigma))
-        if wg_size > self.max_workgroup_size:  # compute on CPU
+        if self.max_workgroup_size and (wg_size > self.max_workgroup_size):  # compute on CPU
             x = numpy.arange(size) - (size - 1.0) / 2.0
             gaus = numpy.exp(-(x / sigma) ** 2 / 2.0).astype(numpy.float32)
             gaus /= gaus.sum(dtype=numpy.float32)
@@ -355,10 +367,16 @@ class SiftPlan(object):
         for kernel in self.kernels:
             kernel_file = os.path.join(kernel_directory, kernel + ".cl")
             kernel_src = open(kernel_file).read()
-            if "__len__" not in dir(self.kernels[kernel]):
-                wg_size = min(self.max_workgroup_size, self.kernels[kernel])
+            if self.max_workgroup_size:
+                if "__len__" not in dir(self.kernels[kernel]):
+                    wg_size = min(self.max_workgroup_size, self.kernels[kernel])
+                else:
+                    wg_size = self.max_workgroup_size
             else:
-                wg_size = self.max_workgroup_size
+                if "__len__" not in dir(self.kernels[kernel]):
+                    wg_size = self.kernels[kernel]
+                else:
+                    wg_size = 128
             try:
                 program = pyopencl.Program(self.ctx, kernel_src).build('-D WORKGROUP_SIZE=%s' % wg_size)
             except pyopencl.MemoryError as error:
@@ -397,14 +415,15 @@ class SiftPlan(object):
         # we recalculate the shapes ...
         shape = self.shape
         min_size = 2 * par.BorderDist + 2
-        self.max_workgroup_size = min(self.max_workgroup_size, max_work_item_sizes[0])
+        if self.max_workgroup_size:
+            self.max_workgroup_size = min(self.max_workgroup_size, max_work_item_sizes[0])
+        else:
+            self.max_workgroup_size = max_work_item_sizes[0]
         while min(shape) > min_size:
             wg = (min(2 ** int(math.ceil(math.log(shape[-1], 2))), self.max_workgroup_size), 1)
             self.wgsize.append(wg)
             self.procsize.append(calc_size(shape[-1::-1], wg))
             shape = tuple(i // 2 for i in shape)
-
-
 
 
     def keypoints(self, image):
