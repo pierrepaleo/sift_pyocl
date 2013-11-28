@@ -9,7 +9,7 @@
 Automatic selection of OpenCL devices 
 """
 
-from __future__ import division
+from __future__ import division, print_function, with_statement
 
 __authors__ = ["Jérôme Kieffer"]
 __contact__ = "jerome.kieffer@esrf.eu"

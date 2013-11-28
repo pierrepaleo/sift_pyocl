@@ -14,7 +14,7 @@ This algorithm is patented: U.S. Patent 6,711,293:
 David Lowe's patent for the SIFT algorithm, March 23, 2004
 """
 
-from __future__ import division, print_function
+from __future__ import division, print_function, with_statement
 
 __authors__ = ["Jérôme Kieffer"]
 __contact__ = "jerome.kieffer@esrf.eu"
@@ -45,7 +45,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 
 """
-import time, math, os, logging, threading
+import time, math, os, logging, threading, sys
 # import sys
 import gc
 import numpy
