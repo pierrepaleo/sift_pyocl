@@ -52,12 +52,19 @@ logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("utilstest")
 
 from optparse import OptionParser
-parser = OptionParser(usage="run tests for SIFT_PyOCL")
-parser.add_option("-D","--device", dest="device", help="destination device, can be a string like CPU, GPU or a 2-tuple of integer", default="GPU")
-parser.add_option("-d", "--debug", dest="debug", help="run in debugging mode, requires matplotlib to show graphs", default=False, action="store_true")
-parser.add_option("-i", "--info", dest="info", help="run in more verbose mode but without graphs", default=False, action="store_true")
-parser.add_option("-f", "--force", dest="force", help="force the build of the library", default=False, action="store_true")
-parser.add_option("-r", "--really-force", dest="remove", help="remove existing build and force the build of the library", default=False, action="store_true")
+
+parser = OptionParser(usage="Tests for SIFT_PyOCL")
+parser.add_option("-D", "--device", dest="device", help="destination device, can be a string like CPU, GPU or a 2-tuple of integer",
+                  default="GPU")
+parser.add_option("-d", "--debug", dest="debug", help="run in debugging mode, requires matplotlib to show graphs",
+                  default=False, action="store_true")
+parser.add_option("-i", "--info", dest="info", help="run in more verbose mode but without graphs",
+                  default=False, action="store_true")
+parser.add_option("-f", "--force", dest="force", help="force the build of the library",
+                  default=False, action="store_true")
+parser.add_option("-r", "--really-force", dest="remove",
+                  help="remove existing build and force the build of the library",
+                  default=False, action="store_true")
 options, args = parser.parse_args()
 
 def copy(infile, outfile):

@@ -36,8 +36,8 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 import sys, os, pyopencl, time
 from math import sin, cos
-from utilstest import UtilsTest, getLogger
-logger = getLogger(__file__)
+import utilstest
+logger = utilstest.getLogger(__file__)
 import sift
 import numpy
 import scipy.misc
@@ -62,11 +62,11 @@ def cmp_kp(a, b):
 
 
 class DemoSift(object):
-    def __init__(self, filename=None, devicetype=None, device=None, profile=False):
+    def __init__(self, filename=None, devicetype=None, device=None, context=None, profile=False):
         if filename and os.path.exists(filename):
             self.filename = filename
         else:
-            self.filename = UtilsTest.getimage("wikipedia/commons/9/94/Esrf_grenoble.jpg")
+            self.filename = utilstest.UtilsTest.getimage("wikipedia/commons/9/94/Esrf_grenoble.jpg")
         try:
             self.image_rgb = scipy.misc.imread(self.filename)
         except:
@@ -77,7 +77,8 @@ class DemoSift(object):
         else: self.image_bw = self.image_rgb
         if feature:
             self._sift_cpp = feature.SiftAlignment()
-        self._sift_ocl = sift.SiftPlan(template=self.image_rgb, device=device, devicetype=devicetype, profile=profile)
+        self._sift_ocl = sift.SiftPlan(template=self.image_rgb, device=device, devicetype=devicetype, context=context, profile=profile)
+        self.ctx = self._sift_ocl.ctx
         self.kp_cpp = numpy.empty(0)
         self.kp_ocl = numpy.empty(0)
         self.fig = pylab.figure()
@@ -161,54 +162,52 @@ class DemoSift(object):
 
 
 if __name__ == "__main__":
-    from optparse import OptionParser
-    parser = OptionParser(version="1.0", description="Demonstration of sift using OpenCL version C++ implementation",
-                          usage="usage: %prog [options] imagefiles*")
-
-    parser.add_option("-d", "--device", dest="device",
-                  help="device on which to run: coma separated like --device=0,1",
-                  default=None)
-    parser.add_option("-t", "--type", dest="type",
-                       help="device type  on which to run like CPU (default) or GPU",
-                       default="CPU")
-    parser.add_option("-p", "--profile", dest="profile",
-                       help="Print profiling information of OpenExecution",
-                       default=False, action="store_true")
-    parser.add_option("-f", "--force", dest="force",
-                       help="rebuild the package",
-                       default=False, action="store_true")
-    parser.add_option("-r", "--remove", dest="remove",
-                       help="remove build and rebuild the package",
-                       default=False, action="store_true")
-    (options, args) = parser.parse_args()
-    if options.device:
-        device = tuple(int(i) for i in options.device.split(","))
-    else:
-        device = None
+#    from optparse import OptionParser
+#    parser = OptionParser(version="1.0", description="Demonstration of sift using OpenCL version C++ implementation",
+#                          usage="usage: %prog [options] imagefiles*")
+#
+#    parser.add_option("-d", "--device", dest="device",
+#                  help="device on which to run: coma separated like --device=0,1",
+#                  default=None)
+#    parser.add_option("-t", "--type", dest="type",
+#                       help="device type  on which to run like CPU (default) or GPU",
+#                       default="CPU")
+#    parser.add_option("-p", "--profile", dest="profile",
+#                       help="Print profiling information of OpenExecution",
+#                       default=False, action="store_true")
+#    parser.add_option("-f", "--force", dest="force",
+#                       help="rebuild the package",
+#                       default=False, action="store_true")
+#    parser.add_option("-r", "--remove", dest="remove",
+#                       help="remove build and rebuild the package",
+#                       default=False, action="store_true")
+#    (options, args) = parser.parse_args()
+    options = utilstest.options
+    args = utilstest.args
     if args:
         for i in args:
             if os.path.exists(i):
                 print("Processing file %s" % i)
-                d = DemoSift(i, devicetype=options.type, device=device, profile=options.profile)
+                d = DemoSift(i, context=utilstest.ctx, profile=options.info)
                 d.sift_ocl()
                 if feature:
                     d.sift_cpp()
                 d.timings()
                 d.show(1000)
                 d.match()
-                if options.profile:
+                if options.info:
                     d._sift_ocl.log_profile()
                 raw_input()
     else:
         print("Processing file demo image")
-        d = DemoSift(devicetype=options.type, device=device, profile=options.profile)
+        d = DemoSift(context=utilstest.ctx, profile=options.info)
         d.sift_ocl()
         if feature:
             d.sift_cpp()
         d.timings()
         d.show(1000)
         d.match()
-        if options.profile:
+        if options.info:
             d._sift_ocl.log_profile()
         raw_input()
 

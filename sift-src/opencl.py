@@ -200,11 +200,13 @@ class OpenCL(object):
         @param best: shall we look for the
         """
         if "type" in kwargs:
-            dtype = kwargs["type"].upper()
-        else:
+            dtype = kwargs["type"]
+        if dtype:
             dtype = dtype.upper()
-        if len(dtype) > 3:
-            dtype = dtype[:3]
+            if len(dtype) > 3:
+                dtype = dtype[:3]
+        else:
+            dtype = "ALL"
         best_found = None
         for platformid, platform in enumerate(self.platforms):
             for deviceid, device in enumerate(platform.devices):
