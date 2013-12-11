@@ -45,15 +45,15 @@ import os, logging
 logger = logging.getLogger("sift.opencl")
 
 try:
-    import pyopencl, pyopencl.array
+    import pyopencl
 #    from pyFAI.opencl import ocl
 except ImportError:
     logger.error("Unable to import pyOpenCl. Please install it from: http://pypi.python.org/pypi/pyopencl")
     pyopencl = None
 
-FLOP_PER_CORE = {"GPU": 64,  # GPU, Fermi at least perform 64 flops per cycle/multicore, G80 were at 24 or 48 ...
-                  "CPU": 4  # CPU, at least intel's have 4 operation per cycle
-                  }
+FLOP_PER_CORE = { "GPU": 64, # GPU, Fermi at least perform 64 flops per cycle/multicore, G80 were at 24 or 48 ...
+                  "CPU": 4,  # CPU, at least intel's have 4 operation per cycle
+                  "ACC": 8}  # ACC: the Xeon-phi (MIC) appears to be able to process 8 Flops per hyperthreaded-core
 NVIDIA_FLOP_PER_CORE = {(1, 0): 24,  # Guessed !
                          (1, 1): 24,  # Measured on G98 [Quadro NVS 295]
                          (1, 2): 24,  # Guessed !
@@ -146,7 +146,9 @@ class OpenCL(object):
                 extensions = device.extensions
                 if (pypl.vendor == "NVIDIA Corporation") and ('cl_khr_fp64' in extensions):
                                 extensions += ' cl_khr_int64_base_atomics cl_khr_int64_extended_atomics'
-                devtype = pyopencl.device_type.to_string(device.type)
+                devtype = pyopencl.device_type.to_string(device.type).upper()
+                if len(devtype) > 3:
+                    devtype = devtype[:3]
                 if (pypl.vendor == "NVIDIA Corporation") and (devtype == "GPU") and "compute_capability_major_nv" in dir(device):
                     comput_cap = device.compute_capability_major_nv, device.compute_capability_minor_nv
                     flop_core = NVIDIA_FLOP_PER_CORE.get(comput_cap, min(NVIDIA_FLOP_PER_CORE.values()))
@@ -202,10 +204,12 @@ class OpenCL(object):
             dtype = kwargs["type"].upper()
         else:
             dtype = dtype.upper()
+        if len(dtype) > 3:
+            dtype = dtype[:3]
         best_found = None
         for platformid, platform in enumerate(self.platforms):
             for deviceid, device in enumerate(platform.devices):
-                if (type in ["ALL", "DEF"]) or (device.type == type):
+                if (dtype in ["ALL", "DEF"]) or (device.type == dtype):
                     if (memory is None) or (memory <= device.memory):
                         found = True
                         for ext in extensions:
