@@ -90,7 +90,7 @@ class DemoSift(object):
         self.speedups = numpy.zeros((1, 3), dtype=numpy.float32)
 
     def sift_cpp(self):
-        print(os.linesep + "Running SIFT using C++ code")
+        print("Running SIFT using C++ code")
         t0 = time.time()
         self.kp_cpp = self._sift_cpp.sift(self.image_bw)
         t1 = time.time()
@@ -102,7 +102,7 @@ class DemoSift(object):
         return self.kp_cpp.size
 
     def sift_ocl(self):
-        print(os.linesep + "Running SIFT using OpenCL code")
+        print("Running SIFT using OpenCL code")
         t0 = time.time()
         self.kp_ocl = self._sift_ocl.keypoints(self.image_rgb)
         t1 = time.time()
@@ -116,7 +116,7 @@ class DemoSift(object):
     def timings(self, kp_ocl):
         if self.kp_ocl.size > 0 and self.kp_cpp > 0:
             speedup = self.timing_cpp / self.timing_ocl
-            self.speedups[0] = speedup, self.image_rgb.size, kp_ocl
+            self.speedups[0] = speedup, self.image_bw.size, kp_ocl
             print("Computing time using C++: %.3fms\t using OpenCL: %.3fms:\t Speed up: %.3f" % (1e3 * self.timing_cpp, 1e3 * self.timing_ocl, speedup))
         return self.speedups
 
