@@ -52,7 +52,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 
 """
-import time, math, os, logging, threading, sys
+import time, math, os, logging, threading, sys, types
 # import sys
 import gc
 import numpy
@@ -818,28 +818,34 @@ class SiftPlan(object):
     def debug_holes(self, label=""):
         print("%s %s" % (label, numpy.where(self.buffers["Kp_1"].get()[:, 1] == -1)[0]))
 
-    def log_profile(self):
+    def log_profile(self, stream=sys.stdout):
         """
         If we are in debugging mode, prints out all timing for every single OpenCL call
+        
+        By default print to stdout but could be to a file
         """
         t = 0.0
         orient = 0.0
         descr = 0.0
+
         if self.profile:
+            if isinstance(stream, types.StringTypes):
+                stream = open(stream, "a")
+            stream.write("Profiling SIFT keypoint extraction on device %s%s" % (self.ctx.devices[0].name, os.linesep))
             for e in self.events:
                 if "__len__" in dir(e) and len(e) >= 2:
                     et = 1e-6 * (e[1].profile.end - e[1].profile.start)
-                    print("%50s:\t%.3fms" % (e[0], et))
+                    stream.write("%50s:\t%.3fms%s" % (e[0], et, os.linesep))
                     t += et
                     if "orient" in e[0]:
                         orient += et
                     if "descriptors" in e[0]:
                         descr += et
 
-        print("_"*80)
-        print("%50s:\t%.3fms" % ("Total execution time", t))
-        print("%50s:\t%.3fms" % ("Total Orientation assignment", orient))
-        print("%50s:\t%.3fms" % ("Total Descriptors", descr))
+            stream.write("_"*80 + os.linesep)
+            stream.write("%50s:\t%.3fms%s" % ("Total execution time", t, os.linesep))
+            stream.write("%50s:\t%.3fms%s" % ("Total Orientation assignment", orient, os.linesep))
+            stream.write("%50s:\t%.3fms%s" % ("Total Descriptors", descr, os.linesep))
 
     def reset_timer(self):
         """
