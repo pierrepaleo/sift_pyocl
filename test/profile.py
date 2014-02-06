@@ -1,7 +1,7 @@
 #!/usr/bin/python
 import sys, os
 import utilstest
-utilstest.getLogger()
+logger = utilstest.getLogger()
 #here = os.path.dirname(os.path.abspath(__file__))
 #there = os.path.join(here, "..", "build")
 #lib = [os.path.abspath(os.path.join(there, i)) for i in os.listdir(there) if "lib" in i][0]
@@ -10,8 +10,20 @@ import sift
 import numpy
 import scipy.misc
 
-lena = scipy.misc.lena()
-#lena = scipy.misc.imread("../../test_images/ESR032h.jpg")
+#
+try:
+    lena = scipy.misc.imread(sys.argv[1])
+except:
+    try:
+        import fabio
+        lena = fabio.open(sys.argv[1]).data
+    except:
+        lena = scipy.misc.lena()
+        logger.info("Using image lena from scipy")
+    else:
+        logger.info("Using image %s read with FabIO"%sys.argv[1])
+else:
+    logger.info("Using image %s read with SciPy"%sys.argv[1])
 
 s = sift.SiftPlan(template=lena, profile=True, context=utilstest.ctx)
 kp = s.keypoints(lena)
