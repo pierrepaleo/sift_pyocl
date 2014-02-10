@@ -92,6 +92,7 @@ class SiftPlan(object):
 #               "keypoints":128}
     converter = {numpy.dtype(numpy.uint8):"u8_to_float",
                  numpy.dtype(numpy.uint16):"u16_to_float",
+                 numpy.dtype(numpy.uint32):"u32_to_float",
                  numpy.dtype(numpy.int32):"s32_to_float",
                  numpy.dtype(numpy.int64):"s64_to_float",
 #                    numpy.float64:"double_to_float",
