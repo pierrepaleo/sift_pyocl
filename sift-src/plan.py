@@ -106,7 +106,9 @@ class SiftPlan(object):
                                 ('desc', (numpy.uint8, 128))
                                 ])
 
-    def __init__(self, shape=None, dtype=None, devicetype="CPU", template=None, profile=False, device=None, PIX_PER_KP=None, max_workgroup_size=None, context=None):
+    def __init__(self, shape=None, dtype=None, devicetype="CPU", template=None,
+                 profile=False, device=None, PIX_PER_KP=None,
+                 max_workgroup_size=None, context=None, init_sigma=None):
         """
         Contructor of the class
 
@@ -120,6 +122,10 @@ class SiftPlan(object):
         @param max_workgroup_size: set to 1 under macosX on CPU
         @param context: provide an external context
         """
+        if init_sigma is None:
+            init_sigma = par.InitSigma
+        # no test on the values, just make sure it is a float
+        self._init_sigma = float(init_sigma)
         self.buffers = {}
         self.programs = {}
         if template is not None:
@@ -256,12 +262,12 @@ class SiftPlan(object):
         # Calculate space for gaussian kernels
         ########################################################################
         curSigma = 1.0 if par.DoubleImSize else 0.5
-        if par.InitSigma > curSigma:
-            sigma = math.sqrt(par.InitSigma ** 2 - curSigma ** 2)
+        if self._init_sigma > curSigma:
+            sigma = math.sqrt(self._init_sigma ** 2 - curSigma ** 2)
             size = kernel_size(sigma, True)
             logger.debug("pre-Allocating %s float for init blur" % size)
             self.memory += size * size_of_float
-        prevSigma = par.InitSigma
+        prevSigma = self._init_sigma
         for i in range(par.Scales + 2):
             increase = prevSigma * math.sqrt(self.sigmaRatio ** 2 - 1.0)
             size = kernel_size(increase, True)
@@ -301,10 +307,10 @@ class SiftPlan(object):
         # Allocate space for gaussian kernels
         ########################################################################
         curSigma = 1.0 if par.DoubleImSize else 0.5
-        if par.InitSigma > curSigma:
-            sigma = math.sqrt(par.InitSigma ** 2 - curSigma ** 2)
+        if self._init_sigma > curSigma:
+            sigma = math.sqrt(self._init_sigma ** 2 - curSigma ** 2)
             self._init_gaussian(sigma)
-        prevSigma = par.InitSigma
+        prevSigma = self._init_sigma
 
         for i in range(par.Scales + 2):
             increase = prevSigma * math.sqrt(self.sigmaRatio ** 2 - 1.0)
@@ -491,9 +497,9 @@ class SiftPlan(object):
 #            octSize = 1.0
             curSigma = 1.0 if par.DoubleImSize else 0.5
             octave = 0
-            if par.InitSigma > curSigma:
-                logger.debug("Bluring image to achieve std: %f", par.InitSigma)
-                sigma = math.sqrt(par.InitSigma ** 2 - curSigma ** 2)
+            if self._init_sigma > curSigma:
+                logger.debug("Bluring image to achieve std: %f", self._init_sigma)
+                sigma = math.sqrt(self._init_sigma ** 2 - curSigma ** 2)
                 self._gaussian_convolution(self.buffers[0], self.buffers[0], sigma, 0)
     #        else:
     #            pyopencl.enqueue_copy(self.queue, dest=self.buffers[(0, "G_1")].data, src=self.buffers["input"].data)
@@ -554,7 +560,7 @@ class SiftPlan(object):
 
         @param octave: number of the octave
         """
-        prevSigma = par.InitSigma
+        prevSigma = self._init_sigma
         logger.info("Calculating octave %i" % octave)
         wgsize = (128,)  # (max(self.wgsize[octave]),) #TODO: optimize
         kpsize32 = numpy.int32(self.kpsize)
@@ -608,7 +614,7 @@ class SiftPlan(object):
                                           last_start,  # int start_keypoint,
                                           self.cnt[0],  # int end_keypoint,
                                           numpy.float32(par.PeakThresh),  # float peak_thresh,
-                                          numpy.float32(par.InitSigma),  # float InitSigma,
+                                          numpy.float32(self._init_sigma),  # float InitSigma,
                                           *self.scales[octave])  # int width, int height)
             if self.profile:
                 self.events += [("get cnt", cp_evt),

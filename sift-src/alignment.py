@@ -75,7 +75,8 @@ class LinearAlign(object):
     """
     kernels = {"transform":128}
 
-    def __init__(self, image, devicetype="CPU", profile=False, device=None, max_workgroup_size=None, ROI=None, extra=0, context=None):
+    def __init__(self, image, devicetype="CPU", profile=False, device=None, max_workgroup_size=None,
+                 ROI=None, extra=0, context=None, init_sigma=None):
         """
         Constructor of the class
 
@@ -86,6 +87,7 @@ class LinearAlign(object):
         @param max_workgroup_size: set to 1 for macOSX on CPU
         @param ROI: Region of interest: to be implemented
         @param extra: extra space around the image, can be an integer, or a 2 tuple in YX convention: TODO!
+        @param init_sigma: bluring width, you should have good reasons to modify the 1.6 default value...
         """
         self.profile = bool(profile)
         self.events = []
@@ -150,7 +152,8 @@ class LinearAlign(object):
                 self.wg = (8, 4)
 
 
-        self.sift = SiftPlan(template=image, context=self.ctx, profile=self.profile, max_workgroup_size=self.max_workgroup_size)
+        self.sift = SiftPlan(template=image, context=self.ctx, profile=self.profile,
+                             max_workgroup_size=self.max_workgroup_size, init_sigma=init_sigma)
         self.ref_kp = self.sift.keypoints(image)
         if self.ROI is not None:
             kpx = numpy.round(self.ref_kp.x).astype(numpy.int32)
