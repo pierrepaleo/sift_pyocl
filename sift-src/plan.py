@@ -494,15 +494,12 @@ class SiftPlan(object):
             if self.profile:self.events.append(("normalize", evt))
 
 
-#            octSize = 1.0
             curSigma = 1.0 if par.DoubleImSize else 0.5
             octave = 0
             if self._init_sigma > curSigma:
                 logger.debug("Bluring image to achieve std: %f", self._init_sigma)
                 sigma = math.sqrt(self._init_sigma ** 2 - curSigma ** 2)
                 self._gaussian_convolution(self.buffers[0], self.buffers[0], sigma, 0)
-    #        else:
-    #            pyopencl.enqueue_copy(self.queue, dest=self.buffers[(0, "G_1")].data, src=self.buffers["input"].data)
 
             for octave in range(self.octave_max):
                 kp, descriptor = self._one_octave(octave)
@@ -528,7 +525,6 @@ class SiftPlan(object):
                     output[last:last + l].desc = desc
                     last += l
             logger.info("Execution time: %.3fms" % (1000 * (time.time() - t0)))
-    #        self.count_kp(output)
         return output
 
     def _gaussian_convolution(self, input_data, output_data, sigma, octave=0):
@@ -598,15 +594,8 @@ class SiftPlan(object):
                                             numpy.int32(scale),  # int scale,
                                             *self.scales[octave])  # int width, int height)
             if self.profile:self.events.append(("local_maxmin %s %s" % (octave, scale), evt))
-#                print("after local_max_min:")
-#                print(self.buffers["Kp_1"].get()[:5])
-
-#                self.debug_holes("After local_maxmin %s %s" % (octave, scale))
             procsize = calc_size((self.kpsize,), wgsize)
-#           Refine keypoints
-#                kp_counter = self.buffers["cnt"].get()[0]
             cp_evt = pyopencl.enqueue_copy(self.queue, self.cnt, self.buffers["cnt"].data)
-#                kp_counter = self.cnt[0]
             # TODO: modify interp_keypoint so that it reads end_keypoint from GPU memory
             evt = self.programs["image"].interp_keypoint(self.queue, procsize, wgsize,
                                           self.buffers["DoGs"].data,  # __global float* DOGS,
@@ -621,12 +610,7 @@ class SiftPlan(object):
                                 ("interp_keypoint %s %s" % (octave, scale), evt)
                                 ]
 
-#                self.debug_holes("After interp_keypoint %s %s" % (octave, scale))
             newcnt = self._compact(last_start)
-#                print("after compaction:")
-#                print(self.buffers["Kp_1"].get()[:5])
-#                self.debug_holes("After compact %s %s" % (octave, scale))
-#                self.debug.append(self.buffers[ scale)].get())
             evt = self.programs["image"].compute_gradient_orientation(self.queue, self.procsize[octave], self.wgsize[octave],
                                self.buffers[scale].data,  # __global float* igray,
                                self.buffers["tmp"].data,  # __global float *grad,
@@ -645,9 +629,6 @@ class SiftPlan(object):
 
                 wgsize2 = self.kernels[file_to_use],
                 procsize = int(newcnt * wgsize2[0]),
-#                print "orientation_assignment:", procsize, wgsize2, last_start, self.buffers["cnt"].get()[0], newcnt
-#                self.debug.append(grad.get())
-#                self.debug.append(ori.get())
                 evt = self.programs[file_to_use].orientation_assignment(self.queue, procsize, wgsize2,
                                       self.buffers["Kp_1"].data,  # __global keypoint* keypoints,
                                       self.buffers["tmp"].data,  # __global float* grad,
@@ -723,8 +704,6 @@ class SiftPlan(object):
                                     ("copy cnt D->H", evt_cp),
                                     ("descriptors %s %s" % (octave, scale), evt2)]
 
-#                self.debug_holes("After orientation %s %s" % (octave, scale))
-#                last_start = self.buffers["cnt"].get()[0]
             evt_cp = pyopencl.enqueue_copy(self.queue, self.cnt, self.buffers["cnt"].data)
             last_start = self.cnt[0]
             if self.profile:
@@ -761,7 +740,6 @@ class SiftPlan(object):
         """
         wgsize = self.max_workgroup_size,  # (max(self.wgsize[0]),) #TODO: optimize
         kpsize32 = numpy.int32(self.kpsize)
-#        kp_counter = self.buffers["cnt"].get()[0]
         cp0_evt = pyopencl.enqueue_copy(self.queue, self.cnt, self.buffers["cnt"].data)
         kp_counter = self.cnt[0]
         procsize = calc_size((self.kpsize,), wgsize)
@@ -769,7 +747,6 @@ class SiftPlan(object):
         if kp_counter > 0.9 * self.kpsize:
             logger.warning("Keypoint counter overflow risk: counted %s / %s" % (kp_counter, self.kpsize))
         logger.info("Compact %s -> %s / %s" % (start, kp_counter, self.kpsize))
-#        self.buffers["cnt"].set(numpy.array([start], dtype=numpy.int32))
         self.cnt[0] = start
         cp1_evt = pyopencl.enqueue_copy(self.queue, self.buffers["cnt"].data, self.cnt)
         evt = self.programs["algebra"].compact(self.queue, procsize, wgsize,
@@ -778,9 +755,7 @@ class SiftPlan(object):
                         self.buffers["cnt"].data,  # __global int* counter,
                         start,  # int start,
                         kp_counter)  # int nbkeypoints
-#        newcnt = self.buffers["cnt"].get()[0]
         cp2_evt = pyopencl.enqueue_copy(self.queue, self.cnt, self.buffers["cnt"].data)
-        # print("After compaction, %i (-%i)" % (newcnt, kp_counter - newcnt))
         # swap keypoints:
         self.buffers["Kp_1"], self.buffers["Kp_2"] = self.buffers["Kp_2"], self.buffers["Kp_1"]
         # memset buffer Kp_2
