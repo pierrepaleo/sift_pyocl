@@ -52,7 +52,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 
 """
-import time, math, os, logging, threading, sys, types
+import time, math, os, logging, threading, sys
 # import sys
 import gc
 import numpy
@@ -92,6 +92,7 @@ class SiftPlan(object):
 #               "keypoints":128}
     converter = {numpy.dtype(numpy.uint8):"u8_to_float",
                  numpy.dtype(numpy.uint16):"u16_to_float",
+                 numpy.dtype(numpy.uint32):"u32_to_float",
                  numpy.dtype(numpy.int32):"s32_to_float",
                  numpy.dtype(numpy.int64):"s64_to_float",
 #                    numpy.float64:"double_to_float",
@@ -105,10 +106,9 @@ class SiftPlan(object):
                                 ('desc', (numpy.uint8, 128))
                                 ])
 
-    def __init__(self, shape=None, dtype=None, devicetype="CPU",
-                 template=None, profile=False, device=None,
-                 PIX_PER_KP=None, max_workgroup_size=None, context=None,
-                 init_sigma=None):
+    def __init__(self, shape=None, dtype=None, devicetype="CPU", template=None,
+                 profile=False, device=None, PIX_PER_KP=None,
+                 max_workgroup_size=None, context=None, init_sigma=None):
         """
         Contructor of the class
 
@@ -121,8 +121,11 @@ class SiftPlan(object):
         @param PIX_PER_KP: number of keypoint pre-allocated: 1 for 10 pixel
         @param max_workgroup_size: set to 1 under macosX on CPU
         @param context: provide an external context
-        @param init_sigma: initial blur of the image, by default 1.6
         """
+        if init_sigma is None:
+            init_sigma = par.InitSigma
+        # no test on the values, just make sure it is a float
+        self._init_sigma = float(init_sigma)
         self.buffers = {}
         self.programs = {}
         if template is not None:
@@ -141,10 +144,6 @@ class SiftPlan(object):
         if PIX_PER_KP :
             self.PIX_PER_KP = int(PIX_PER_KP)
         self.profile = bool(profile)
-        if init_sigma is not None:
-            self.init_sigma = float(init_sigma)
-        else:
-            self.init_sigma = par.InitSigma
         if max_workgroup_size:
             self.max_workgroup_size = int(max_workgroup_size)
             self.kernels = {}
@@ -263,12 +262,12 @@ class SiftPlan(object):
         # Calculate space for gaussian kernels
         ########################################################################
         curSigma = 1.0 if par.DoubleImSize else 0.5
-        if self.init_sigma > curSigma:
-            sigma = math.sqrt(self.init_sigma ** 2 - curSigma ** 2)
+        if self._init_sigma > curSigma:
+            sigma = math.sqrt(self._init_sigma ** 2 - curSigma ** 2)
             size = kernel_size(sigma, True)
             logger.debug("pre-Allocating %s float for init blur" % size)
             self.memory += size * size_of_float
-        prevSigma = self.init_sigma
+        prevSigma = self._init_sigma
         for i in range(par.Scales + 2):
             increase = prevSigma * math.sqrt(self.sigmaRatio ** 2 - 1.0)
             size = kernel_size(increase, True)
@@ -308,10 +307,10 @@ class SiftPlan(object):
         # Allocate space for gaussian kernels
         ########################################################################
         curSigma = 1.0 if par.DoubleImSize else 0.5
-        if self.init_sigma > curSigma:
-            sigma = math.sqrt(self.init_sigma ** 2 - curSigma ** 2)
+        if self._init_sigma > curSigma:
+            sigma = math.sqrt(self._init_sigma ** 2 - curSigma ** 2)
             self._init_gaussian(sigma)
-        prevSigma = self.init_sigma
+        prevSigma = self._init_sigma
 
         for i in range(par.Scales + 2):
             increase = prevSigma * math.sqrt(self.sigmaRatio ** 2 - 1.0)
@@ -498,9 +497,9 @@ class SiftPlan(object):
 #            octSize = 1.0
             curSigma = 1.0 if par.DoubleImSize else 0.5
             octave = 0
-            if self.init_sigma > curSigma:
-                logger.debug("Bluring image to achieve std: %f", self.init_sigma)
-                sigma = math.sqrt(self.init_sigma ** 2 - curSigma ** 2)
+            if self._init_sigma > curSigma:
+                logger.debug("Bluring image to achieve std: %f", self._init_sigma)
+                sigma = math.sqrt(self._init_sigma ** 2 - curSigma ** 2)
                 self._gaussian_convolution(self.buffers[0], self.buffers[0], sigma, 0)
     #        else:
     #            pyopencl.enqueue_copy(self.queue, dest=self.buffers[(0, "G_1")].data, src=self.buffers["input"].data)
@@ -561,7 +560,7 @@ class SiftPlan(object):
 
         @param octave: number of the octave
         """
-        prevSigma = self.init_sigma
+        prevSigma = self._init_sigma
         logger.info("Calculating octave %i" % octave)
         wgsize = (128,)  # (max(self.wgsize[octave]),) #TODO: optimize
         kpsize32 = numpy.int32(self.kpsize)
@@ -615,7 +614,7 @@ class SiftPlan(object):
                                           last_start,  # int start_keypoint,
                                           self.cnt[0],  # int end_keypoint,
                                           numpy.float32(par.PeakThresh),  # float peak_thresh,
-                                          numpy.float32(self.init_sigma),  # float InitSigma,
+                                          numpy.float32(self._init_sigma),  # float InitSigma,
                                           *self.scales[octave])  # int width, int height)
             if self.profile:
                 self.events += [("get cnt", cp_evt),
@@ -826,34 +825,28 @@ class SiftPlan(object):
     def debug_holes(self, label=""):
         print("%s %s" % (label, numpy.where(self.buffers["Kp_1"].get()[:, 1] == -1)[0]))
 
-    def log_profile(self, stream=sys.stdout):
+    def log_profile(self):
         """
         If we are in debugging mode, prints out all timing for every single OpenCL call
-        
-        By default print to stdout but could be to a file
         """
         t = 0.0
         orient = 0.0
         descr = 0.0
-
         if self.profile:
-            if isinstance(stream, types.StringTypes):
-                stream = open(stream, "a")
-            stream.write("Profiling SIFT keypoint extraction on device %s%s" % (self.ctx.devices[0].name, os.linesep))
             for e in self.events:
                 if "__len__" in dir(e) and len(e) >= 2:
                     et = 1e-6 * (e[1].profile.end - e[1].profile.start)
-                    stream.write("%50s:\t%.3fms%s" % (e[0], et, os.linesep))
+                    print("%50s:\t%.3fms" % (e[0], et))
                     t += et
                     if "orient" in e[0]:
                         orient += et
                     if "descriptors" in e[0]:
                         descr += et
 
-            stream.write("_"*80 + os.linesep)
-            stream.write("%50s:\t%.3fms%s" % ("Total execution time", t, os.linesep))
-            stream.write("%50s:\t%.3fms%s" % ("Total Orientation assignment", orient, os.linesep))
-            stream.write("%50s:\t%.3fms%s" % ("Total Descriptors", descr, os.linesep))
+        print("_"*80)
+        print("%50s:\t%.3fms" % ("Total execution time", t))
+        print("%50s:\t%.3fms" % ("Total Orientation assignment", orient))
+        print("%50s:\t%.3fms" % ("Total Descriptors", descr))
 
     def reset_timer(self):
         """

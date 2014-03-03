@@ -87,6 +87,7 @@ class LinearAlign(object):
         @param max_workgroup_size: set to 1 for macOSX on CPU
         @param ROI: Region of interest: to be implemented
         @param extra: extra space around the image, can be an integer, or a 2 tuple in YX convention: TODO!
+        @param init_sigma: bluring width, you should have good reasons to modify the 1.6 default value...
         """
         self.profile = bool(profile)
         self.events = []
