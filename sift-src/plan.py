@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# -*- coding: utf8 -*-
+# -*- coding: utf-8 -*-
 #
 # This code implements the SIFT algorithm
 # The SIFT algorithm belongs to the University of British Columbia. It is

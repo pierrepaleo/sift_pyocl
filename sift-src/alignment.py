@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# -*- coding: utf8 -*-
+# -*- coding: utf-8 -*-
 #
 #    Project: Sift implementation in Python + OpenCL
 #             https://github.com/kif/sift_pyocl
@@ -48,7 +48,11 @@ from .opencl import ocl, pyopencl
 from .utils import calc_size, kernel_size, sizeof, matching_correction
 import logging
 logger = logging.getLogger("sift.alignment")
-from pyopencl import mem_flags as MF
+if pyopencl:
+    from pyopencl import mem_flags as MF
+else:
+    logger.warning("No PyOpenCL, no sift")
+
 from . import MatchPlan, SiftPlan
 
 try:

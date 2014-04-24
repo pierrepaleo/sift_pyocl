@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# -*- coding: utf8 -*-
+# -*- coding: utf-8 -*-
 #
 #    Project: Sift implementation in Python + OpenCL
 #             https://github.com/kif/sift_pyocl
@@ -47,7 +47,10 @@ from .param import par
 from .opencl import ocl, pyopencl
 from .utils import calc_size, kernel_size, sizeof
 logger = logging.getLogger("sift.match")
-from pyopencl import mem_flags as MF
+if pyopencl:
+    from pyopencl import mem_flags as MF
+else:
+    logger.warning("No PyOpenCL, no sift")
 
 class MatchPlan(object):
     """
