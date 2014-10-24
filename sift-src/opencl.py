@@ -47,7 +47,7 @@ logger = logging.getLogger("sift.opencl")
 try:
     import pyopencl, pyopencl.array
 except ImportError:
-    logger.error("Unable to import pyOpenCl. Please install it from: http://pypi.python.org/pypi/pyopencl")
+    logger.warning("Unable to import pyOpenCl. Please install it from: http://pypi.python.org/pypi/pyopencl")
     pyopencl = None
 
 FLOP_PER_CORE = { "GPU": 64, # GPU, Fermi at least perform 64 flops per cycle/multicore, G80 were at 24 or 48 ...
@@ -59,8 +59,9 @@ NVIDIA_FLOP_PER_CORE = {(1, 0): 24,  # Guessed !
                          (1, 3): 24,  # measured on a GT285 (GT200)
                          (2, 0): 64,  # Measured on a 580 (GF110)
                          (2, 1): 96,  # Measured on Quadro2000 GF106GL
-                         (3, 0): 384,  # Guessed!
-                         (3, 5): 384}  # Measured on K20
+                         (3, 0): 384, # Guessed!
+                         (3, 5): 384, # Measured on K20
+                         (5, 0): 256} # Maxwell 4 warps/SM 2 flops/ CU
 AMD_FLOP_PER_CORE = 160  # Measured on a M7820 10 core, 700MHz 1120GFlops
 
 class Device(object):
@@ -69,7 +70,23 @@ class Device(object):
     """
     def __init__(self, name="None", dtype=None, version=None, driver_version=None,
                  extensions="", memory=None, available=None,
-                 cores=None, frequency=None, flop_core=None, idx=0):
+                 cores=None, frequency=None, flop_core=None, idx=0, workgroup=1):
+        """
+        Simple container with some important data for the OpenCL device description:
+        
+        @param name: name of the device
+        @param dtype: device type: CPU/GPU/ACC...
+        @param version: driver version
+        @param driver_version: 
+        @param extensions: List of opencl extensions
+        @param memory: maximum memory available on the device
+        @param available: is the device desactivated or not 
+        @param cores: number of SM/cores
+        @param frequency: frequency of the device
+        @param flop_cores: Flopating Point operation per core per cycle
+        @param idx: index of the device within the platform
+        @param workgroup: max workgroup size
+        """
         self.name = name.strip()
         self.type = dtype
         self.version = version
@@ -80,6 +97,7 @@ class Device(object):
         self.cores = cores
         self.frequency = frequency
         self.id = idx
+        self.max_work_group_size = workgroup
         if not flop_core:
             flop_core = FLOP_PER_CORE.get(dtype, 1)
         if cores and frequency:
@@ -90,6 +108,23 @@ class Device(object):
 
     def __repr__(self):
         return "%s" % self.name
+
+    def pretty_print(self):
+        """
+        Complete device description
+        
+        @return: string
+        """
+        lst = ["Name\t\t:\t%s" % self.name,
+               "Type\t\t:\t%s" % self.type,
+               "Memory\t\t:\t%.3f MB" % (self.memory / 2.0 ** 20),
+               "Cores\t\t:\t%s CU" % self.cores,
+               "Frequency\t:\t%s MHz"%self.frequency,
+               "Speed\t\t:\t%.3f GFLOPS" % (self.flops / 1000.),
+               "Version\t\t:\t%s" % self.version,
+               "Available\t:\t%s" % self.available]
+        return os.linesep.join(lst)
+
 
 class Platform(object):
     """
@@ -132,9 +167,14 @@ class Platform(object):
 class OpenCL(object):
     """
     Simple class that wraps the structure ocl_tools_extended.h
+
+    This is a static class.
+    ocl should be the only instance and shared among all python modules. 
     """
     platforms = []
+    nb_devices = 0
     if pyopencl:
+        platform = device = pypl = devtype = extensions = pydev = None
         for idx, platform in enumerate(pyopencl.get_platforms()):
             pypl = Platform(platform.name, platform.vendor, platform.version, platform.extensions, idx)
             for idd, device in enumerate(platform.get_devices()):
@@ -145,7 +185,11 @@ class OpenCL(object):
                 extensions = device.extensions
                 if (pypl.vendor == "NVIDIA Corporation") and ('cl_khr_fp64' in extensions):
                                 extensions += ' cl_khr_int64_base_atomics cl_khr_int64_extended_atomics'
-                devtype = pyopencl.device_type.to_string(device.type).upper()
+                try:
+                    devtype = pyopencl.device_type.to_string(device.type).upper()
+                except ValueError:
+                    # pocl does not describe itself as a CPU !
+                    devtype = "CPU"
                 if len(devtype) > 3:
                     devtype = devtype[:3]
                 if (pypl.vendor == "NVIDIA Corporation") and (devtype == "GPU") and "compute_capability_major_nv" in dir(device):
@@ -157,10 +201,16 @@ class OpenCL(object):
                     flop_core = FLOP_PER_CORE.get(devtype, 1)
                 else:
                      flop_core = 1
+                workgroup = device.max_work_group_size   
+                if (devtype == "CPU") and (pypl.vendor == "Apple"):
+                    logger.info("For Apple's OpenCL on CPU: enforce max_work_goup_size=1")
+                    workgroup = 1
+  
                 pydev = Device(device.name, devtype, device.version, device.driver_version, extensions,
                                device.global_mem_size, bool(device.available), device.max_compute_units,
-                               device.max_clock_frequency, flop_core, idd)
+                               device.max_clock_frequency, flop_core, idd, workgroup)
                 pypl.add_device(pydev)
+                nb_devices += 1
             platforms.append(pypl)
         del platform, device, pypl, devtype, extensions, pydev
 
@@ -200,13 +250,11 @@ class OpenCL(object):
         @param best: shall we look for the
         """
         if "type" in kwargs:
-            dtype = kwargs["type"]
-        if dtype:
-            dtype = dtype.upper()
-            if len(dtype) > 3:
-                dtype = dtype[:3]
+            dtype = kwargs["type"].upper()
         else:
-            dtype = "ALL"
+            dtype = dtype.upper()
+        if len(dtype) > 3:
+            dtype = dtype[:3]
         best_found = None
         for platformid, platform in enumerate(self.platforms):
             for deviceid, device in enumerate(platform.devices):
@@ -259,8 +307,62 @@ class OpenCL(object):
             ctx = pyopencl.create_some_context(interactive=False)
         return ctx
 
+
+def release_cl_buffers(cl_buffers):
+    """
+    @param cl_buffer: the buffer you want to release
+    @type cl_buffer: dict(str, pyopencl.Buffer)
+
+    This method release the memory of the buffers store in the dict
+    """
+    for key in cl_buffers:
+        if cl_buffers[key] is not None:
+            try:
+                cl_buffers[key].release()
+                cl_buffers[key] = None
+            except pyopencl.LogicError:
+                logger.error("Error while freeing buffer %s", key)
+    return cl_buffers
+
+
+def allocate_cl_buffers(buffers, device, context):
+    """
+    @param buffers: the buffers info use to create the pyopencl.Buffer
+    @type buffer: list(std, flag, numpy.dtype, int)
+    @return: a dict containing the instanciated pyopencl.Buffer
+    @rtype: dict(str, pyopencl.Buffer)
+
+    This method instanciate the pyopencl.Buffer from the buffers
+    description.
+    """
+    mem = {}
+
+    # check if enough memory is available on the device
+    ualloc = 0
+    for _, _, dtype, size in buffers:
+        ualloc += numpy.dtype(dtype).itemsize * size
+    memory = device.memory
+    logger.info("%.3fMB are needed on device which has %.3fMB",
+                ualloc / 1.0e6, memory / 1.0e6)
+    if ualloc >= memory:
+        raise MemoryError("Fatal error in _allocate_buffers. Not enough device memory for buffers (%lu requested, %lu available)" % (ualloc, memory))  # noqa
+
+    # do the allocation
+    try:
+        for name, flag, dtype, size in buffers:
+            mem[name] = \
+                pyopencl.Buffer(context, flag,
+                                numpy.dtype(dtype).itemsize * size)
+    except pyopencl.MemoryError as error:
+        release_cl_buffers(mem)
+        raise MemoryError(error)
+
+    return mem
+
 if pyopencl:
     ocl = OpenCL()
+    if ocl.nb_devices == 0:
+        ocl = None
 else:
     ocl = None
 
