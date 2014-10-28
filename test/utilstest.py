@@ -85,7 +85,7 @@ class UtilsTest(object):
     test_home = os.path.dirname(os.path.abspath(__file__))
     sem = threading.Semaphore()
     recompiled = False
-    name = "sift"
+    name = "sift_pyocl"
     image_home = os.path.join(test_home, "testimages")
     if not os.path.isdir(image_home):
         os.makedirs(image_home)
@@ -95,10 +95,10 @@ class UtilsTest(object):
     sift_home = os.path.join(os.path.dirname(test_home),
                                         "build", architecture)
     logger.info("sift Home is: " + sift_home)
-    if "sift" in sys.modules:
-        logger.info("sift module was already loaded from  %s" % sys.modules["sift"])
+    if name in sys.modules:
+        logger.info("sift module was already loaded from  %s" % sys.modules[name])
         sift = None
-        sys.modules.pop("sift")
+        sys.modules.pop(name)
 
     if not os.path.isdir(sift_home):
         with sem:
@@ -110,8 +110,8 @@ class UtilsTest(object):
                 recompiled = True
     opencl = os.path.join(os.path.dirname(test_home), "openCL")
     for clf in os.listdir(opencl):
-        if clf.endswith(".cl") and clf not in os.listdir(os.path.join(sift_home, "sift")):
-            copy(os.path.join(opencl, clf), os.path.join(sift_home, "sift", clf))
+        if clf.endswith(".cl") and clf not in os.listdir(os.path.join(sift_home, name)):
+            copy(os.path.join(opencl, clf), os.path.join(sift_home, name, clf))
     sift = imp.load_module(*((name,) + imp.find_module(name, [sift_home])))
     sys.modules[name] = sift
     logger.info("sift loaded from %s" % sift.__file__)
@@ -123,7 +123,7 @@ class UtilsTest(object):
         sift = None
         sys.path.insert(0, cls.sift_home)
         for key in sys.modules.copy():
-            if key.startswith("sift"):
+            if key.startswith(cls.name):
                 sys.modules.pop(key)
 
         import sift
@@ -141,10 +141,10 @@ class UtilsTest(object):
             with cls.sem:
                 if not cls.recompiled:
                     logger.info("Building sift to %s" % cls.sift_home)
-                    if "sift" in sys.modules:
-                        logger.info("sift module was already loaded from  %s" % sys.modules["sift"])
+                    if cls.name in sys.modules:
+                        logger.info("sift module was already loaded from  %s" % sys.modules[cls.name])
                         cls.sift = None
-                        sys.modules.pop("sift")
+                        sys.modules.pop(cls.name)
                     if remove_first:
                         recursive_delete(cls.sift_home)
                     p = subprocess.Popen([sys.executable, "setup.py", "build"],
@@ -152,8 +152,8 @@ class UtilsTest(object):
                     logger.info("subprocess ended with rc= %s" % p.wait())
                     opencl = os.path.join(os.path.dirname(cls.test_home), "openCL")
                     for clf in os.listdir(opencl):
-                        if clf.endswith(".cl") and clf not in os.listdir(os.path.join(cls.sift_home, "sift")):
-                            copy(os.path.join(opencl, clf), os.path.join(cls.sift_home, "sift", clf))
+                        if clf.endswith(".cl") and clf not in os.listdir(os.path.join(cls.sift_home, cls.name)):
+                            copy(os.path.join(opencl, clf), os.path.join(cls.sift_home, cls.name, clf))
                     cls.sift = cls.deep_reload()
                     cls.recompiled = True
 

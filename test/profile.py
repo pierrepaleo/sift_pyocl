@@ -27,7 +27,7 @@ else:
 
 s = sift.SiftPlan(template=lena, profile=True, context=utilstest.ctx)
 kp = s.keypoints(lena)
-#print kp.shape
+print kp[:10]
 if utilstest.args and not os.path.isfile(utilstest.args[0]):
     s.log_profile(utilstest.args[0])
 else:

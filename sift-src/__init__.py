@@ -1,7 +1,7 @@
 """
 Module Sift for calculating SIFT keypoint using PyOpenCL
 """
-version = "0.2.0"
+version = "0.3.0"
 import os
 sift_home = os.path.dirname(os.path.abspath(__file__))
 import sys, logging

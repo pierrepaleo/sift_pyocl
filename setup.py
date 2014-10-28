@@ -16,11 +16,11 @@ __authors__ = ["Jérôme Kieffer"]
 __contact__ = "jerome.kieffer@esrf.eu"
 __license__ = "MIT"
 __copyright__ = "European Synchrotron Radiation Facility, Grenoble, France"
-__date__ = "2013-11-07"
-__status__ = "beta"
+__date__ = "2014-10-28"
+__status__ = "stable"
 __license__ = """
 Permission is hereby granted, free of charge, to any person
-obtaining a copy of this software and associated documentation
+obtaining a copy of ethis software and associated documentation
 files (the "Software"), to deal in the Software without
 restriction, including without limitation the rights to use,
 copy, modify, merge, publish, distribute, sublicense, and/or sell
@@ -211,9 +211,11 @@ class PyTest(Command):
         os.chdir("test")
         errno = subprocess.call([sys.executable, 'test_all.py'])
         if errno != 0:
-            raise SystemExit(errno)
+            print("Tests did not pass !!!")
+            #raise SystemExit(errno)
         else:
-            os.chdir("..")
+            print("All Tests passed")
+        os.chdir("..")
 cmdclass['test'] = PyTest
 
 #######################
@@ -250,7 +252,21 @@ if sphinx:
             sys.path.pop(0)
     cmdclass['build_doc'] = build_doc
 
-setup(name='sift',
+classifiers = """\
+Development Status :: 5 - Production/Stable
+Intended Audience :: Developers
+License :: OSI Approved :: MIT
+Programming Language :: Python
+Topic :: Software Development :: Libraries :: Python Modules
+Operating System :: Microsoft :: Windows
+Operating System :: Unix
+Operating System :: MacOS :: MacOS X
+Operating System :: POSIX
+
+"""
+
+
+setup(name='sift_pyocl',
       version=version,
       author="Pierre Paleo, Jérôme Kieffer",
       author_email="jerome.kieffer@esrf.fr",
@@ -260,12 +276,16 @@ setup(name='sift',
       scripts=script_files,
 #      ext_package="sift",
 #      ext_modules=[Extension(**dico) for dico in ext_modules],
-      packages=["sift"],
-      package_dir={"sift": "sift-src" },
+      packages=["sift_pyocl"],
+      package_dir={"sift_pyocl": "sift-src" },
       test_suite="test",
       cmdclass=cmdclass,
-      data_files=data_files
+      data_files=data_files,
+      classifiers=filter(None, classifiers.split("\n")),
+      license="MIT"
       )
+
+
 
 #print(data_files)
 try:
