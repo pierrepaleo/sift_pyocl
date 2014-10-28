@@ -255,7 +255,6 @@ if sphinx:
 classifiers = """\
 Development Status :: 5 - Production/Stable
 Intended Audience :: Developers
-License :: OSI Approved :: MIT
 Programming Language :: Python
 Topic :: Software Development :: Libraries :: Python Modules
 Operating System :: Microsoft :: Windows

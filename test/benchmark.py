@@ -38,7 +38,7 @@ import sys, os, pyopencl, time
 from math import sin, cos
 import utilstest
 logger = utilstest.getLogger(__file__)
-import sift
+import sift_pyocl as sift
 import numpy
 import scipy.misc
 import pylab

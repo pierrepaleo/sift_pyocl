@@ -49,9 +49,8 @@ import unittest
 from utilstest import UtilsTest, getLogger, ctx
 from test_image_functions import * #for Python implementation of tested functions
 from test_image_setup import *
-import sift
-from sift.utils import calc_size
-logger = getLogger(__file__)
+import sift_pyocl as sift
+sift_pyocllogger = getLogger(__file__)
 if logger.getEffectiveLevel() <= logging.INFO:
     PROFILE = True
     queue = pyopencl.CommandQueue(ctx, properties=pyopencl.command_queue_properties.PROFILING_ENABLE)

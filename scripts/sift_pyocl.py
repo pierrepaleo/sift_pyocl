@@ -1,7 +1,7 @@
 #!/usr/bin/python
 #from utilstest import UtilsTest#, getLogger
 #logger = getLogger(__file__)
-import sift
+import sift_pyocl as sift
 import numpy
 import scipy.misc
 

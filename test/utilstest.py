@@ -126,7 +126,7 @@ class UtilsTest(object):
             if key.startswith(cls.name):
                 sys.modules.pop(key)
 
-        import sift
+        import sift_pyocl as sift
         cls.sift = sift
         logger.info("sift loaded from %s" % sift.__file__)
         sys.modules[cls.name] = sift
@@ -276,8 +276,8 @@ def getLogger(filename=__file__):
 # This is very specific to PyOpenCL
 ################################################################################
 
-import sift
-from sift.opencl import ocl
+import sift_pyocl as sift
+from sift_pyocl.opencl import ocl
 #This is the shared context for all tests:
 if "," in options.device: #Form 0,1
     platform, device = options.device.split(",", 1)

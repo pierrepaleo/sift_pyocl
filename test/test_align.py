@@ -47,8 +47,8 @@ import scipy, scipy.misc, scipy.ndimage
 import sys
 import unittest
 from utilstest import UtilsTest, getLogger, ctx
-import sift
-from sift.alignment import LinearAlign
+import sift_pyocl as sift
+from sift_pyocl.alignment import LinearAlign
 logger = getLogger(__file__)
 if logger.getEffectiveLevel() <= logging.INFO:
     PROFILE = True

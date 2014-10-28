@@ -47,8 +47,8 @@ import scipy, scipy.misc
 import sys
 import unittest
 from utilstest import UtilsTest, getLogger, ctx
-import sift
-from sift.utils import calc_size
+import sift_pyocl as sift
+from sift_pyocl.utils import calc_size
 
 logger = getLogger(__file__)
 

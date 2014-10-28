@@ -2,7 +2,7 @@
 from utilstest import UtilsTest, getLogger
 logger = getLogger(__file__)
 import sys
-import sift
+import sift_pyocl as sift
 import numpy
 import scipy.misc, scipy.ndimage
 from math import  sin, cos

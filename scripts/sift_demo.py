@@ -38,7 +38,7 @@ import sys, os, pyopencl, time, urllib2
 from math import sin, cos
 import logging
 logger = logging.getLogger("sift")
-import sift
+import sift_pyocl as sift
 import numpy
 import scipy.misc
 import pylab

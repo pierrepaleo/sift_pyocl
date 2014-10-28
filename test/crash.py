@@ -5,7 +5,7 @@ here = os.path.dirname(os.path.abspath(__file__))
 there = os.path.join(here, "..", "build")
 lib = [os.path.abspath(os.path.join(there, i)) for i in os.listdir(there) if "lib" in i][0]
 sys.path.insert(0, lib)
-import sift
+import sift_pyocl as sift
 import numpy
 import scipy.misc
 import pylab
