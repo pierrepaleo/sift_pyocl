@@ -206,7 +206,9 @@ class SiftPlan(object):
                         self.kernels[k] = tuple([1 for i in v])
         else:
             self.USE_CPU = False
-
+            if "HD Graphics" in ocl.platforms[self.device[0]].devices[self.device[1]].name:
+                self.LOW_END=2
+            
     def __del__(self):
         """
         Destructor: release all buffers
