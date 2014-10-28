@@ -7,7 +7,7 @@ Programming language
 
 SIFT_PyOCL uses the following programming languages:
 
-* 4500 lines of Python (with the tests)
+* 6100 lines of Python (with the tests)
 * 2800 lines of OpenCL (C-based language)
 
 Repository:
@@ -37,7 +37,7 @@ Building procedure
 ------------------
 
 As most of the python projects:
-..
+...............................
 
     python setup.py build
 
@@ -60,30 +60,14 @@ To run all the tests, use ``python test/test_all.py``.
     :header: "Name", "Stmts", "Miss", "Cover"
     :widths: 50, 8, 8, 8
    
-    "sift/__init__ ","7   ","7","100%"
-    "sift/alignment   ","29   ","0  ","0%"
-    "sift/match  ","132  ","31 ","23%"
-    "sift/opencl ","136  ","93 ","68%"
-    "sift/param","6","5 ","83%"
-    "sift/plan   ","412  ","42 ","10%"
-    "sift/sift ","1","0  ","0%"
-    "sift/utils   ","47  ","17 ","36%"
-    "test_algebra  ","120 ","106 ","88%"
-    "test_all   ","35  ","34 ","97%"
-    "test_convol   ","156 ","107 ","68%"
-    "test_cuda_shm  ","43","0  ","0%"
-    "test_gaussian ","119  ","95 ","79%"
-    "test_image","151 ","121 ","80%"
-    "test_image_functions  ","289 ","223 ","77%"
-    "test_image_setup   ","74  ","67 ","90%"
-    "test_keypoints","179","0  ","0%"
-    "test_keypoints_old","147  ","71 ","48%"
-    "test_matching  ","89  ","78 ","87%"
-    "test_preproc  ","276 ","195 ","70%"
-    "test_reductions","88  ","79 ","89%"
-    "test_transform   141","0  ","0%"
-    "utilstest ","151  ","70 ","46%"
-    "TOTAL ","2677","1371 ","51%"
+    "sift/__init__ ","8   ","0","100%"
+    "sift/alignment   ","252   ","18  ","13%"
+    "sift/match  ","187  ","152 ","19%"
+    "sift/opencl ","184  ","77 ","58%"
+    "sift/param","6","1 ","83%"
+    "sift/plan   ","456  ","414 ","9%"
+    "sift/sift ","0","0  ","0%"
+    "sift/utils   ","69  ","51 ","26%"
 
 
 Using the test suites

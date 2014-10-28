@@ -41,7 +41,7 @@ One can also launch SIFT_PyOCL interactively with iPython :
 
 .. code-block:: python
 
-   import sift
+   import sift_pyocl as sift
    import numpy
    import scipy.misc
    image_rgb = scipy.misc.imread("../my_image.jpg")
