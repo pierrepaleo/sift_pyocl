@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-#-*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 #
 #    Project: Sift implementation in Python + OpenCL
 #             https://github.com/kif/sift_pyocl
@@ -16,7 +16,7 @@ __authors__ = ["Jérôme Kieffer"]
 __contact__ = "jerome.kieffer@esrf.eu"
 __license__ = "MIT"
 __copyright__ = "European Synchrotron Radiation Facility, Grenoble, France"
-__date__ = "2014-10-28"
+__date__ = "01/12/2014"
 __status__ = "stable"
 __license__ = """
 Permission is hereby granted, free of charge, to any person
@@ -114,8 +114,8 @@ if ("sdist" in sys.argv):
         rewriteManifest(with_testimages=False)
 
 
-installDir = "sift" #relative to site-packages ...
-data_files = [(installDir, glob.glob("openCL/*.cl"))]
+pkg_name = "sift_pyocl"  # relative to site-packages ...
+data_files = [(pkg_name, glob.glob("openCL/*.cl"))]
 
 
 class smart_install_data(install_data):
@@ -186,11 +186,11 @@ class build_ext_sift(build_ext):
             trans = translator['default']
 
         for e in self.extensions:
-            e.extra_compile_args = [ trans[a][0] if a in trans else a
+            e.extra_compile_args = [trans[a][0] if a in trans else a
                                     for a in e.extra_compile_args]
-            e.extra_link_args = [ trans[a][1] if a in trans else a
+            e.extra_link_args = [trans[a][1] if a in trans else a
                                  for a in e.extra_link_args]
-            e.libraries = filter(None, [ trans[a] if a in trans else None
+            e.libraries = filter(None, [trans[a] if a in trans else None
                                         for a in e.libraries])
 
             # If you are confused look here:
@@ -200,19 +200,23 @@ class build_ext_sift(build_ext):
         build_ext.build_extensions(self)
 cmdclass['build_ext'] = build_ext_sift
 
+
 class PyTest(Command):
     user_options = []
+
     def initialize_options(self):
         pass
+
     def finalize_options(self):
         pass
+
     def run(self):
         import sys, subprocess
         os.chdir("test")
         errno = subprocess.call([sys.executable, 'test_all.py'])
         if errno != 0:
             print("Tests did not pass !!!")
-            #raise SystemExit(errno)
+            # raise SystemExit(errno)
         else:
             print("All Tests passed")
         os.chdir("..")
@@ -273,10 +277,8 @@ setup(name='sift_pyocl',
       url="https://github.com/kif/sift_pyocl",
       download_url="https://github.com/kif/sift_pyocl/archive/master.zip",
       scripts=script_files,
-#      ext_package="sift",
-#      ext_modules=[Extension(**dico) for dico in ext_modules],
-      packages=["sift_pyocl"],
-      package_dir={"sift_pyocl": "sift-src" },
+      packages=[pkg_name],
+      package_dir={pkg_name: "sift-src"},
       test_suite="test",
       cmdclass=cmdclass,
       data_files=data_files,
@@ -286,7 +288,7 @@ setup(name='sift_pyocl',
 
 
 
-#print(data_files)
+# print(data_files)
 try:
     import pyopencl
 except ImportError:
