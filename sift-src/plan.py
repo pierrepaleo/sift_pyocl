@@ -176,7 +176,7 @@ class SiftPlan(object):
         else:
             if device is None:
                 self.device = ocl.select_device(type=devicetype, memory=self.memory, best=True)
-                if device is None:
+                if self.device is None:
                     self.device = ocl.select_device(memory=self.memory, best=True)
                     logger.warning('Unable to find suitable device, selecting device: %s,%s' % self.device)
             else:
