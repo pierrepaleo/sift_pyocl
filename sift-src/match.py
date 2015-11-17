@@ -261,7 +261,8 @@ class MatchPlan(object):
                 self.events.append(("matching", evt))
             size = self.buffers["cnt"].get()[0]
             match = numpy.empty(shape=(size, 2), dtype=numpy.int32)
-            cpyD2H = pyopencl.enqueue_copy(self.queue, match, self.buffers[ "match" ].data)
+            if size > 0:
+                cpyD2H = pyopencl.enqueue_copy(self.queue, match, self.buffers[ "match" ].data)
             if self.profile:
                 self.events.append(("copy D->H match", cpyD2H))
             if raw_results:
