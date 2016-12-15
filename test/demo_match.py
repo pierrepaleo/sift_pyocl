@@ -17,8 +17,8 @@ except:
     res = numpy.empty(0)
 if len(sys.argv) == 3:
     try:
-        img1 = scipy.misc.imread(sys.argv[1])
-        img2 = scipy.misc.imread(sys.argv[2])
+        img1 = scipy.misc.imread(sys.argv[1]).astype(numpy.float32)
+        img2 = scipy.misc.imread(sys.argv[2]).astype(numpy.float32)
     except IOError:
         try:
             import fabio
@@ -29,16 +29,14 @@ if len(sys.argv) == 3:
 else:
     img1 = scipy.misc.lena()
     img2 = scipy.ndimage.rotate(img1, 10, reshape=False)
-'''
-img1 = scipy.misc.imread("../test_images/fruit_bowl.png")
-tmp = scipy.misc.imread("../test_images/banana.png")
-img2 = numpy.zeros_like(img1)
-img2 = img2 + 255
-d0 = (img1.shape[0] - tmp.shape[0])/2
-d1 = (img1.shape[1] - tmp.shape[1])/2
-img2[d0:-d0,d1:-d1-1] = numpy.copy(tmp)
-'''       
-plan = sift.SiftPlan(template=img1, devicetype="cpu")
+
+print(img1.shape)
+print(img2.shape)
+
+if len(img1.shape) == 3: img1 = img1.mean(axis=-1)
+if len(img2.shape) == 3: img2 = img2.mean(axis=-1)
+
+plan = sift.SiftPlan(template=img1, devicetype="GPU")#cpu")
 kp1 = plan.keypoints(img1)
 kp2 = plan.keypoints(img2)
 print("Keypoints for img1: %i\t img2: %i" % (kp1.size, kp2.size))
@@ -48,7 +46,7 @@ sp2 = fig.add_subplot(121)
 im1 = sp1.imshow(img1)
 im2 = sp2.imshow(img2)
 #match = feature.sift_match(kp1, kp2)
-mp = sift.MatchPlan(devicetype="cpu")
+mp = sift.MatchPlan(devicetype="GPU")#cpu")
 matching = mp.match(kp1, kp2)
 print("After matching keeping %i" % matching.shape[0])
 dx = matching[:, 1].x - matching[:, 0].x
@@ -60,7 +58,7 @@ outlayer = numpy.zeros(distance.shape, numpy.int8)
 cutoff = 1.1
 cont = True
 outlayersum = matching.shape[0]
-while matching.shape[0]-outlayersum <= 6:
+while matching.shape[0]-outlayersum <= 5:#6:
     outlayer += abs((distance - distance.mean()) / distance.std()) > cutoff
     outlayer += abs((dangle - dangle.mean()) / dangle.std()) > cutoff
     outlayer += abs((dscale - dscale.mean()) / dscale.std()) > cutoff
