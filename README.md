@@ -1,7 +1,8 @@
 sift_pyocl
 ==========
 
-An implementation of SIFT on GPU with OpenCL
+An implementation of SIFT on GPU with OpenCL.
+The documentation can be found on the page of [the SILX project](http://www.silx.org/doc/silx/dev/Tutorials/Sift/sift.html).
 
 
 Features :
