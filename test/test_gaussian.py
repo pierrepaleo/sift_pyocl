@@ -102,7 +102,7 @@ def gaussian_gpu_v1(sigma, size=None):
                                         g_gpu.data,  # __global     float     *data,
                                         numpy.float32(sigma),  # const        float     sigma,
                                         numpy.int32(size))  # const        int     SIZE
-    sum_data = pyopencl.array.sum(g_gpu, dtype=numpy.float32, queue=queue)
+    sum_data = pyopencl.array.sum(g_gpu, dtype=numpy.dtype(numpy.float32), queue=queue)
     evt2 = kernels["preprocess"].divide_cst(queue, (size,), (1,),
                                           g_gpu.data,  # __global     float     *data,
                                           sum_data.data,  # const        float     sigma,
