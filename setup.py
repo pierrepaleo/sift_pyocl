@@ -6,7 +6,7 @@
 #
 
 """
-Installer script for SIFT algorithm in PyOpenCL 
+Installer script for SIFT algorithm in PyOpenCL
 """
 
 from __future__ import division, with_statement, print_function
@@ -274,8 +274,8 @@ setup(name='sift_pyocl',
       author="Pierre Paleo, Jérôme Kieffer",
       author_email="jerome.kieffer@esrf.fr",
       description='Python/OpenCL implementation of Sift algorithm image alignment',
-      url="https://github.com/kif/sift_pyocl",
-      download_url="https://github.com/kif/sift_pyocl/archive/master.zip",
+      url="https://github.com/pierrepaleo/sift_pyocl",
+      #~ download_url="https://github.com/pierrepaleo/sift_pyocl/archive/master.zip",
       scripts=script_files,
       packages=[pkg_name],
       package_dir={pkg_name: "sift-src"},

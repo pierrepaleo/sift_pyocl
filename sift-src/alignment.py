@@ -4,6 +4,26 @@
 #    Project: Sift implementation in Python + OpenCL
 #             https://github.com/kif/sift_pyocl
 #
+# Permission is hereby granted, free of charge, to any person
+# obtaining a copy of this software and associated documentation
+# files (the "Software"), to deal in the Software without
+# restriction, including without limitation the rights to use,
+# copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following
+# conditions:
+#
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+# OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+# WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+# OTHER DEALINGS IN THE SOFTWARE.
 
 """
 Contains classes for image alignment on a reference images.
@@ -11,87 +31,67 @@ Contains classes for image alignment on a reference images.
 
 from __future__ import division, print_function, with_statement
 
-__authors__ = ["Jérôme Kieffer"]
+__authors__ = ["Jérôme Kieffer", "Pierre Paleo"]
 __contact__ = "jerome.kieffer@esrf.eu"
 __license__ = "MIT"
 __copyright__ = "European Synchrotron Radiation Facility, Grenoble, France"
-__date__ = "2013-07-24"
-__status__ = "beta"
-__license__ = """
-Permission is hereby granted, free of charge, to any person
-obtaining a copy of this software and associated documentation
-files (the "Software"), to deal in the Software without
-restriction, including without limitation the rights to use,
-copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the
-Software is furnished to do so, subject to the following
-conditions:
+__date__ = "30/09/2016"
+__status__ = "production"
 
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
-OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
-HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-OTHER DEALINGS IN THE SOFTWARE.
-
-"""
-import os, gc, sys
+import gc
 from threading import Semaphore
 import numpy
-from .param import par
-from .opencl import ocl, pyopencl
-from .utils import calc_size, kernel_size, sizeof, matching_correction
+from .clinit import ocl, pyopencl, kernel_workgroup_size
+from .utils import calc_size, matching_correction, get_opencl_code
 import logging
 logger = logging.getLogger("sift.alignment")
-if pyopencl:
-    from pyopencl import mem_flags as MF
-else:
+if not pyopencl:
     logger.warning("No PyOpenCL, no sift")
 
-from . import MatchPlan, SiftPlan
+from .match import MatchPlan
+from .plan import SiftPlan
 
 try:
     import feature
 except ImportError:
     feature = None
 
+
 def arrow_start(kplist):
-    x_ref = kplist.x
-    y_ref = kplist.y
+#     x_ref = kplist.x
+#     y_ref = kplist.y
     angle_ref = kplist.angle
     scale_ref = kplist.scale
     x_ref2 = kplist.x + scale_ref * numpy.cos(angle_ref)
     y_ref2 = kplist.y + scale_ref * numpy.sin(angle_ref)
     return x_ref2, y_ref2
+
+
 def transform_pts(matrix, offset, x, y):
     nx = -offset[1] + y * matrix[1, 0] + x * matrix[1, 1]
     ny = -offset[0] + x * matrix[0, 1] + y * matrix[0, 0]
     return nx, ny
 
+
 class LinearAlign(object):
     """
-    Align images on a reference image based on an Afine transformation (bi-linear + offset)
+    Align images on a reference image based on an afine transformation (bi-linear + offset)
     """
-    kernels = {"transform":128}
+    kernels = {"transform": 128}
 
     def __init__(self, image, devicetype="CPU", profile=False, device=None, max_workgroup_size=None,
                  ROI=None, extra=0, context=None, init_sigma=None):
         """
         Constructor of the class
 
-        @param image: reference image on which other image should be aligned
-        @param devicetype: Kind of preferred devce
-        @param profile:collect profiling information ?
-        @param device: 2-tuple of integer. see clinfo
-        @param max_workgroup_size: set to 1 for macOSX on CPU
-        @param ROI: Region of interest: to be implemented
-        @param extra: extra space around the image, can be an integer, or a 2 tuple in YX convention: TODO!
-        @param init_sigma: bluring width, you should have good reasons to modify the 1.6 default value...
+        :param image: reference image on which other image should be aligned
+        :param devicetype: Kind of preferred devce
+        :param profile:collect profiling information ?
+        :param device: 2-tuple of integer. see clinfo
+        :param max_workgroup_size: limit the workgroup size
+        :param ROI: Region of interest: to be implemented
+        :param extra: extra space around the image, can be an integer, or a 2 tuple in YX convention: TODO!
+        :param init_sigma: bluring width, you should have good reasons to modify the 1.6 default value...
         """
         self.profile = bool(profile)
         self.events = []
@@ -99,13 +99,6 @@ class LinearAlign(object):
         self.ref = numpy.ascontiguousarray(image, numpy.float32)
         self.buffers = {}
         self.shape = image.shape
-        if max_workgroup_size:
-            self.max_workgroup_size = int(max_workgroup_size)
-            self.kernels = {}
-            for k, v in self.__class__.kernels.items():
-                self.kernels[k] = min(v, self.max_workgroup_size)
-        else:
-            self.max_workgroup_size = None
         if len(self.shape) == 3:
             self.RGB = True
             self.shape = self.shape[:2]
@@ -132,29 +125,23 @@ class LinearAlign(object):
             else:
                 self.device = device
             self.ctx = pyopencl.Context(devices=[pyopencl.get_platforms()[self.device[0]].get_devices()[self.device[1]]])
-        self.devicetype = ocl.platforms[self.device[0]].devices[self.device[1]].type
-        if (self.devicetype == "CPU"):
-            self.USE_CPU = True
-            if sys.platform == "darwin":
-                logger.warning("MacOSX computer working on CPU: limiting workgroup size to 1 !")
-                self.max_workgroup_size = 1
-                self.kernels = {}
-                for k, v in self.__class__.kernels.items():
-                    if isinstance(v, int):
-                        self.kernels[k] = 1
-                    else:
-                        self.kernels[k] = tuple([1 for i in v])
-        if self.RGB:
-            if self.max_workgroup_size == 1:
-                self.wg = (1, 1, 1)
-            else:
-                self.wg = (4, 8, 4)
-        else:
-            if self.max_workgroup_size == 1:
-                self.wg = (1, 1)
-            else:
-                self.wg = (8, 4)
+        ocldevice = ocl.platforms[self.device[0]].devices[self.device[1]]
+        self.devicetype = ocldevice.type
 
+        if max_workgroup_size:
+            self.max_workgroup_size = min(int(max_workgroup_size), ocldevice.max_work_group_size)
+        else:
+            self.max_workgroup_size = ocldevice.max_work_group_size
+        self.kernels = {}
+        for k, v in self.__class__.kernels.items():
+            self.kernels[k] = min(v, self.max_workgroup_size)
+
+        if self.RGB:
+            target = (4, 8, 4)
+            self.wg = tuple(min(t, i, self.max_workgroup_size) for t, i in zip(target, self.ctx.devices[0].max_work_item_sizes))
+        else:
+            target = (8, 4)
+            self.wg = tuple(min(t, i, self.max_workgroup_size) for t, i in zip(target, self.ctx.devices[0].max_work_item_sizes))
 
         self.sift = SiftPlan(template=image, context=self.ctx, profile=self.profile,
                              max_workgroup_size=self.max_workgroup_size, init_sigma=init_sigma)
@@ -202,6 +189,7 @@ class LinearAlign(object):
             self.buffers["output"] = pyopencl.array.empty(self.queue, shape=self.outshape, dtype=numpy.float32)
         self.buffers["matrix"] = pyopencl.array.empty(self.queue, shape=(2, 2), dtype=numpy.float32)
         self.buffers["offset"] = pyopencl.array.empty(self.queue, shape=(1, 2), dtype=numpy.float32)
+
     def _free_buffers(self):
         """
         free all memory allocated on the device
@@ -218,19 +206,17 @@ class LinearAlign(object):
         """
         Call the OpenCL compiler
         """
-        kernel_directory = os.path.dirname(os.path.abspath(__file__))
-        kernel_file = self.kernels.keys()[0]
-        if not os.path.exists(os.path.join(kernel_directory, kernel_file + ".cl")):
-            while (".zip" in kernel_directory)  and (len(kernel_directory) > 4):
-                kernel_directory = os.path.dirname(kernel_directory)
-            kernel_directory = os.path.join(kernel_directory, "sift_kernels")
-        kernel_file = os.path.join(kernel_directory, kernel_file + ".cl")
-        kernel_src = open(kernel_file).read()
-        try:
-            program = pyopencl.Program(self.ctx, kernel_src).build()
-        except pyopencl.MemoryError as error:
-            raise MemoryError(error)
-        self.program = program
+        for kernel in list(self.kernels.keys()):
+            kernel_src = get_opencl_code(kernel)
+            try:
+                program = pyopencl.Program(self.ctx, kernel_src).build()
+            except pyopencl.MemoryError as error:
+                raise MemoryError(error)
+            self.program = program
+            for one_function in program.all_kernels():
+                workgroup_size = kernel_workgroup_size(program, one_function)
+                self.kernels[kernel+"."+one_function.function_name] = workgroup_size
+
 
     def _free_kernels(self):
         """
@@ -242,10 +228,10 @@ class LinearAlign(object):
         """
         Align image on reference image
 
-        @param img: numpy array containing the image to align to reference
-        @param return_all: return in addition ot the image, keypoints, matching keypoints, and transformations as a dict
-        @param reltive: update reference keypoints with those from current image to perform relative alignment
-        @return: aligned image or all informations
+        :param img: numpy array containing the image to align to reference
+        :param return_all: return in addition ot the image, keypoints, matching keypoints, and transformations as a dict
+        :param reltive: update reference keypoints with those from current image to perform relative alignment
+        :return: aligned image or all informations
         """
         logger.debug("ref_keypoints: %s" % self.ref_kp.size)
         if self.RGB:
@@ -254,7 +240,8 @@ class LinearAlign(object):
             data = numpy.ascontiguousarray(img, numpy.float32)
         with self.sem:
             cpy = pyopencl.enqueue_copy(self.queue, self.buffers["input"].data, data)
-            if self.profile:self.events.append(("Copy H->D", cpy))
+            if self.profile:
+                self.events.append(("Copy H->D", cpy))
             cpy.wait()
             kp = self.sift.keypoints(self.buffers["input"])
 #            print("ref %s img %s" % (self.buffers["ref_kp_gpu"].shape, kp.shape))
@@ -304,7 +291,7 @@ class LinearAlign(object):
                 outlayer += abs((distance - distance.mean()) / distance.std()) > 4
                 outlayer += abs((dangle - dangle.mean()) / dangle.std()) > 4
                 outlayer += abs((dscale - dscale.mean()) / dscale.std()) > 4
-                print(outlayer)
+#                 print(outlayer)
                 outlayersum = outlayer.sum()
                 if outlayersum > 0 and not numpy.isinf(outlayersum):
                     matching2 = matching[outlayer == 0]
@@ -345,17 +332,18 @@ class LinearAlign(object):
             else:
                 shape = self.shape[1], self.shape[0]
                 transform = self.program.transform
+#             print(kernel_workgroup_size(self.program, transform), self.wg, self.ctx.devices[0].max_work_item_sizes)
             ev = transform(self.queue, calc_size(shape, self.wg), self.wg,
-                                   self.buffers["input"].data,
-                                   self.buffers["output"].data,
-                                   self.buffers["matrix"].data,
-                                   self.buffers["offset"].data,
-                                   numpy.int32(self.shape[1]),
-                                   numpy.int32(self.shape[0]),
-                                   numpy.int32(self.outshape[1]),
-                                   numpy.int32(self.outshape[0]),
-                                   self.sift.buffers["min"].get()[0],
-                                   numpy.int32(1))
+                           self.buffers["input"].data,
+                           self.buffers["output"].data,
+                           self.buffers["matrix"].data,
+                           self.buffers["offset"].data,
+                           numpy.int32(self.shape[1]),
+                           numpy.int32(self.shape[0]),
+                           numpy.int32(self.outshape[1]),
+                           numpy.int32(self.outshape[0]),
+                           self.sift.buffers["min"].get()[0],
+                           numpy.int32(1))
             if self.profile:
                 self.events += [("transform", ev)]
             result = self.buffers["output"].get()
@@ -370,14 +358,15 @@ class LinearAlign(object):
             # Todo: calculate the RMS of deplacement and return it:
             return {"result":result, "keypoint":kp, "matching":matching, "offset":offset, "matrix": matrix, "rms":rms}
         return result
+    __call__ = align
 
     def log_profile(self):
         """
         If we are in debugging mode, prints out all timing for every single OpenCL call
         """
         t = 0.0
-        orient = 0.0
-        descr = 0.0
+#         orient = 0.0
+#         descr = 0.0
         if self.profile:
             for e in self.events:
                 if "__len__" in dir(e) and len(e) >= 2:

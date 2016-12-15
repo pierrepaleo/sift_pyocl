@@ -61,8 +61,6 @@ else:
     queue = pyopencl.CommandQueue(ctx)
 
 SHOW_FIGURES = False
-IMAGE_RESHAPE = True
-USE_LENA = False
 
 print "working on %s" % ctx.devices[0].name
 
@@ -72,7 +70,7 @@ print "working on %s" % ctx.devices[0].name
 
 class test_transform(unittest.TestCase):
     def setUp(self):
-        
+
         kernel_path = os.path.join(os.path.dirname(os.path.abspath(sift.__file__)), "transform.cl")
         kernel_src = open(kernel_path).read()
         self.program = pyopencl.Program(ctx, kernel_src).build() #.build('-D WORKGROUP_SIZE=%s' % wg_size)
@@ -82,14 +80,14 @@ class test_transform(unittest.TestCase):
 
     def tearDown(self):
         self.program = None
-        
 
-    
-    
+
+
+
     def image_reshape(self,img,output_height,output_width,image_height, image_width):
         '''
         Reshape the image to get a bigger image with the input image in the center
-        
+
         '''
         image3 = numpy.zeros((output_height,output_width),dtype=numpy.float32)
         d1 = (output_width - image_width)/2
@@ -98,13 +96,13 @@ class test_transform(unittest.TestCase):
         image = image3
         image_height, image_width = output_height, output_width
         return image, image_height, image_width
-    
-    
-    
-    
-    
-    
-    
+
+
+
+
+
+
+
     def matching_correction(self,image,image2):
         '''
         Computes keypoints for two images and try to align image2 on image1
@@ -142,69 +140,49 @@ class test_transform(unittest.TestCase):
     def test_transform(self):
         '''
         tests transform kernel
-        '''    
+        '''
 
 
 
-        if (USE_LENA):
-            #original image
-            image = scipy.misc.lena().astype(numpy.float32)
-            image = numpy.ascontiguousarray(image[0:512,0:512])
-            image_height, image_width = image.shape
-            #transformation
-            angle = 1.9 #numpy.pi/5.0
-    #        matrix = numpy.array([[numpy.cos(angle),-numpy.sin(angle)],[numpy.sin(angle),numpy.cos(angle)]],dtype=numpy.float32)
-    #        offset_value = numpy.array([1000.0, 100.0],dtype=numpy.float32)
-    #        matrix = numpy.array([[0.9,0.2],[-0.4,0.9]],dtype=numpy.float32)
-    #        offset_value = numpy.array([-20.0,256.0],dtype=numpy.float32)
-            matrix = numpy.array([[1.0,-0.75],[0.7,0.5]],dtype=numpy.float32)
-            
-            offset_value = numpy.array([250.0, -150.0],dtype=numpy.float32)
-           
-            image2 = scipy.ndimage.interpolation.affine_transform(image,matrix,offset=offset_value,order=1, mode="constant")
-        
-        else: #use images of a stack
-            image = scipy.misc.imread("/home/paleo/Titanium/test/frame0.png")
-            image2 = scipy.misc.imread("/home/paleo/Titanium/test/frame1.png")
-            offset_value = numpy.array([0.0, 0.0],dtype=numpy.float32)
-            image_height, image_width = image.shape
-            image2_height, image2_width = image2.shape
-            
+
+        #original image
+        image = scipy.misc.ascent().astype(numpy.float32)
+        image = numpy.ascontiguousarray(image[0:512,0:512])
+        image_height, image_width = image.shape
+        #transformation
+        angle = 1.9 #numpy.pi/5.0
+#        matrix = numpy.array([[numpy.cos(angle),-numpy.sin(angle)],[numpy.sin(angle),numpy.cos(angle)]],dtype=numpy.float32)
+#        offset_value = numpy.array([1000.0, 100.0],dtype=numpy.float32)
+#        matrix = numpy.array([[0.9,0.2],[-0.4,0.9]],dtype=numpy.float32)
+#        offset_value = numpy.array([-20.0,256.0],dtype=numpy.float32)
+        matrix = numpy.array([[1.0,-0.75],[0.7,0.5]],dtype=numpy.float32)
+
+        offset_value = numpy.array([250.0, -150.0],dtype=numpy.float32)
+
+        image2 = scipy.ndimage.interpolation.affine_transform(image,matrix,offset=offset_value,order=1, mode="constant")
+
+
+
         fill_value = numpy.float32(0.0)
-        mode = numpy.int32(1)   
-            
-        if IMAGE_RESHAPE: #turns out that image should always be reshaped
-            output_height, output_width = int(3000), int(3000)
-            image, image_height, image_width = self.image_reshape(image,output_height,output_width,image_height,image_width)
-            image2, image2_height, image2_width = self.image_reshape(image2,output_height,output_width,image2_height,image2_width) 
-            
-            
-       
-        else: output_height, output_width = int(image_height*numpy.sqrt(2)),int(image_width*numpy.sqrt(2))
+        mode = numpy.int32(1)
+
+        output_height, output_width = image_height*2, image_width*2
+        image, image_height, image_width = self.image_reshape(image,output_height,output_width,image_height,image_width)
+        image2, image2_height, image2_width = self.image_reshape(image2,output_height,output_width,image2.shape[1],image2.shape[0])
         print "Image : (%s, %s) -- Output: (%s, %s)" %(image_height, image_width , output_height, output_width)
-        
-        
-        
-            
-        
-        
-        
-        
-        
-        
-        
+
+
         #perform correction by least square
         sol, MSE = self.matching_correction(image,image2)
         print sol
-        
-        
+
         correction_matrix = numpy.zeros((2,2),dtype=numpy.float32)
         correction_matrix[0] = sol[0:2,0]
         correction_matrix[1] = sol[3:5,0]
         matrix_for_gpu = correction_matrix.reshape(4,1) #for float4 struct
         offset_value[0] = sol[2,0]
         offset_value[1] = sol[5,0]
-        
+
         wg = 8,8
         shape = calc_size((output_width,output_height), wg)
         gpu_image = pyopencl.array.to_device(queue, image2)
@@ -213,19 +191,19 @@ class test_transform(unittest.TestCase):
         gpu_offset = pyopencl.array.to_device(queue,offset_value)
         image_height, image_width = numpy.int32((image_height, image_width))
         output_height, output_width = numpy.int32((output_height, output_width))
-        
+
         t0 = time.time()
         k1 = self.program.transform(queue, shape, wg,
-                gpu_image.data, gpu_output.data, gpu_matrix.data, gpu_offset.data, 
+                gpu_image.data, gpu_output.data, gpu_matrix.data, gpu_offset.data,
                 image_width, image_height, output_width, output_height, fill_value, mode)
         res = gpu_output.get()
         t1 = time.time()
 #        print res[0,0]
-        
+
         ref = scipy.ndimage.interpolation.affine_transform(image2,correction_matrix,
             offset=offset_value, output_shape=(output_height,output_width),order=1, mode="constant", cval=fill_value)
         t2 = time.time()
-        
+
         delta = abs(res-image)
         delta_arg = delta.argmax()
         delta_max = delta.max()
@@ -238,7 +216,7 @@ class test_transform(unittest.TestCase):
         print("minimal MSE according to least squares : %f" %MSE)
 #        print res[at_0,at_1]
 #        print ref[at_0,at_1]
-        
+
         SHOW_FIGURES = True
         if SHOW_FIGURES:
             fig = pylab.figure()
@@ -261,7 +239,6 @@ class test_transform(unittest.TestCase):
         if PROFILE:
             logger.info("Global execution time: CPU %.3fms, GPU: %.3fms." % (1000.0 * (t2 - t1), 1000.0 * (t1 - t0)))
             logger.info("Transformation took %.3fms" % (1e-6 * (k1.profile.end - k1.profile.start)))
-            
 
 
 
@@ -272,9 +249,10 @@ class test_transform(unittest.TestCase):
 
 
 
-            
-            
-            
+
+
+
+
 
 def test_suite_transform():
     testSuite = unittest.TestSuite()
