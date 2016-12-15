@@ -51,10 +51,10 @@
  * optimal total item size:  (workgroup size)^2
  * if SIZE >total item size: adjust seq_count.
  *
- * @param data:       Float pointer to global memory storing the vector of data.
- * @param out:    	  Float2 pointer to global memory storing the temporary results (workgroup size)
- * @param seq_count:  how many blocksize each thread should read
- * @param SIZE:		  size of the
+ * :param data:       Float pointer to global memory storing the vector of data.
+ * :param out:    	  Float2 pointer to global memory storing the temporary results (workgroup size)
+ * :param seq_count:  how many blocksize each thread should read
+ * :param SIZE:		  size of the
  *
 **/
 
@@ -133,9 +133,9 @@ __kernel void max_min_global_stage1(
  *
  *
  *
- * @param data2:      Float2 pointer to global memory storing the vector of pre-reduced data (workgroup size).
- * @param maximum:    Float pointer to global memory storing the maximum value
- * @param minumum:    Float pointer to global memory storing the minimum value
+ * :param data2:      Float2 pointer to global memory storing the vector of pre-reduced data (workgroup size).
+ * :param maximum:    Float pointer to global memory storing the maximum value
+ * :param minumum:    Float pointer to global memory storing the minimum value
  *
 **/
 
@@ -201,4 +201,39 @@ __kernel void max_min_global_stage2(
 		maximum[0] = acc.x;
 		minimum[0] = acc.y;
 	}
+}
+
+/*This is the serial version of the min_max kernel.
+ *
+ * It has to be launched with WG=1 and only 1 WG has to be launched !
+ *
+ * :param data:       Float pointer to global memory storing the vector of data.
+ * :param SIZE:		  size of the
+ * :param maximum:    Float pointer to global memory storing the maximum value
+ * :param minumum:    Float pointer to global memory storing the minimum value
+ *
+ *
+ */
+kernel void max_min_serial(
+		global const float *data,
+		unsigned int SIZE,
+		global float *maximum,
+		global float *minimum)
+{
+float value, maxi, mini;
+value = data[0];
+mini = value;
+maxi = value;
+for (int i=1; i<SIZE; i++)
+{
+	value = data[i];
+	if (value>maxi)
+		maxi = value;
+	if (value<mini)
+		mini = value;
+}
+
+maximum[0] = maxi;
+minimum[0] = mini;
+
 }
