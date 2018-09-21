@@ -61,7 +61,7 @@ import gc
 import numpy
 from .param import par
 from .clinit import ocl, pyopencl, kernel_workgroup_size
-from clutils import get_opencl_code, nextpower
+from .utils import get_opencl_code, nextpower
 
 from .utils import calc_size, kernel_size
 logger = logging.getLogger("sift.plan")
